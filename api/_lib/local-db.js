@@ -175,6 +175,41 @@ function migrate(db) {
       completed_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS ecommerce_delivery_documents (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES ecommerce_projects(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      slot_id TEXT NOT NULL,
+      source_generation_id TEXT REFERENCES generations(id) ON DELETE SET NULL,
+      document_type TEXT NOT NULL DEFAULT 'benefit',
+      target_width INTEGER NOT NULL DEFAULT 1024,
+      target_height INTEGER NOT NULL DEFAULT 1024,
+      output_format TEXT NOT NULL DEFAULT 'png',
+      theme_id TEXT NOT NULL DEFAULT 'minimal-light',
+      layout_id TEXT NOT NULL DEFAULT 'bottom-left',
+      safe_area INTEGER NOT NULL DEFAULT 1,
+      include_in_export INTEGER NOT NULL DEFAULT 1,
+      module_order INTEGER NOT NULL DEFAULT 0,
+      content_json TEXT NOT NULL DEFAULT '{}',
+      advanced_json TEXT NOT NULL DEFAULT '{}',
+      validation_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ecommerce_user_templates (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      platform_id TEXT NOT NULL,
+      industry_id TEXT NOT NULL,
+      project_config TEXT NOT NULL DEFAULT '{}',
+      delivery_config TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS favorites (
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       case_id INTEGER NOT NULL,
@@ -228,6 +263,9 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS ecommerce_assets_project_created_idx ON ecommerce_project_assets(project_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS ecommerce_tasks_project_created_idx ON ecommerce_generation_tasks(project_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS ecommerce_tasks_user_status_idx ON ecommerce_generation_tasks(user_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS ecommerce_delivery_project_slot_unique_idx ON ecommerce_delivery_documents(project_id, slot_id);
+    CREATE INDEX IF NOT EXISTS ecommerce_delivery_project_order_idx ON ecommerce_delivery_documents(project_id, module_order ASC);
+    CREATE INDEX IF NOT EXISTS ecommerce_user_templates_user_updated_idx ON ecommerce_user_templates(user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS ledger_user_created_idx ON credit_ledger(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS reservations_user_status_idx ON credit_reservations(user_id, status);
   `);
@@ -739,6 +777,13 @@ export function updateEcommerceProject(userId, projectId, values) {
     userId
   );
   return getEcommerceProject(userId, projectId);
+}
+
+export function deleteEcommerceProject(userId, projectId) {
+  const project = getEcommerceProject(userId, projectId);
+  if (!project) return null;
+  getDb().prepare('DELETE FROM ecommerce_projects WHERE id = ? AND user_id = ?').run(projectId, userId);
+  return project;
 }
 
 export function normalizeEcommerceProjectAsset(row) {

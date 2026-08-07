@@ -43,8 +43,60 @@ import {
   getVisualStylesForIndustry
 } from '../shared/ecommerce-catalog.js';
 import { runTaskPool } from '../shared/task-pool.js';
+import EcommerceDeliveryCenter from './ecommerce-delivery-center.jsx';
 
 const BATCH_GENERATION_CONCURRENCY = 3;
+
+const VISUAL_STYLE_PREVIEW_KIND = {
+  'clean-commercial': 'catalog',
+  'fashion-lookbook': 'catalog',
+  'office-order': 'catalog',
+  'clinical-care': 'catalog',
+  'premium-editorial': 'editorial',
+  'interior-editorial': 'editorial',
+  'collectible-display': 'editorial',
+  'beverage-premium': 'editorial',
+  'warm-lifestyle': 'lifestyle',
+  'home-cozy': 'lifestyle',
+  'appliance-demo': 'lifestyle',
+  'baby-soft': 'lifestyle',
+  'bold-conversion': 'conversion',
+  'sport-energy': 'conversion',
+  'youthful-social': 'social',
+  'playful-pop': 'social',
+  'fashion-motion': 'motion',
+  'auto-dynamic': 'motion',
+  'outdoor-adventure': 'motion',
+  'technical-proof': 'technical',
+  'tech-precision': 'technical',
+  'industrial-rugged': 'technical',
+  'tech-future': 'future',
+  'footwear-sculpture': 'macro',
+  'accessory-macro': 'macro',
+  'jewelry-luxury': 'macro',
+  'beauty-luminous': 'macro',
+  'beauty-lab': 'macro',
+  'food-appetite': 'appetite',
+  'fresh-origin': 'appetite'
+};
+
+const VISUAL_STYLE_PREVIEW_CUE = {
+  catalog: { en: 'Consistent framing', zh: '统一机位 · 干净留白' },
+  editorial: { en: 'Editorial hierarchy', zh: '杂志留白 · 精致光影' },
+  lifestyle: { en: 'Natural context', zh: '自然光 · 真实场景' },
+  conversion: { en: 'Fast recognition', zh: '强层级 · 快速识别' },
+  social: { en: 'Mobile-first rhythm', zh: '竖屏节奏 · 趣味排版' },
+  motion: { en: 'Dynamic capture', zh: '动态构图 · 环境抓拍' },
+  technical: { en: 'Evidence and scale', zh: '结构标注 · 功能证据' },
+  future: { en: 'Precision glow', zh: '深色空间 · 克制光效' },
+  macro: { en: 'Material close-up', zh: '材质微距 · 精准高光' },
+  appetite: { en: 'Texture and color', zh: '真实色泽 · 质感特写' }
+};
+
+function visualStylePreview(styleId, language) {
+  const kind = VISUAL_STYLE_PREVIEW_KIND[styleId] || 'catalog';
+  return { kind, cue: VISUAL_STYLE_PREVIEW_CUE[kind]?.[language === 'en' ? 'en' : 'zh'] || '' };
+}
 
 const copy = {
   en: {
@@ -115,6 +167,8 @@ const copy = {
     required: 'Core',
     selectedCount: (count) => `${count} images selected`,
     production: 'Generate image set',
+    professionalDelivery: '6. Professional delivery',
+    deliverySummary: (count) => `${count} adopted images · finishing, checks, and export`,
     selectAll: 'Select all',
     clearSelection: 'Clear selection',
     batchSelection: (count) => `${count} selected · ${count} credits`,
@@ -188,7 +242,7 @@ const copy = {
     creditsTitle: 'Credits are required for the complete workspace',
     creditsText: 'Add credits before saving projects and generating production images.',
     recharge: 'Add credits',
-    workflow: ['Project brief', 'Source materials', 'Master image', 'Image-set production'],
+    workflow: ['Project brief', 'Source materials', 'Master image', 'Image-set production', 'Professional delivery'],
     currentStage: 'Current',
     draft: 'Draft',
     updated: 'Updated'
@@ -261,6 +315,8 @@ const copy = {
     required: '核心',
     selectedCount: (count) => `已选择 ${count} 张 / 组`,
     production: '套图生成',
+    professionalDelivery: '6. 专业交付',
+    deliverySummary: (count) => `${count} 张采用图 · 精修、检查与导出`,
     selectAll: '全部选中',
     clearSelection: '取消全选',
     batchSelection: (count) => `已选 ${count} · 预计 ${count}积分`,
@@ -334,26 +390,29 @@ const copy = {
     creditsTitle: '完整工作台需要积分',
     creditsText: '请先充值积分，再保存项目并生成正式图片。',
     recharge: '充值积分',
-    workflow: ['商品资料', '商品素材', '母版确认', '整套生成'],
+    workflow: ['商品资料', '商品素材', '母版确认', '整套生成', '专业交付'],
     currentStage: '当前阶段',
     draft: '草稿',
     updated: '更新于'
   }
 };
 
-const SECTION_KEYS = ['platform', 'brief', 'assets', 'visual', 'outputs'];
+const SECTION_KEYS = ['platform', 'brief', 'assets', 'visual', 'outputs', 'delivery'];
 const IDENTITY_SPEC_FIELDS = [
   'structure', 'colorsMaterials', 'brandMarks', 'packaging', 'includedItems', 'mustKeep', 'mustAvoid'
 ];
 
 function getCollapsedSectionsForStage(stage) {
   if (stage === 1 || stage === 2) {
-    return { platform: true, brief: true, assets: false, visual: true, outputs: true };
+    return { platform: true, brief: true, assets: false, visual: true, outputs: true, delivery: true };
   }
   if (stage === 3) {
-    return { platform: true, brief: true, assets: true, visual: false, outputs: true };
+    return { platform: true, brief: true, assets: true, visual: false, outputs: true, delivery: true };
   }
-  return { platform: true, brief: false, assets: true, visual: true, outputs: true };
+  if (stage === 4) {
+    return { platform: true, brief: true, assets: true, visual: true, outputs: true, delivery: false };
+  }
+  return { platform: true, brief: false, assets: true, visual: true, outputs: true, delivery: true };
 }
 
 function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
@@ -995,7 +1054,8 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       ? recommendedVisualStyles
       : [...recommendedVisualStyles, selectedStyle];
   }, [form.visualStyleId, recommendedVisualStyles]);
-  const currentStage = !form.id ? 0 : form.masterAssetId ? 3 : assets.length ? 2 : 1;
+  const hasAdoptedOutput = outputs.some((output) => Boolean(output.selectedGenerationId));
+  const currentStage = !form.id ? 0 : hasAdoptedOutput ? 4 : form.masterAssetId ? 3 : assets.length ? 2 : 1;
   const previousStageRef = useRef(currentStage);
 
   useEffect(() => {
@@ -1741,6 +1801,12 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     }
   }
 
+  function handleDeliveryProjectCreated(project) {
+    if (!project) return;
+    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+    openProject(project);
+  }
+
   const localName = (item) => language === 'zh' ? item.nameZh : item.nameEn;
   const localDescription = (item) => language === 'zh' ? item.descriptionZh : item.descriptionEn;
   const localPurpose = (item) => language === 'zh' ? item.purposeZh : item.purposeEn;
@@ -2177,6 +2243,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               <div className="ecommerceVisualStyleGrid" aria-label={t.visualStyle}>
                 {visualStyles.map((item) => {
                   const active = form.visualStyleId === item.id;
+                  const preview = visualStylePreview(item.id, language);
                   return (
                     <button
                       className={active ? 'active' : ''}
@@ -2190,10 +2257,11 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                       }}
                       key={item.id}
                     >
-                      <span className="ecommerceVisualStylePreview" aria-hidden="true">
-                        <i />
-                        <i />
-                        <i />
+                      <span className="ecommerceVisualStylePreview" data-preview={preview.kind} aria-hidden="true">
+                        <span className="ecommerceVisualStyleScene" />
+                        <span className="ecommerceVisualStyleSubject"><i /><i /></span>
+                        <span className="ecommerceVisualStyleLayout"><i /><i /><i /></span>
+                        <span className="ecommerceVisualStyleCue">{preview.cue}</span>
                       </span>
                       <span className="ecommerceVisualStyleCopy">
                         <strong>{active ? <Check size={14} /> : null}{localName(item)}</strong>
@@ -2378,6 +2446,32 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                     </article>
                   );
                 })}
+              </div>
+            </fieldset>
+          ) : null}
+
+          {form.id ? (
+            <fieldset className={`ecommerceSection ecommerceCollapsibleSection ecommerceDeliverySection ${collapsedSections.delivery ? 'collapsed' : ''} ${currentStage === 4 ? 'stageActive' : ''}`}>
+              <CollapsibleSectionLegend
+                label={t.professionalDelivery}
+                summary={t.deliverySummary(outputs.filter((output) => output.selectedGenerationId).length)}
+                collapsed={collapsedSections.delivery}
+                contentId="ecommerce-delivery-section"
+                expandLabel={t.expandSection}
+                collapseLabel={t.collapseSection}
+                onToggle={() => toggleSection('delivery')}
+              />
+              <div className="ecommerceCollapsibleContent ecommerceDeliveryContent" id="ecommerce-delivery-section" hidden={collapsedSections.delivery}>
+                <EcommerceDeliveryCenter
+                  language={language}
+                  project={form}
+                  platform={platform}
+                  slots={productionSlots}
+                  outputs={outputs}
+                  generations={generations}
+                  assets={assets}
+                  onProjectCreated={handleDeliveryProjectCreated}
+                />
               </div>
             </fieldset>
           ) : null}
