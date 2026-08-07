@@ -117,10 +117,6 @@ const copy = {
     audiencePlaceholder: 'Who will buy it? Where and why will they use it?',
     sellingPoints: 'Core selling points',
     sellingPointsPlaceholder: 'One verifiable selling point per line',
-    specifications: 'Specifications and included items',
-    specificationsPlaceholder: 'Size, material, color, quantity, package contents, variants...',
-    prohibited: 'Claims or content to avoid',
-    prohibitedPlaceholder: 'Unsupported claims, restricted words, incorrect accessories, visual mistakes...',
     sourceAssets: '3. Source materials',
     sourceAssetsHint: 'Upload clear, authorized images of the real product. Product photos define structure; packaging and logo files define brand details; reference images define direction only.',
     saveBeforeUpload: 'Save the product project before uploading source materials.',
@@ -150,8 +146,11 @@ const copy = {
     identityStructure: 'Structure and proportions',
     identityColorsMaterials: 'Colors and materials',
     identityBrandMarks: 'Brand marks',
-    identityPackaging: 'Packaging',
-    identityIncludedItems: 'Included items',
+    identityPackaging: 'Outer packaging and labels',
+    identityIncludedItems: 'Included accessories and quantities',
+    identityPackagingPlaceholder: 'Box, pouch, bottle, label layout, seals, colors, and existing package text...',
+    identityIncludedItemsPlaceholder: 'For example: charging cable ×1, manual ×1, replacement head ×2; enter “None” when there are no accessories.',
+    identityMustAvoidPlaceholder: 'Structures, colors, parts, text, claims, or visual errors that must never appear...',
     identityMustKeep: 'Must keep',
     identityMustAvoid: 'Must avoid',
     visualDirection: '4. Visual direction',
@@ -186,6 +185,7 @@ const copy = {
     selectAtLeastOne: 'Select at least one image.',
     insufficientBatchCredits: (required, available) => `${required} credits required; ${available} available.`,
     saveChangesFirst: 'Save project changes first',
+    saveRequiredHint: 'Save the project to continue',
     masterRequired: 'Select a product master before generating.',
     generationFailed: 'This image could not be generated. Your reserved credit was returned.',
     moderationBlocked: 'This slot needs safer product wording. Update the project facts or restricted-content field, save, and try again.',
@@ -265,10 +265,6 @@ const copy = {
     audiencePlaceholder: '谁会购买？在什么场景使用？为什么需要它？',
     sellingPoints: '核心卖点',
     sellingPointsPlaceholder: '每行填写一个可验证的卖点',
-    specifications: '规格与包装清单',
-    specificationsPlaceholder: '尺寸、材质、颜色、数量、包装包含物、可选规格……',
-    prohibited: '禁止出现或避免表达',
-    prohibitedPlaceholder: '无依据功效、禁用词、错误配件、容易画错的结构等……',
     sourceAssets: '3. 商品素材',
     sourceAssetsHint: '上传清晰且已获授权的真实商品图。商品图决定结构，包装和 Logo 决定品牌细节，参考图只用于表达视觉方向。',
     saveBeforeUpload: '请先保存商品项目，再上传商品素材。',
@@ -298,8 +294,11 @@ const copy = {
     identityStructure: '结构与比例',
     identityColorsMaterials: '颜色与材质',
     identityBrandMarks: '品牌与标识',
-    identityPackaging: '包装',
-    identityIncludedItems: '配件与包含物',
+    identityPackaging: '外包装与标签',
+    identityIncludedItems: '随附配件与数量',
+    identityPackagingPlaceholder: '包装盒、袋、瓶、标签版式、封口、颜色及原包装文字位置……',
+    identityIncludedItemsPlaceholder: '例如：充电线×1、说明书×1、替换头×2；没有配件请填写“无”。',
+    identityMustAvoidPlaceholder: '绝不能出现的错误结构、颜色、部件、文字、功效表述或画面问题……',
     identityMustKeep: '必须保留',
     identityMustAvoid: '必须避免',
     visualDirection: '4. 视觉方向',
@@ -334,6 +333,7 @@ const copy = {
     selectAtLeastOne: '请至少选择一张图片。',
     insufficientBatchCredits: (required, available) => `需要 ${required} 积分，当前可用 ${available} 积分。`,
     saveChangesFirst: '请先保存项目修改',
+    saveRequiredHint: '请先保存，才能继续下一步',
     masterRequired: '请先选择商品母版。',
     generationFailed: '本张图片生成失败，预留积分已经退回。',
     moderationBlocked: '当前商品表述需要调整。请修改商品资料或禁止内容，保存后再试。',
@@ -437,11 +437,18 @@ function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
 
 function projectToForm(project) {
   const industryId = project.industryId || ECOMMERCE_INDUSTRIES[0].id;
+  const identitySpec = { ...(project.identitySpec || {}) };
+  if (!String(identitySpec.mustKeep || '').trim() && String(project.specifications || '').trim()) {
+    identitySpec.mustKeep = project.specifications;
+  }
+  if (!String(identitySpec.mustAvoid || '').trim() && String(project.prohibitedContent || '').trim()) {
+    identitySpec.mustAvoid = project.prohibitedContent;
+  }
   return {
     ...createEmptyForm(project.platformId),
     ...project,
     industryId,
-    identitySpec: project.identitySpec || {},
+    identitySpec,
     templateId: project.templateId || '',
     visualStyleId: project.visualStyleId || getVisualStylesForIndustry(industryId)[0]?.id || 'clean-commercial',
     sellingPoints: (project.sellingPoints || []).join('\n'),
@@ -844,7 +851,7 @@ function clampFloatingPoint(x, y, width, height) {
   };
 }
 
-function FloatingSaveControl({ label, savingLabel, dragLabel, hideLabel, showLabel, saving, disabled, formId }) {
+function FloatingSaveControl({ label, savingLabel, dragLabel, hideLabel, showLabel, saving, disabled, attention, attentionLabel, formId }) {
   const [collapsed, setCollapsed] = useState(false);
   const [position, setPosition] = useState(null);
   const [dragging, setDragging] = useState(false);
@@ -950,7 +957,7 @@ function FloatingSaveControl({ label, savingLabel, dragLabel, hideLabel, showLab
     return (
       <button
         ref={controlRef}
-        className={`ecommerceFloatingSaveOrb ${dragging ? 'dragging' : ''}`}
+        className={`ecommerceFloatingSaveOrb ${dragging ? 'dragging' : ''} ${attention ? 'attention' : ''}`}
         style={floatingStyle}
         type="button"
         aria-label={showLabel}
@@ -974,7 +981,7 @@ function FloatingSaveControl({ label, savingLabel, dragLabel, hideLabel, showLab
   return (
     <div
       ref={controlRef}
-      className={`ecommerceFloatingSave ${dragging ? 'dragging' : ''}`}
+      className={`ecommerceFloatingSave ${dragging ? 'dragging' : ''} ${attention ? 'attention' : ''}`}
       style={floatingStyle}
       title={dragLabel}
       onPointerDown={beginDrag}
@@ -997,6 +1004,7 @@ function FloatingSaveControl({ label, savingLabel, dragLabel, hideLabel, showLab
         {saving ? <LoaderCircle size={19} className="spin" /> : <Save size={19} />}
         <span>{saving ? savingLabel : label}</span>
       </button>
+      {attention ? <span className="ecommerceFloatingSaveHint">{attentionLabel}</span> : null}
       <button
         className="ecommerceFloatingSaveClose"
         type="button"
@@ -1056,6 +1064,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   }, [form.visualStyleId, recommendedVisualStyles]);
   const hasAdoptedOutput = outputs.some((output) => Boolean(output.selectedGenerationId));
   const currentStage = !form.id ? 0 : hasAdoptedOutput ? 4 : form.masterAssetId ? 3 : assets.length ? 2 : 1;
+  const saveAttention = hasAccess && status !== 'saving' && (!form.id || status === 'dirty' || status === 'error');
   const previousStageRef = useRef(currentStage);
 
   useEffect(() => {
@@ -1206,18 +1215,18 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       structure: `严格以商品母版为准，保持${form.productName || '商品'}的外形、长宽比例、开合结构、接口、按钮、把手和关键轮廓一致。`,
       colorsMaterials: '保持母版中的主色、金属或非金属材质、表面纹理、透明度、光泽和边缘处理一致。',
       brandMarks: brandText,
-      packaging: form.specifications.trim() || '包装结构、标签布局、包装颜色和原有文字必须以真实包装素材为准。',
-      includedItems: form.specifications.trim() || '只展示素材和商品资料明确存在的配件、数量与包装包含物。',
+      packaging: '外包装的形态、材质、标签布局、封口、颜色和原有文字位置必须以真实包装素材为准；不要在此填写盒内配件。',
+      includedItems: '只展示素材明确存在的随附配件和准确数量；没有随附配件时明确写“无”，不得自行增加赠品。',
       mustKeep: '商品主体几何、颜色、材质、品牌位置、配件数量和相互比例在所有槽位中保持一致。',
-      mustAvoid: form.prohibitedContent.trim() || '不得增加、删除或替换部件，不得生成伪 Logo、乱码、错误包装和虚构规格。'
+      mustAvoid: '不得增加、删除或替换部件，不得生成伪 Logo、乱码、错误包装、虚构规格或未经证实的功效。'
     } : {
       structure: `Use the product master as the authority. Preserve the shape, proportions, opening mechanism, ports, controls, handles, and defining outline of ${form.productName || 'the product'}.`,
       colorsMaterials: 'Preserve the master image colors, materials, surface texture, transparency, gloss, and edge treatment.',
       brandMarks: brandText,
-      packaging: form.specifications.trim() || 'Packaging structure, label layout, colors, and existing text must follow the real packaging reference.',
-      includedItems: form.specifications.trim() || 'Show only accessories, quantities, and package contents explicitly supported by the project materials.',
+      packaging: 'The form, material, label layout, seals, colors, and existing text placement of the outer packaging must follow the real packaging reference. Do not list box contents here.',
+      includedItems: 'Show only included accessories explicitly supported by the source materials and preserve exact quantities. State “None” when no accessories are included; never invent gifts.',
       mustKeep: 'Keep product geometry, color, material, brand placement, included-item count, and relative scale consistent across every slot.',
-      mustAvoid: form.prohibitedContent.trim() || 'Do not add, remove, or replace parts. Avoid fake logos, garbled text, incorrect packaging, and invented specifications.'
+      mustAvoid: 'Do not add, remove, or replace parts. Avoid fake logos, garbled text, incorrect packaging, invented specifications, and unsupported efficacy claims.'
     };
     setForm((current) => ({ ...current, identitySpec: spec }));
     if (form.id) setStatus('dirty');
@@ -1377,9 +1386,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'AI_BRIEF_FAILED');
       const originalBrief = {
         targetAudience: String(payload.brief.targetAudience || ''),
-        sellingPoints: String(payload.brief.sellingPoints || ''),
-        specifications: String(payload.brief.specifications || ''),
-        prohibitedContent: String(payload.brief.prohibitedContent || '')
+        sellingPoints: String(payload.brief.sellingPoints || '')
       };
       if (Object.values(originalBrief).some((value) => !value.trim())) throw new Error('AI_BRIEF_INCOMPLETE');
       setAiBriefOriginals(originalBrief);
@@ -1866,6 +1873,11 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     mustKeep: t.identityMustKeep,
     mustAvoid: t.identityMustAvoid
   };
+  const identityFieldPlaceholders = {
+    packaging: t.identityPackagingPlaceholder,
+    includedItems: t.identityIncludedItemsPlaceholder,
+    mustAvoid: t.identityMustAvoidPlaceholder
+  };
   const hasAiOriginal = (field) => Object.prototype.hasOwnProperty.call(aiBriefOriginals, field);
   const resetLabelFor = (field) => hasAiOriginal(field) ? t.restoreAiField : t.clearField;
 
@@ -2056,34 +2068,6 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                 />
                 <textarea id="ecommerce-selling-points" value={form.sellingPoints} onChange={(event) => updateField('sellingPoints', event.target.value)} placeholder={t.sellingPointsPlaceholder} />
               </div>
-              <div className="ecommerceField">
-                <FieldHelpLabel
-                  fieldId="ecommerce-specifications"
-                  label={t.specifications}
-                  help={t.specificationsPlaceholder}
-                  helpLabel={t.fieldHelp}
-                  open={openFieldHelp === 'specifications'}
-                  onToggle={() => setOpenFieldHelp((current) => current === 'specifications' ? '' : 'specifications')}
-                  resetLabel={resetLabelFor('specifications')}
-                  hasAiOriginal={hasAiOriginal('specifications')}
-                  onReset={() => resetBriefField('specifications')}
-                />
-                <textarea id="ecommerce-specifications" value={form.specifications} onChange={(event) => updateField('specifications', event.target.value)} placeholder={t.specificationsPlaceholder} />
-              </div>
-              <div className="ecommerceField ecommerceFieldWide">
-                <FieldHelpLabel
-                  fieldId="ecommerce-prohibited-content"
-                  label={t.prohibited}
-                  help={t.prohibitedPlaceholder}
-                  helpLabel={t.fieldHelp}
-                  open={openFieldHelp === 'prohibitedContent'}
-                  onToggle={() => setOpenFieldHelp((current) => current === 'prohibitedContent' ? '' : 'prohibitedContent')}
-                  resetLabel={resetLabelFor('prohibitedContent')}
-                  hasAiOriginal={hasAiOriginal('prohibitedContent')}
-                  onReset={() => resetBriefField('prohibitedContent')}
-                />
-                <textarea id="ecommerce-prohibited-content" value={form.prohibitedContent} onChange={(event) => updateField('prohibitedContent', event.target.value)} placeholder={t.prohibitedPlaceholder} />
-              </div>
             </div>
             </div>
           </fieldset>
@@ -2191,11 +2175,12 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   </header>
                   <div className="ecommerceIdentityGrid">
                     {IDENTITY_SPEC_FIELDS.map((field) => (
-                      <label className={field === 'mustKeep' || field === 'mustAvoid' ? 'wide' : ''} key={field}>
+                      <label className={field === 'brandMarks' || field === 'mustKeep' || field === 'mustAvoid' ? 'wide' : ''} key={field}>
                         <span>{identityFieldLabels[field]}</span>
                         <textarea
                           value={form.identitySpec?.[field] || ''}
                           onChange={(event) => updateIdentitySpec(field, event.target.value)}
+                          placeholder={identityFieldPlaceholders[field] || ''}
                         />
                       </label>
                     ))}
@@ -2462,21 +2447,25 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                 onToggle={() => toggleSection('delivery')}
               />
               <div className="ecommerceCollapsibleContent ecommerceDeliveryContent" id="ecommerce-delivery-section" hidden={collapsedSections.delivery}>
-                <EcommerceDeliveryCenter
-                  language={language}
-                  project={form}
-                  platform={platform}
-                  slots={productionSlots}
-                  outputs={outputs}
-                  generations={generations}
-                  assets={assets}
-                  onProjectCreated={handleDeliveryProjectCreated}
-                />
+                {saveAttention ? (
+                  <div className="ecommerceDeliverySaveGate"><Save size={23} /><strong>{t.saveChangesFirst}</strong><span>{t.saveRequiredHint}</span></div>
+                ) : (
+                  <EcommerceDeliveryCenter
+                    language={language}
+                    project={form}
+                    platform={platform}
+                    slots={productionSlots}
+                    outputs={outputs}
+                    generations={generations}
+                    assets={assets}
+                    onProjectCreated={handleDeliveryProjectCreated}
+                  />
+                )}
               </div>
             </fieldset>
           ) : null}
 
-          <div className="ecommerceFormFooter">
+          <div className={`ecommerceFormFooter ${saveAttention ? 'saveAttention' : ''}`}>
             <span className={status === 'error' ? 'error' : ''}>{message}</span>
             <button type="submit" disabled={status === 'saving' || !hasAccess}>
               {status === 'saving' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
@@ -2493,6 +2482,8 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         showLabel={t.showFloatingSave}
         saving={status === 'saving'}
         disabled={status === 'saving' || !hasAccess}
+        attention={saveAttention}
+        attentionLabel={t.saveRequiredHint}
         formId="ecommerce-product-project-form"
       />
       <EcommerceVersionCenterModal

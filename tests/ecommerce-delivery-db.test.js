@@ -80,6 +80,12 @@ test('delivery documents persist editing, validation and order', () => {
   });
   assert.deepEqual(changedFormat.validation, {}, 'render-affecting changes must require a new platform check');
 
+  assert.equal(deliveryDb.setEcommerceDeliveryDocumentsInclusion(user.id, project.id, [first.id, second.id], false), true);
+  assert.ok(deliveryDb.listEcommerceDeliveryDocuments(user.id, project.id).every((item) => !item.includeInExport));
+  assert.equal(deliveryDb.setEcommerceDeliveryDocumentsInclusion(user.id, project.id, [first.id], true), true);
+  assert.equal(deliveryDb.getEcommerceDeliveryDocument(user.id, first.id).includeInExport, true);
+  assert.equal(deliveryDb.setEcommerceDeliveryDocumentsInclusion(user.id, project.id, ['unknown-document'], false), false);
+
   assert.equal(deliveryDb.reorderEcommerceDeliveryDocuments(user.id, project.id, [second.id, first.id]), true);
   assert.deepEqual(deliveryDb.listEcommerceDeliveryDocuments(user.id, project.id).map((item) => item.id), [second.id, first.id]);
 });

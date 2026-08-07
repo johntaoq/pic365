@@ -128,19 +128,6 @@ export default async function handler(req, res) {
     .filter((document) => project.selectedSlots.includes(document.slotId));
   const documents = allDocuments.filter((document) => requestedIds.size ? requestedIds.has(document.id) : document.includeInExport);
   if (!documents.length || documents.length > 30) return json(res, 400, { ok: false, error: 'NO_DELIVERY_DOCUMENTS' });
-  if (!requestedIds.size) {
-    const includedSlots = new Set(documents.map((document) => document.slotId));
-    const excludedRequiredSlots = platform.slots
-      .filter((slot) => slot.required && project.selectedSlots.includes(slot.id) && !includedSlots.has(slot.id))
-      .map((slot) => slot.id);
-    if (excludedRequiredSlots.length) {
-      return json(res, 409, {
-        ok: false,
-        error: 'DELIVERY_NOT_READY',
-        blocked: excludedRequiredSlots.map((slotId) => ({ slotId, error: 'REQUIRED_SLOT_EXCLUDED' }))
-      });
-    }
-  }
 
   const language = body.language === 'en' ? 'en' : 'zh';
   const prepared = [];

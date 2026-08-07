@@ -33,7 +33,7 @@ function cleanSellingPoints(value) {
 function cleanAiBriefOriginals(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    ['targetAudience', 'sellingPoints', 'specifications', 'prohibitedContent']
+    ['targetAudience', 'sellingPoints']
       .map((field) => [field, cleanText(value[field], field === 'targetAudience' ? 1000 : 2000)])
       .filter(([, content]) => Boolean(content))
   );

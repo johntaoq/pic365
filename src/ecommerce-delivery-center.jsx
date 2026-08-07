@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  CircleMinus,
   CircleAlert,
   ClipboardCheck,
   Copy,
@@ -19,6 +20,7 @@ import {
   PackageCheck,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   ShieldCheck,
   Sparkles,
@@ -89,6 +91,18 @@ const copy = {
     safeArea: '启用平台安全区',
     showSafeArea: '预览安全区',
     includeExport: '加入批量交付',
+    deliveryList: '本次交付清单',
+    deliveryListCount: (count) => `${count} 张`,
+    removeFromDelivery: '移出本次交付',
+    restoreToDelivery: '恢复到本次交付',
+    removeMissing: '移除未生成项',
+    removedItems: (count) => `已移除 ${count} 项`,
+    removedHint: '不参与检查、详情编排和导出',
+    removedSuccess: '已移出本次交付，可在左栏底部恢复。',
+    restoredSuccess: '已恢复到本次交付。',
+    missingRemovedSuccess: '未生成的空项已移出本次交付。',
+    noIncludedTitle: '本次交付清单为空',
+    noIncludedText: '请从左栏底部恢复需要交付的图片。',
     save: '保存本图设置',
     saving: '保存中……',
     check: '检查本图',
@@ -188,6 +202,18 @@ const copy = {
     safeArea: 'Use platform safe area',
     showSafeArea: 'Preview safe area',
     includeExport: 'Include in batch delivery',
+    deliveryList: 'Current delivery list',
+    deliveryListCount: (count) => `${count} images`,
+    removeFromDelivery: 'Remove from this delivery',
+    restoreToDelivery: 'Restore to this delivery',
+    removeMissing: 'Remove ungenerated items',
+    removedItems: (count) => `${count} removed`,
+    removedHint: 'Excluded from checks, ordering, and export',
+    removedSuccess: 'Removed from this delivery. Restore it from the bottom of the left rail.',
+    restoredSuccess: 'Restored to this delivery.',
+    missingRemovedSuccess: 'Ungenerated placeholders were removed from this delivery.',
+    noIncludedTitle: 'This delivery list is empty',
+    noIncludedText: 'Restore the images you want from the bottom of the left rail.',
     save: 'Save image settings',
     saving: 'Saving...',
     check: 'Check image',
@@ -356,6 +382,7 @@ export default function EcommerceDeliveryCenter({
   const [dirty, setDirty] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [includeDetailPage, setIncludeDetailPage] = useState(true);
+  const [selectionBusy, setSelectionBusy] = useState(false);
   const [targetPlatformId, setTargetPlatformId] = useState(() => ECOMMERCE_PLATFORMS.find((item) => item.id !== project.platformId)?.id || project.platformId);
   const [templateName, setTemplateName] = useState('');
 
@@ -363,16 +390,25 @@ export default function EcommerceDeliveryCenter({
   const outputBySlot = useMemo(() => new Map((outputs || []).map((output) => [output.slotId, output])), [outputs]);
   const generationById = useMemo(() => new Map((generations || []).map((generation) => [generation.id, generation])), [generations]);
   const logoAssets = useMemo(() => (assets || []).filter((asset) => asset.assetType === 'logo'), [assets]);
-  const selectedDocument = documents.find((document) => document.id === selectedDocumentId) || documents[0] || null;
+  const includedDocuments = useMemo(() => documents.filter((document) => document.includeInExport), [documents]);
+  const removedDocuments = useMemo(() => documents.filter((document) => !document.includeInExport), [documents]);
+  const missingIncludedDocuments = useMemo(() => includedDocuments.filter((document) => !document.sourceGenerationId), [includedDocuments]);
+  const selectedDocument = includedDocuments.find((document) => document.id === selectedDocumentId) || includedDocuments[0] || null;
   const selectedSlot = selectedDocument ? slotById.get(selectedDocument.slotId) : null;
   const selectedGeneration = selectedDocument ? generationById.get(selectedDocument.sourceGenerationId) : null;
   const selectedLogo = selectedDocument?.content?.logoAssetId
     ? assets.find((asset) => asset.id === selectedDocument.content.logoAssetId)
     : null;
-  const readyCount = documents.filter((document) => document.validation?.ready).length;
-  const exportCount = documents.filter((document) => document.includeInExport).length;
+  const readyCount = includedDocuments.filter((document) => document.validation?.ready).length;
+  const exportCount = includedDocuments.length;
   const hasOutputs = (outputs || []).some((output) => output.selectedGenerationId);
-  const workflowStep = !documents.length ? 0 : !documents.some((document) => document.updatedAt) ? 0 : documents.some((document) => !document.validation?.checkedAt) ? 1 : readyCount < documents.length ? 2 : 3;
+  const workflowStep = !includedDocuments.length
+    ? 0
+    : includedDocuments.some((document) => !document.validation?.checkedAt)
+      ? 1
+      : readyCount < includedDocuments.length
+        ? 2
+        : 3;
 
   async function loadWorkspace() {
     setStatus('loading');
@@ -390,7 +426,10 @@ export default function EcommerceDeliveryCenter({
       if (!nextDocuments.length) nextDocuments = await prepareWorkspace(false);
       else setDocuments(nextDocuments);
       setTemplates(templateResponse.ok && templatePayload?.ok ? templatePayload.templates || [] : []);
-      setSelectedDocumentId((current) => nextDocuments.some((item) => item.id === current) ? current : nextDocuments[0]?.id || '');
+      setSelectedDocumentId((current) => {
+        const available = nextDocuments.filter((document) => document.includeInExport);
+        return available.some((item) => item.id === current) ? current : available[0]?.id || '';
+      });
       setStatus('idle');
     } catch {
       setStatus('error');
@@ -422,7 +461,10 @@ export default function EcommerceDeliveryCenter({
     }
     const nextDocuments = payload.documents || [];
     setDocuments(nextDocuments);
-    setSelectedDocumentId((current) => nextDocuments.some((item) => item.id === current) ? current : nextDocuments[0]?.id || '');
+    setSelectedDocumentId((current) => {
+      const available = nextDocuments.filter((document) => document.includeInExport);
+      return available.some((item) => item.id === current) ? current : available[0]?.id || '';
+    });
     setDirty(false);
     setStatus('idle');
     if (showMessage) setMessage(t.prepareSuccess);
@@ -603,23 +645,60 @@ export default function EcommerceDeliveryCenter({
   }
 
   async function toggleInclude(documentId, includeInExport) {
-    const document = documents.find((item) => item.id === documentId);
-    if (!document) return;
-    const response = await fetch('/api/ecommerce/delivery-documents', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId: project.id, documentId, document: { ...document, includeInExport } })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (response.ok && payload?.ok) setDocuments((current) => current.map((item) => item.id === documentId ? payload.document : item));
+    await setDocumentsInclusion([documentId], includeInExport);
+  }
+
+  async function setDocumentsInclusion(documentIds, includeInExport, successMessage = '') {
+    const ids = [...new Set((documentIds || []).filter(Boolean))];
+    if (!ids.length || selectionBusy) return false;
+    if (dirty && selectedDocument && ids.includes(selectedDocument.id)) {
+      const saved = await saveDocument({ silent: true });
+      if (!saved) return false;
+    }
+    setSelectionBusy(true);
+    try {
+      const response = await fetch('/api/ecommerce/delivery-documents', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set-inclusion',
+          projectId: project.id,
+          documentIds: ids,
+          includeInExport
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) throw new Error(payload.error || 'SELECTION_FAILED');
+      const nextDocuments = payload.documents || [];
+      setDocuments(nextDocuments);
+      setSelectedDocumentId((current) => {
+        const available = nextDocuments.filter((document) => document.includeInExport);
+        return available.some((document) => document.id === current) ? current : available[0]?.id || '';
+      });
+      setDirty(false);
+      setStatus('idle');
+      setMessage(successMessage || (includeInExport ? t.restoredSuccess : t.removedSuccess));
+      return true;
+    } catch {
+      setStatus('error');
+      setMessage(t.actionFailed);
+      return false;
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
+
+  async function removeMissingDocuments() {
+    await setDocumentsInclusion(missingIncludedDocuments.map((document) => document.id), false, t.missingRemovedSuccess);
   }
 
   async function moveDocument(documentId, direction) {
-    const index = documents.findIndex((item) => item.id === documentId);
+    const index = includedDocuments.findIndex((item) => item.id === documentId);
     const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= documents.length) return;
-    const next = [...documents];
-    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    if (index < 0 || nextIndex < 0 || nextIndex >= includedDocuments.length) return;
+    const included = [...includedDocuments];
+    [included[index], included[nextIndex]] = [included[nextIndex], included[index]];
+    const next = [...included, ...removedDocuments];
     setDocuments(next.map((document, order) => ({ ...document, moduleOrder: order + 1 })));
     const response = await fetch('/api/ecommerce/delivery-documents', {
       method: 'PATCH',
@@ -710,7 +789,7 @@ export default function EcommerceDeliveryCenter({
       <header className="deliveryCenterHeader">
         <div>
           <span><PackageCheck size={17} /> {localized(platform, language)}</span>
-          <strong>{documents.length ? t.summaryReady(readyCount, documents.length) : t.summaryEmpty}</strong>
+          <strong>{includedDocuments.length ? t.summaryReady(readyCount, includedDocuments.length) : t.summaryEmpty}</strong>
         </div>
         <div className="deliveryWorkflow">
           {t.steps.map((label, index) => (
@@ -736,16 +815,43 @@ export default function EcommerceDeliveryCenter({
       {activeTab === 'editor' ? (
         <div className="deliveryEditorLayout">
           <aside className="deliverySlotRail">
-            {documents.map((document) => {
+            <header className="deliverySlotRailHeader">
+              <div><strong>{t.deliveryList}</strong><small>{t.deliveryListCount(includedDocuments.length)}</small></div>
+              {missingIncludedDocuments.length ? <button type="button" onClick={removeMissingDocuments} disabled={selectionBusy}><CircleMinus size={13} />{t.removeMissing}</button> : null}
+            </header>
+            <div className="deliverySlotItems">
+            {includedDocuments.map((document) => {
               const slot = slotById.get(document.slotId);
               const generation = generationById.get(document.sourceGenerationId);
               return (
-                <button className={document.id === selectedDocument?.id ? 'active' : ''} type="button" onClick={() => selectDocument(document.id)} key={document.id}>
-                  <span>{generation?.imageUrl ? <img src={generation.imageUrl} alt="" /> : <FileImage size={20} />}</span>
-                  <div><strong>{localized(slot, language)}</strong><small>{document.targetWidth} × {document.targetHeight}</small><DeliveryStatusBadge document={document} t={t} /></div>
-                </button>
+                <article className={`${document.id === selectedDocument?.id ? 'active' : ''} ${!document.sourceGenerationId ? 'missingSource' : ''}`} key={document.id}>
+                  <button className="deliverySlotSelect" type="button" onClick={() => selectDocument(document.id)}>
+                    <span>{generation?.imageUrl ? <img src={generation.imageUrl} alt="" /> : <FileImage size={20} />}</span>
+                    <div><strong>{localized(slot, language)}</strong><small>{document.targetWidth} × {document.targetHeight}</small><DeliveryStatusBadge document={document} t={t} /></div>
+                  </button>
+                  <button className="deliverySlotRemove" type="button" aria-label={`${t.removeFromDelivery}: ${localized(slot, language)}`} title={t.removeFromDelivery} onClick={() => setDocumentsInclusion([document.id], false)} disabled={selectionBusy}><CircleMinus size={14} /></button>
+                </article>
               );
             })}
+            </div>
+            {removedDocuments.length ? (
+              <details className="deliveryRemovedTray">
+                <summary><span>{t.removedItems(removedDocuments.length)}</span><small>{t.removedHint}</small></summary>
+                <div>
+                  {removedDocuments.map((document) => {
+                    const slot = slotById.get(document.slotId);
+                    const generation = generationById.get(document.sourceGenerationId);
+                    return (
+                      <article key={document.id}>
+                        <span>{generation?.imageUrl ? <img src={generation.imageUrl} alt="" /> : <FileImage size={17} />}</span>
+                        <div><strong>{localized(slot, language)}</strong><small>{document.sourceGenerationId ? t.removedHint : t.missingSource}</small></div>
+                        <button type="button" aria-label={`${t.restoreToDelivery}: ${localized(slot, language)}`} title={t.restoreToDelivery} onClick={() => setDocumentsInclusion([document.id], true)} disabled={selectionBusy}><RotateCcw size={13} /></button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
           </aside>
 
           {selectedDocument && selectedSlot ? (
@@ -815,7 +921,7 @@ export default function EcommerceDeliveryCenter({
                         <label><input type="checkbox" checked={selectedDocument.advanced?.showText !== false} onChange={(event) => updateAdvanced('showText', event.target.checked)} /><span>{t.showText}</span></label>
                         <label><input type="checkbox" checked={selectedDocument.safeArea} onChange={(event) => updateSelectedDocument({ safeArea: event.target.checked })} /><span>{t.safeArea}</span></label>
                         <label><input type="checkbox" checked={Boolean(selectedDocument.advanced?.showSafeArea)} onChange={(event) => updateAdvanced('showSafeArea', event.target.checked)} /><span>{t.showSafeArea}</span></label>
-                        <label><input type="checkbox" checked={selectedDocument.includeInExport} onChange={(event) => updateSelectedDocument({ includeInExport: event.target.checked })} /><span>{t.includeExport}</span></label>
+                        <label><input type="checkbox" checked={selectedDocument.includeInExport} onChange={(event) => setDocumentsInclusion([selectedDocument.id], event.target.checked)} disabled={selectionBusy} /><span>{t.includeExport}</span></label>
                       </div>
                     </div>
                   ) : null}
@@ -827,17 +933,17 @@ export default function EcommerceDeliveryCenter({
                 <section className="deliveryValidationPanel"><header><span>{t.platformRules}</span>{selectedDocument.validation?.score != null ? <strong>{selectedDocument.validation.score}/100</strong> : null}</header><ValidationPanel document={selectedDocument} language={language} t={t} /></section>
               </aside>
             </>
-          ) : <div className="deliveryLoading"><LoaderCircle className="spin" size={24} /></div>}
+          ) : <div className="deliveryNoIncluded"><CircleMinus size={28} /><strong>{t.noIncludedTitle}</strong><span>{t.noIncludedText}</span></div>}
         </div>
       ) : null}
 
       {activeTab === 'sequence' ? (
         <div className="deliverySequenceWorkspace">
-          <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div><div><button type="button" onClick={() => checkDocuments()} disabled={status === 'checking'}>{status === 'checking' ? <LoaderCircle className="spin" size={14} /> : <FileCheck2 size={14} />}{t.checkAll}</button><button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button></div></header>
-          <div className="deliverySequenceStats"><span><BadgeCheck size={15} /> {t.checkSummary(readyCount, documents.length)}</span><span><Layers3 size={15} /> {t.selectedCount(exportCount)}</span><label><input type="checkbox" checked={includeDetailPage} onChange={(event) => setIncludeDetailPage(event.target.checked)} />{t.includeDetailPage}</label></div>
+          <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div><div><button type="button" onClick={() => checkDocuments()} disabled={status === 'checking' || !exportCount}>{status === 'checking' ? <LoaderCircle className="spin" size={14} /> : <FileCheck2 size={14} />}{t.checkAll}</button><button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button></div></header>
+          <div className="deliverySequenceStats"><span><BadgeCheck size={15} /> {t.checkSummary(readyCount, includedDocuments.length)}</span><span><Layers3 size={15} /> {t.selectedCount(exportCount)}</span><label><input type="checkbox" checked={includeDetailPage} onChange={(event) => setIncludeDetailPage(event.target.checked)} />{t.includeDetailPage}</label></div>
           <div className="deliverySequenceGrid">
             <div className="deliverySequenceList">
-              {documents.map((document, index) => {
+              {includedDocuments.length ? includedDocuments.map((document, index) => {
                 const slot = slotById.get(document.slotId);
                 const generation = generationById.get(document.sourceGenerationId);
                 return (
@@ -845,12 +951,12 @@ export default function EcommerceDeliveryCenter({
                     <span>{generation?.imageUrl ? <img src={generation.imageUrl} alt="" /> : <FileImage size={21} />}</span>
                     <div><strong>{index + 1}. {localized(slot, language)}</strong><small>{localized(DELIVERY_TYPES.find((type) => type.id === document.documentType), language)} · {document.targetWidth}×{document.targetHeight}</small><DeliveryStatusBadge document={document} t={t} /></div>
                     <label><input type="checkbox" checked={document.includeInExport} onChange={(event) => toggleInclude(document.id, event.target.checked)} /><span>{t.includeExport}</span></label>
-                    <div className="deliveryOrderButtons"><button type="button" aria-label={t.moveUp} onClick={() => moveDocument(document.id, -1)} disabled={index === 0}><ArrowUp size={14} /></button><button type="button" aria-label={t.moveDown} onClick={() => moveDocument(document.id, 1)} disabled={index === documents.length - 1}><ArrowDown size={14} /></button></div>
+                    <div className="deliveryOrderButtons"><button type="button" aria-label={t.moveUp} onClick={() => moveDocument(document.id, -1)} disabled={index === 0}><ArrowUp size={14} /></button><button type="button" aria-label={t.moveDown} onClick={() => moveDocument(document.id, 1)} disabled={index === includedDocuments.length - 1}><ArrowDown size={14} /></button></div>
                   </article>
                 );
-              })}
+              }) : <div className="deliverySequenceEmpty"><CircleMinus size={24} /><strong>{t.noIncludedTitle}</strong><span>{t.noIncludedText}</span></div>}
             </div>
-            <div className="deliveryLongPreview">{documents.filter((document) => document.includeInExport).map((document) => { const generation = generationById.get(document.sourceGenerationId); return generation?.imageUrl ? <img src={generation.imageUrl} alt={document.slotId} key={document.id} /> : null; })}</div>
+            <div className="deliveryLongPreview">{includedDocuments.map((document) => { const generation = generationById.get(document.sourceGenerationId); return generation?.imageUrl ? <img src={generation.imageUrl} alt={document.slotId} key={document.id} /> : null; })}</div>
           </div>
         </div>
       ) : null}

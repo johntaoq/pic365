@@ -16,9 +16,8 @@ const SYSTEM_PROMPT = [
   'Do not invent exact dimensions, weight, materials, ingredients, accessories, certifications, compatibility, efficacy, awards, sales rankings, or legal claims.',
   'When product facts are unknown, write a useful verification checklist instead of guessing.',
   'Selling points must be plausible creative directions that the user can verify, not absolute or unsupported promises.',
-  'The prohibited-content field should prevent false claims, unauthorized marks, incorrect product structure, wrong colors, wrong quantities, and invented package contents.',
-  'Return JSON only with exactly these string keys: targetAudience, sellingPoints, specifications, prohibitedContent.',
-  'Use newline-separated items inside sellingPoints, specifications, and prohibitedContent.',
+  'Return JSON only with exactly these string keys: targetAudience, sellingPoints.',
+  'Use newline-separated items inside sellingPoints.',
   'Do not include markdown fences, headings, commentary, or additional keys.'
 ].join(' ');
 
@@ -73,9 +72,7 @@ function normalizeBrief(value) {
   if (!value || typeof value !== 'object') return null;
   const brief = {
     targetAudience: cleanText(value.targetAudience, 1000),
-    sellingPoints: normalizeList(value.sellingPoints, 8, 180),
-    specifications: normalizeList(value.specifications, 10, 220),
-    prohibitedContent: normalizeList(value.prohibitedContent, 10, 220)
+    sellingPoints: normalizeList(value.sellingPoints, 8, 180)
   };
   return Object.values(brief).every(Boolean) ? brief : null;
 }
@@ -89,16 +86,6 @@ function buildFallbackBrief({ language, industryName, productName, brandName }) 
         `清晰呈现${identity}的商品主体与系列识别`,
         '围绕真实可验证的结构、使用方式和产品价值组织画面',
         '保持颜色、比例、包装与配件展示一致，降低理解成本'
-      ].join('\n'),
-      specifications: [
-        '待按实物确认：尺寸、重量、材质、颜色及可选规格',
-        '待按包装确认：商品数量、配件、赠品及包装内含物',
-        '型号、参数、兼容信息和包装文字必须与真实商品一致'
-      ].join('\n'),
-      prohibitedContent: [
-        '不使用未经证实的功效、销量、排名、认证或绝对化承诺',
-        '不添加未提供的配件、赠品、规格、Logo 或第三方商标',
-        '不改变商品结构、颜色、数量、包装文字和实际比例'
       ].join('\n')
     };
   }
@@ -108,16 +95,6 @@ function buildFallbackBrief({ language, industryName, productName, brandName }) 
       `Present the product identity and ${identity} series clearly`,
       'Build visuals around real, verifiable structure, use, and product value',
       'Keep color, scale, packaging, and included-item presentation consistent'
-    ].join('\n'),
-    specifications: [
-      'Verify from the physical product: dimensions, weight, material, color, and available variants',
-      'Verify from the package: quantity, accessories, gifts, and all included items',
-      'Keep model numbers, parameters, compatibility, and package text factually accurate'
-    ].join('\n'),
-    prohibitedContent: [
-      'Do not add unsupported efficacy, rankings, certifications, sales claims, or absolute promises',
-      'Do not invent accessories, gifts, specifications, logos, or third-party trademarks',
-      'Do not alter product structure, color, quantity, packaging text, or real-world scale'
     ].join('\n')
   };
 }

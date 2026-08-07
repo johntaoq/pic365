@@ -181,6 +181,32 @@ export function updateEcommerceDeliveryValidation(userId, documentId, validation
   return result.changes ? getEcommerceDeliveryDocument(userId, documentId) : null;
 }
 
+export function setEcommerceDeliveryDocumentsInclusion(userId, projectId, documentIds, includeInExport) {
+  const requested = [...new Set((documentIds || []).map(String).filter(Boolean))];
+  if (!requested.length) return false;
+  const db = getDb();
+  const existing = db.prepare(`
+    SELECT id FROM ecommerce_delivery_documents
+    WHERE user_id = ? AND project_id = ?
+  `).all(userId, projectId).map((row) => row.id);
+  if (requested.some((id) => !existing.includes(id))) return false;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const update = db.prepare(`
+      UPDATE ecommerce_delivery_documents
+      SET include_in_export = ?, updated_at = ?
+      WHERE id = ? AND user_id = ? AND project_id = ?
+    `);
+    const timestamp = now();
+    requested.forEach((id) => update.run(includeInExport ? 1 : 0, timestamp, id, userId, projectId));
+    db.exec('COMMIT');
+    return true;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export function reorderEcommerceDeliveryDocuments(userId, projectId, documentIds) {
   const db = getDb();
   const current = db.prepare(`

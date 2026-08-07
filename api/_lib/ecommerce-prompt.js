@@ -76,10 +76,10 @@ export function buildEcommerceSlotPrompt({ project, platform, slot, assets, revi
     ['结构与比例', identitySpec.structure],
     ['颜色与材质', identitySpec.colorsMaterials],
     ['品牌与标识', identitySpec.brandMarks],
-    ['包装', identitySpec.packaging],
-    ['配件与包含物', identitySpec.includedItems],
-    ['必须保留', identitySpec.mustKeep],
-    ['必须避免', identitySpec.mustAvoid]
+    ['外包装与标签', identitySpec.packaging],
+    ['随附配件与数量', identitySpec.includedItems],
+    ['必须保留', identitySpec.mustKeep || project.specifications],
+    ['必须避免', identitySpec.mustAvoid || project.prohibitedContent]
   ].filter(([, value]) => String(value || '').trim()).map(([label, value]) => `- ${label}：${value}`).join('\n');
   const revisionSection = String(revisionRequest || '').trim()
     ? `\n本次修改要求\n- 在保持商品身份锁定不变的前提下，只执行以下调整：${String(revisionRequest).trim()}\n`
@@ -103,10 +103,8 @@ ${assetGuide}
 - 商品种类：${industry.nameZh}
 - 品类视觉重点：${industry.visualFocusZh}
 - 目标用户与场景：${project.targetAudience || '未填写；使用通用且可信的商品场景'}
-- 规格与包装清单：${project.specifications || '未填写；不得自行增加规格或配件'}
 - 核心卖点：
 ${sellingPoints}
-- 禁止出现或避免表达：${project.prohibitedContent || '无额外说明'}
 - 视觉方向：${visualStyle.nameZh}。${visualStyle.promptZh}
 
 商品身份锁定规范

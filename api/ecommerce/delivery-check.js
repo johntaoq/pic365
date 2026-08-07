@@ -71,7 +71,8 @@ export default async function handler(req, res) {
   const documentId = cleanText(body.documentId, 80);
   const candidates = documentId
     ? [getEcommerceDeliveryDocument(auth.user.id, documentId)].filter(Boolean)
-    : listEcommerceDeliveryDocuments(auth.user.id, project.id).filter((document) => project.selectedSlots.includes(document.slotId));
+    : listEcommerceDeliveryDocuments(auth.user.id, project.id)
+      .filter((document) => project.selectedSlots.includes(document.slotId) && document.includeInExport);
   if (!candidates.length || candidates.some((document) => document.projectId !== project.id)) {
     return json(res, 404, { ok: false, error: 'DELIVERY_DOCUMENT_NOT_FOUND' });
   }
@@ -82,7 +83,8 @@ export default async function handler(req, res) {
   }
   const outputs = listEcommerceProjectOutputs(auth.user.id, project.id);
   const outputsBySlot = new Map(outputs.map((output) => [output.slotId, output]));
-  const requiredSlots = platform.slots.filter((slot) => slot.required && project.selectedSlots.includes(slot.id));
+  const includedSlotIds = new Set(candidates.map((document) => document.slotId));
+  const requiredSlots = platform.slots.filter((slot) => slot.required && includedSlotIds.has(slot.id));
   const missingRequiredSlots = requiredSlots.filter((slot) => !outputsBySlot.get(slot.id)?.selectedGenerationId).map((slot) => slot.id);
   const failedDocuments = documents.filter((document) => document.validation?.failed > 0).length;
   const warningDocuments = documents.filter((document) => document.validation?.warnings > 0).length;
@@ -101,4 +103,3 @@ export default async function handler(req, res) {
     }
   });
 }
-

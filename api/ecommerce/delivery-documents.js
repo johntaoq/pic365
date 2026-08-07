@@ -5,6 +5,7 @@ import {
   getEcommerceDeliveryDocument,
   listEcommerceDeliveryDocuments,
   reorderEcommerceDeliveryDocuments,
+  setEcommerceDeliveryDocumentsInclusion,
   syncEcommerceDeliveryDocument,
   updateEcommerceDeliveryDocument
 } from '../_lib/ecommerce-delivery-db.js';
@@ -78,6 +79,18 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true, documents: documentsForProject(auth.user.id, project) });
   }
 
+  if (body.action === 'set-inclusion') {
+    if (!setEcommerceDeliveryDocumentsInclusion(
+      auth.user.id,
+      project.id,
+      Array.isArray(body.documentIds) ? body.documentIds : [],
+      body.includeInExport !== false
+    )) {
+      return json(res, 400, { ok: false, error: 'INVALID_DELIVERY_SELECTION' });
+    }
+    return json(res, 200, { ok: true, documents: documentsForProject(auth.user.id, project) });
+  }
+
   const documentId = cleanText(body.documentId, 80);
   const document = getEcommerceDeliveryDocument(auth.user.id, documentId);
   if (!document || document.projectId !== project.id || !project.selectedSlots.includes(document.slotId)) {
@@ -86,4 +99,3 @@ export default async function handler(req, res) {
   const updated = updateEcommerceDeliveryDocument(auth.user.id, document.id, body.document || {});
   return json(res, 200, { ok: true, document: updated });
 }
-
