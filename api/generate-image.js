@@ -1,159 +1,50 @@
 import {
-  getAuthContext,
-  getProfileById,
-  isSupabaseServerConfigured
-} from './_lib/supabase.js';
+  completeCreditReservation,
+  createGeneration,
+  getUserProfile,
+  releaseCreditReservation,
+  reserveCredit,
+  updateGeneration
+} from './_lib/local-db.js';
+import { authenticateRequest } from './_lib/local-auth.js';
+import { readJsonBody } from './_lib/request.js';
+import { generateImage as generateProviderImage, isContentModerationError, isProviderConfigured } from './_lib/provider.js';
+import { persistImage } from './_lib/storage.js';
 
 const MAX_PROMPT_LENGTH = 6000;
-const DEFAULT_CIYUAN_BASE_URL = 'https://ciyuan.today';
+const GUEST_GENERATION_COOKIE = 'gpt_image_guest_generation';
+const GUEST_GENERATION_MAX_AGE = 60 * 60 * 24 * 365;
 
 function json(res, status, payload) {
   res.status(status).json(payload);
 }
 
-function isServerConfigured() {
-  return Boolean(process.env.CIYUAN_API_KEY && isSupabaseServerConfigured());
+function readCookies(req) {
+  const header = req.headers?.cookie || req.headers?.Cookie || '';
+  return Object.fromEntries(
+    String(header)
+      .split(';')
+      .map((part) => part.trim().split('='))
+      .filter(([key, value]) => key && value)
+      .map(([key, ...value]) => [key, decodeURIComponent(value.join('='))])
+  );
 }
 
-async function readBody(req) {
-  if (Buffer.isBuffer(req.body)) return JSON.parse(req.body.toString('utf8') || '{}');
-  if (req.body && typeof req.body === 'object') return req.body;
-  if (typeof req.body === 'string') return JSON.parse(req.body || '{}');
-
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
+function hasUsedGuestGeneration(req) {
+  return readCookies(req)[GUEST_GENERATION_COOKIE] === '1';
 }
 
-function normalizeReservation(data) {
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row?.reservation_id) return null;
-  return {
-    reservationId: row.reservation_id,
-    usedFreeGeneration: Boolean(row.used_free_generation),
-    creditAmount: Number(row.credit_amount || 0),
-    freeGenerationsUsed: Number(row.free_generations_used || 0),
-    creditBalance: Number(row.credit_balance || 0)
-  };
+function markGuestGenerationUsed(req, res) {
+  const forwardedProto = String(req.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+  const secureFlag = forwardedProto === 'https' ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `${GUEST_GENERATION_COOKIE}=1; Path=/; Max-Age=${GUEST_GENERATION_MAX_AGE}; HttpOnly; SameSite=Lax${secureFlag}`
+  );
 }
 
-function profileFromReservation(profile, reservation) {
-  if (!profile || !reservation) return profile;
-  const usage = profile.usage || {};
-  return {
-    ...profile,
-    creditBalance: reservation.creditBalance,
-    freeGenerationsUsed: reservation.freeGenerationsUsed,
-    freeUsed: reservation.freeGenerationsUsed >= 1,
-    usage: {
-      ...usage,
-      totalGenerations: Number(usage.totalGenerations || 0) + 1,
-      totalGenerationCredits: Number(usage.totalGenerationCredits || 0) + Number(reservation.creditAmount || 0)
-    }
-  };
-}
-
-async function reserveGeneration(client, userId, caseId, prompt) {
-  const { data, error } = await client.rpc('reserve_generation_usage', {
-    p_user_id: userId,
-    p_case_id: caseId,
-    p_prompt: prompt,
-    p_force_credit: false
-  });
-
-  if (error) {
-    const normalizedMessage = String(error.message || error.details || '').toUpperCase();
-    if (normalizedMessage.includes('CREDITS_REQUIRED')) {
-      const limitError = new Error('CREDITS_REQUIRED');
-      limitError.code = 'CREDITS_REQUIRED';
-      throw limitError;
-    }
-    throw error;
-  }
-
-  const reservation = normalizeReservation(data);
-  if (!reservation) throw new Error('RESERVATION_FAILED');
-  return reservation;
-}
-
-async function reserveCreditGeneration(client, userId, caseId, prompt) {
-  const { data, error } = await client.rpc('reserve_generation_usage', {
-    p_user_id: userId,
-    p_case_id: caseId,
-    p_prompt: prompt,
-    p_force_credit: true
-  });
-
-  if (error) {
-    const normalizedMessage = String(error.message || error.details || '').toUpperCase();
-    if (normalizedMessage.includes('CREDITS_REQUIRED')) {
-      const limitError = new Error('CREDITS_REQUIRED');
-      limitError.code = 'CREDITS_REQUIRED';
-      throw limitError;
-    }
-    throw error;
-  }
-
-  const reservation = normalizeReservation(data);
-  if (!reservation) throw new Error('RESERVATION_FAILED');
-  return reservation;
-}
-
-async function completeReservation(client, reservationId) {
-  const { error } = await client.rpc('complete_generation_reservation', {
-    p_reservation_id: reservationId
-  });
-  if (error) throw error;
-}
-
-async function releaseReservation(client, reservationId, errorCode) {
-  if (!reservationId) return;
-  const { error } = await client.rpc('release_generation_reservation', {
-    p_reservation_id: reservationId,
-    p_error_code: errorCode || 'GENERATION_FAILED'
-  });
-  if (error) {
-    console.warn('Failed to release generation reservation', {
-      reservationId,
-      message: String(error?.message || 'unknown').slice(0, 240)
-    });
-  }
-}
-
-async function generateImage(prompt) {
-  const baseUrl = (process.env.CIYUAN_BASE_URL || DEFAULT_CIYUAN_BASE_URL).replace(/\/$/, '');
-  const response = await fetch(`${baseUrl}/v1/images/generations`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.CIYUAN_API_KEY}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'gpt-image-2',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'low',
-      format: 'jpeg'
-    })
-  });
-  const payload = await response.json().catch(() => ({}));
-  const b64 = payload?.data?.[0]?.b64_json;
-
-  if (!response.ok || !b64) {
-    const message = payload?.error?.message || payload?.message || `Image generation failed with status ${response.status}`;
-    const error = new Error(message);
-    error.status = response.status;
-    error.code = payload?.error?.code || payload?.code;
-    error.type = payload?.error?.type || payload?.type;
-    throw error;
-  }
-
-  return `data:image/jpeg;base64,${b64}`;
+function hasFullWorkspaceAccess(profile) {
+  return Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
 }
 
 export default async function handler(req, res) {
@@ -162,84 +53,140 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  if (!isServerConfigured()) {
-    return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
-  }
+  if (!isProviderConfigured()) return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
 
-  const auth = await getAuthContext(req, { allowAnonymous: req.method === 'GET' });
-  if (auth.error) {
-    return json(res, auth.status || 401, {
-      ok: false,
-      error: auth.error,
-      loginRequired: auth.error === 'AUTH_REQUIRED'
-    });
-  }
+  const auth = authenticateRequest(req, { allowAnonymous: true });
+  if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
 
   if (req.method === 'GET') {
     return json(res, 200, {
       ok: true,
-      authRequired: !auth.profile,
-      freeUsed: Boolean(auth.profile?.freeUsed),
+      authRequired: false,
+      guestAllowed: !hasUsedGuestGeneration(req),
+      guestFreeUsed: hasUsedGuestGeneration(req),
+      fullWorkspace: hasFullWorkspaceAccess(auth.profile),
       user: auth.profile || null
     });
   }
 
-  if (!auth.user || !auth.profile) {
-    return json(res, 401, { ok: false, error: 'AUTH_REQUIRED', loginRequired: true });
-  }
-
   let body;
   try {
-    body = await readBody(req);
+    body = await readJsonBody(req);
   } catch {
     return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
   }
 
   const prompt = String(body.prompt || '').trim();
-  const caseId = Number(body.caseId);
-  if (!prompt || prompt.length > MAX_PROMPT_LENGTH || !Number.isFinite(caseId)) {
-    return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
+  if (!prompt || prompt.length > MAX_PROMPT_LENGTH) return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
+
+  if (!auth.user || !auth.profile) {
+    if (hasUsedGuestGeneration(req)) {
+      return json(res, 402, { ok: false, error: 'GUEST_FREE_LIMIT_REACHED', guest: true, downloadAllowed: false });
+    }
+    try {
+      const providerResult = await generateProviderImage({ prompt, size: '1024x1024', quality: 'low' });
+      markGuestGenerationUsed(req, res);
+      return json(res, 200, {
+        ok: true,
+        guest: true,
+        generationId: null,
+        image: providerResult.image,
+        size: '1024x1024',
+        quality: 'low',
+        cloudSaved: false,
+        downloadAllowed: false
+      });
+    } catch (error) {
+      const moderationBlocked = isContentModerationError(error);
+      console.warn('Guest image generation failed', {
+        status: error?.status || null,
+        moderationBlocked,
+        message: String(error?.message || 'unknown').slice(0, 240)
+      });
+      return json(res, moderationBlocked ? 422 : error?.status === 429 ? 503 : 502, {
+        ok: false,
+        error: moderationBlocked ? 'CONTENT_MODERATION_BLOCKED' : error?.status === 429 ? 'UPSTREAM_BUSY' : 'GENERATION_FAILED',
+        guest: true,
+        downloadAllowed: false
+      });
+    }
   }
 
+  if (!hasFullWorkspaceAccess(auth.profile)) return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
+
+  const parsedCaseId = Number(body.caseId);
+  const caseId = Number.isFinite(parsedCaseId) ? parsedCaseId : null;
+  const size = ['1024x1024', '1024x1536', '1536x1024'].includes(body.size) ? body.size : '1024x1024';
+  const quality = body.quality === 'medium' ? 'medium' : 'low';
   let reservation;
   try {
-    reservation = auth.profile.isSuperAdmin
-      ? await reserveCreditGeneration(auth.client, auth.user.id, caseId, prompt)
-      : await reserveGeneration(auth.client, auth.user.id, caseId, prompt);
+    reservation = reserveCredit(auth.user.id, { caseId, prompt });
   } catch (error) {
-    if (error?.code === 'CREDITS_REQUIRED') {
-      return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
-    }
-    console.warn('Failed to reserve generation usage', {
+    if (error?.code === 'CREDITS_REQUIRED') return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
+    console.warn('Failed to reserve local credit', { userId: auth.user.id, message: String(error?.message || 'unknown').slice(0, 240) });
+    return json(res, 500, { ok: false, error: 'GENERATION_FAILED' });
+  }
+
+  let generationId;
+  try {
+    generationId = createGeneration({
       userId: auth.user.id,
-      message: String(error?.message || 'unknown').slice(0, 240)
+      reservationId: reservation.reservationId,
+      caseId,
+      prompt,
+      model: process.env.AI_IMAGE_MODEL || 'gpt-image-2',
+      size,
+      quality,
+      provider: process.env.AI_PROVIDER || 'unikeyx'
     });
+  } catch (error) {
+    releaseCreditReservation(reservation.reservationId, 'GENERATION_RECORD_FAILED');
+    console.warn('Failed to create local generation record', { userId: auth.user.id, message: String(error?.message || 'unknown').slice(0, 240) });
     return json(res, 500, { ok: false, error: 'GENERATION_FAILED' });
   }
 
   try {
-    const image = await generateImage(prompt);
-    await completeReservation(auth.client, reservation.reservationId);
+    const providerResult = await generateProviderImage({ prompt, size, quality });
+    const storedImage = await persistImage({ userId: auth.user.id, generationId, image: providerResult.image });
+    updateGeneration(generationId, {
+      status: 'succeeded',
+      provider_request_id: providerResult.providerRequestId,
+      storage_path: storedImage.storagePath,
+      output_url: storedImage.url,
+      completed_at: new Date().toISOString()
+    });
+    completeCreditReservation(reservation.reservationId);
     return json(res, 200, {
       ok: true,
-      image,
-      user: profileFromReservation(auth.profile, reservation)
+      generationId,
+      image: storedImage.url,
+      size,
+      quality,
+      cloudSaved: storedImage.backend === 'azure-blob',
+      storageBackend: storedImage.backend,
+      downloadAllowed: true,
+      user: getUserProfile(auth.user.id)
     });
   } catch (error) {
+    const moderationBlocked = isContentModerationError(error);
     console.warn('Image generation failed', {
       status: error?.status || null,
       code: error?.code || null,
-      type: error?.type || null,
+      moderationBlocked,
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-
-    const errorCode = error?.status === 429 ? 'UPSTREAM_BUSY' : 'GENERATION_FAILED';
-    await releaseReservation(auth.client, reservation.reservationId, errorCode);
-
-    const refreshedProfile = await getProfileById(auth.user.id).catch(() => null);
-    if (error?.status === 429) {
-      return json(res, 503, { ok: false, error: 'UPSTREAM_BUSY', user: refreshedProfile });
-    }
-    return json(res, 502, { ok: false, error: 'GENERATION_FAILED', user: refreshedProfile });
+    const errorCode = moderationBlocked ? 'CONTENT_MODERATION_BLOCKED' : error?.status === 429 ? 'UPSTREAM_BUSY' : 'GENERATION_FAILED';
+    updateGeneration(generationId, {
+      status: 'failed',
+      provider_request_id: error?.providerRequestId || null,
+      error_code: errorCode,
+      completed_at: new Date().toISOString()
+    });
+    releaseCreditReservation(reservation.reservationId, errorCode);
+    return json(res, moderationBlocked ? 422 : error?.status === 429 ? 503 : 502, {
+      ok: false,
+      error: errorCode,
+      user: getUserProfile(auth.user.id)
+    });
   }
 }

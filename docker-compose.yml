@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "5173:5173"
+    volumes:
+      - app-data:/app/data
+
+volumes:
+  app-data:

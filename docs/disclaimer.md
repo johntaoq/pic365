@@ -22,9 +22,3 @@
 ## Star 趋势图
 
 [![Star History Chart](https://api.star-history.com/svg?repos=freestylefly/awesome-gpt-image-2&type=Date)](https://star-history.com/#freestylefly/awesome-gpt-image-2&Date)
-
-## 公众号与交流群
-
-微信搜 **苍何** 或扫描下方二维码关注苍何公众号。加入 GPT-Image2 交流群，请关注后回复：**gpt-image-2交流群**。
-
-![苍何微信交流群二维码](../data/images/wechat-community.jpg)

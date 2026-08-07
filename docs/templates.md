@@ -1,4 +1,4 @@
-> [返回 README 首页](../README.md) | [完整画廊总览](./gallery.md) | [声明与公众号](./disclaimer.md)
+> [返回 README 首页](../README.md) | [完整画廊总览](./gallery.md) | [项目声明](./disclaimer.md)
 
 <a name="section-templates"></a>
 

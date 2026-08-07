@@ -15,12 +15,6 @@ function json(res, status, payload) {
   res.status(status).json(payload);
 }
 
-function normalizeProductType(value) {
-  if (value === 'membership' || value === 'credit_pack') return value;
-  if (value === 'creditPack') return 'credit_pack';
-  return '';
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -51,15 +45,15 @@ export default async function handler(req, res) {
     return json(res, 400, { ok: false, error: 'INVALID_BILLING_PRODUCT' });
   }
 
-  const productType = normalizeProductType(body.productType || body.type);
-  const productId = String(body.productId || body.planId || '').trim();
-  if (!productType || !productId) {
+  const productType = 'credit_pack';
+  const productId = String(body.productId || '').trim();
+  if (!productId) {
     return json(res, 400, { ok: false, error: 'INVALID_BILLING_PRODUCT' });
   }
 
   try {
     const stripe = getStripeClient();
-    const product = await getBillingProduct(auth.client, productType, productId);
+    const product = await getBillingProduct(auth.client, productId);
     if (!product) {
       return json(res, 404, { ok: false, error: 'BILLING_PRODUCT_NOT_FOUND' });
     }
@@ -85,7 +79,7 @@ export default async function handler(req, res) {
     };
 
     const sessionPayload = {
-      mode: productType === 'membership' ? 'subscription' : 'payment',
+      mode: 'payment',
       customer: customerId,
       client_reference_id: auth.user.id,
       line_items: [checkoutLineItem(product)],
@@ -95,11 +89,7 @@ export default async function handler(req, res) {
       metadata
     };
 
-    if (productType === 'membership') {
-      sessionPayload.subscription_data = { metadata };
-    } else {
-      sessionPayload.payment_intent_data = { metadata };
-    }
+    sessionPayload.payment_intent_data = { metadata };
 
     const session = await stripe.checkout.sessions.create(sessionPayload);
     const updatedOrder = await markOrderCheckoutCreated(auth.client, order.id, session);

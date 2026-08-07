@@ -26,17 +26,9 @@
   </a>
 </p>
 
-## WeChat 公式アカウント
-
-WeChat で **苍何(Canghe)** を検索するか、下の QR カードをスキャンしてください。GPT-Image2 コミュニティグループに参加するには、公式アカウントをフォローしたうえで中国語で **gpt-image-2交流群**(GPT-Image-2 交流グループ)と返信してください。
-
-<p align="center">
-  <img src="data/images/wechat-community.jpg" alt="苍何 WeChat コミュニティ QR カード" width="760">
-</p>
-
 ## ❤️ スポンサー
 
-> [ここに掲載したい方へ](data/images/sponsors/wechat-personal.jpg) GitHub Sponsors でプロジェクトを支援するか、上記の WeChat 公式アカウントをフォローして、製品名と短いスポンサー説明を送ってください。
+> [ここに掲載したい方へ](data/images/sponsors/wechat-personal.jpg) GitHub Sponsors でプロジェクトを支援し、製品名と短いスポンサー説明を送ってください。
 
 | スポンサー | 説明 |
 | ---------- | ---- |
@@ -326,7 +318,7 @@ GOOGLE_ANALYTICS_REFRESH_TOKEN=
 セットアップチェックリスト：
 
 - [`supabase/migrations/202605090001_user_credits.sql`](supabase/migrations/202605090001_user_credits.sql) を Supabase プロジェクトへ適用します。
-- [`supabase/migrations/20260509090000_membership_billing.sql`](supabase/migrations/20260509090000_membership_billing.sql) を適用し、メンバーシッププラン、クレジットパック、Stripe 注文レコード、クレジット調整 RPC を追加します。
+- [`supabase/migrations/20260509090000_membership_billing.sql`](supabase/migrations/20260509090000_membership_billing.sql) を適用し、クレジットパック、Stripe 注文レコード、クレジット調整 RPC を追加します。
 - [`supabase/migrations/20260512090000_google_account_center.sql`](supabase/migrations/20260512090000_google_account_center.sql) を適用し、アカウント利用サマリーとスーパー管理者向けの強制クレジット課金を追加します。
 - [`supabase/migrations/20260512143000_pricing_admin_metrics.sql`](supabase/migrations/20260512143000_pricing_admin_metrics.sql) を適用し、`$5 / 300 credits` のカタログを更新して管理ダッシュボード指標を追加します。
 - [`supabase/migrations/20260515090000_case_favorites.sql`](supabase/migrations/20260515090000_case_favorites.sql) を適用し、ユーザーごとのケースお気に入り機能を追加します。
@@ -335,7 +327,7 @@ GOOGLE_ANALYTICS_REFRESH_TOKEN=
 - Google ログインのみに制限したい場合は、Supabase Auth settings で Email Provider を無効化します。
 - `SUPABASE_SERVICE_ROLE_KEY` は Vercel Environment Variables などのサーバーサイド環境にのみ保存してください。
 - Stripe Checkout の Webhook URL に `https://gpt-image2.canghe.ai/api/billing/webhook` を設定します。
-- Stripe Webhook で `checkout.session.completed`、`invoice.payment_succeeded`、`customer.subscription.updated`、`customer.subscription.deleted` を購読します。
+- Stripe Webhook では `checkout.session.completed` のみを購読します。
 - `STRIPE_SECRET_KEY` と `STRIPE_WEBHOOK_SECRET` は、サーバーサイドの Vercel Environment Variables にのみ保存してください。
 - `gpt-image2.canghe.ai` 用の GA4 property を作成し、Measurement ID を `VITE_GA_MEASUREMENT_ID` に、数値の property ID を `GA4_PROPERTY_ID` に設定します。
 - Google OAuth Web Client を作成し、Authorized redirect URI に `http://localhost:8080/oauth2callback` を設定したうえで、`GOOGLE_ANALYTICS_CLIENT_ID` と `GOOGLE_ANALYTICS_CLIENT_SECRET` をローカルの `.env.local` に追加します。

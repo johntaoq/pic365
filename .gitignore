@@ -6,3 +6,10 @@ dist/
 .env*.local
 npm-debug.log*
 .vercel
+data/app.sqlite
+data/app.sqlite-shm
+data/app.sqlite-wal
+data/generated/
+data/azurite/
+data/backups/
+.env.production

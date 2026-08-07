@@ -1,17 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { buildSafePromptFallback } from '../shared/prompt-safety.js';
 import {
   ArrowUpRight,
   BarChart3,
-  Bot,
   ChevronDown,
   Check,
   Coins,
   Copy,
   CreditCard,
-  Crown,
   Eye,
-  Github,
   Heart,
   ImageIcon,
   LoaderCircle,
@@ -24,7 +22,6 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Terminal,
   TrendingUp,
   UserCircle,
   UserPlus,
@@ -33,13 +30,9 @@ import {
   X
 } from 'lucide-react';
 import './styles.css';
-import { isSupabaseConfigured, supabase } from './supabaseClient';
-import wechatCommunityImage from './assets/wechat-community.jpg';
-import skillExampleImage from '../agents/skills/gpt-image-2-style-library/assets/city-life-system-map.png';
+import { authClient } from './authClient';
+import CreateWorkspace from './create-workspace';
 
-const fallbackRepoUrl = 'https://github.com/freestylefly/awesome-gpt-image-2';
-const sponsorUrl = 'https://apimart.ai/register?aff=oQgzUQ';
-const membershipUrl = 'https://canghe.ai/membership/';
 const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID;
 const watchaLogoUrl =
   'https://watcha.tos-cn-beijing.volces.com/products/logo/1752064513_guan-cha-insights.png?x-tos-process=image/resize,w_720/format,webp';
@@ -48,21 +41,14 @@ const copy = {
   en: {
     loading: 'Loading GPT-Image2 cases...',
     brand: 'GPT-Image2 Gallery',
-    navCases: 'Cases',
-    navSkill: 'Skill',
-    navTemplates: 'Templates',
-    navCommunity: 'Community',
-    navSponsor: 'API',
-    navMembership: 'Membership',
-    communityQrAlt: 'WeChat community invite card for GPT-Image2',
+    navCreate: 'Create Canvas',
+    navTemplates: 'Industry Templates',
+    navCases: 'Showcase',
     eyebrow: 'Live GPT-Image2 prompt gallery',
     title: 'From viral images to reusable prompts.',
     subtitle:
-      'A visual workspace for GPT-Image2 creation: browse real cases, copy prompts, test image generation, explore industrial templates, and join the creator community.',
+      'A visual workspace for GPT-Image2 creation: browse real cases, copy prompts, test image generation, and explore industrial templates.',
     explore: 'Explore cases',
-    githubProject: 'GitHub project',
-    sponsorProject: 'API',
-    sponsorProjectLabel: 'Open APIMart API',
     cases: 'cases',
     categories: 'categories',
     templates: 'templates',
@@ -73,28 +59,12 @@ const copy = {
     templateSubtitle:
       'Each template is distilled from real GPT-Image2 examples and includes structure, constraints, and pitfalls for production use.',
     templateKind: 'Prompt Template',
-    openTemplate: 'Open Template',
-    skillEyebrow: 'Agent skill',
-    skillTitle: 'Bring the GPT-Image2 style library into Claude Code and Codex.',
-    skillSubtitle:
-      'Install one skill, then let your agent choose templates, visual styles, scene tags, and pitfalls from the same library behind this site.',
-    skillCommandLabel: 'Install for local agents',
-    skillPromptLabel: 'Try this request',
-    skillPrompt: 'Use gpt-image-2-style-library to create a city life system map.',
-    skillCopyCommand: 'Copy command',
-    skillOpenDocs: 'Open skill source',
-    skillNpm: 'View npm package',
-    skillCopied: 'Command copied',
-    skillExampleAlt: 'City life system map generated with the GPT-Image2 style library skill',
-    skillExampleCaption: 'Example output generated from the style-library skill.',
-    skillStats: ['Claude Code ready', 'Codex ready', '20+ templates'],
     search: 'Search cases, sources, prompts...',
     category: 'Category',
     style: 'Style',
     scene: 'Scene',
     all: 'All',
     matching: 'matching cases',
-    openGithub: 'Open GitHub project',
     copied: 'Copied',
     copyPrompt: 'Copy Prompt',
     copyTemplatePrompt: 'Copy Template',
@@ -117,11 +87,19 @@ const copy = {
     originalImage: 'Original Image',
     savedInBrowser: 'Saved in this browser',
     resetPrompt: 'Reset Prompt',
+    sanitizePrompt: 'Safety rewrite',
+    sanitizingPrompt: 'Rewriting safely...',
+    sanitizeDone: 'Prompt rewritten for policy compliance.',
+    sanitizeBlocked: 'A safe rewrite template was applied.',
+    sanitizeFailed: 'A local safe rewrite template was applied.',
+    contentModerationBlocked: 'Content review blocked this prompt.',
+    sanitizeNoChange: 'The prompt did not change.',
     oneFreeGeneration: '1 free test image',
     superAdminGeneration: 'Super admin mode: every generation costs 1 credit.',
     generationCost: 'Costs 1 credit',
-    freeLimitReached: 'Free generation used. Buy credits or start a membership to keep generating.',
-    creditsRequired: 'Credits required. Buy credits or start a membership to keep generating.',
+    freeLimitReached: 'Free generation used. Buy credits to keep generating.',
+    creditsRequired: 'Credits required. Buy credits to keep generating.',
+    guestFreeLimitReached: 'Your free guest image has been used. Sign in with credits to continue.',
     generationBusy: 'The image service is busy. Please try again in a moment.',
     generationFailed: 'Generation failed. Please try again later.',
     promptRequired: 'Prompt is required and must stay under 6000 characters.',
@@ -133,7 +111,19 @@ const copy = {
     authRequired: 'Sign in to generate a test image.',
     signIn: 'Sign in',
     signInTitle: 'Sign in to generate test images',
-    signInSubtitle: 'Use Google or Watcha to unlock image generation, credits, and membership features.',
+    signInSubtitle: 'Create an account or sign in to unlock image generation and credit features.',
+    authLoginMode: 'Sign in',
+    authRegisterMode: 'Create account',
+    authEmail: 'Email',
+    authPassword: 'Password',
+    authName: 'Display name',
+    authSubmitLogin: 'Sign in',
+    authSubmitRegister: 'Create account',
+    authPasswordHint: 'Use at least 8 characters.',
+    authInvalidCredentials: 'Email or password is incorrect.',
+    authEmailRegistered: 'This email is already registered.',
+    authInvalidEmail: 'Enter a valid email address.',
+    authInvalidPassword: 'Password must be at least 8 characters.',
     authRateLimited: 'Too many login attempts. Please wait a bit, then try again.',
     googleNotConfigured: 'Google sign-in is not enabled yet.',
     continueWithGoogle: 'Continue with Google',
@@ -148,7 +138,7 @@ const copy = {
     account: 'Account',
     accountSettings: 'Account settings',
     accountTitle: 'Account settings',
-    accountSubtitle: 'Manage your public display name, membership status, and GPT-Image2 credit usage.',
+    accountSubtitle: 'Manage your public display name and GPT-Image2 credit usage.',
     displayName: 'Display name',
     saveProfile: 'Save profile',
     profileSaved: 'Profile saved.',
@@ -162,26 +152,19 @@ const copy = {
     sourceCase: 'Source case',
     noGenerationTransactions: 'No generation spending yet.',
     adminPanel: 'Admin',
-    membershipCenter: 'Membership & Credits',
+    creditCenter: 'Credit center',
     superAdmin: 'Super admin',
     credits: 'credits',
     buyCredits: 'Buy credits',
-    subscribe: 'Subscribe',
-    manageSubscription: 'Manage subscription',
-    currentPlan: 'Current plan',
-    noPlan: 'Free plan',
-    activeUntil: 'Active until',
-    membershipPlans: 'Membership',
     creditPacks: 'Credit packs',
-    monthlyCredits: (count) => `${count} credits / month`,
     packCredits: (count) => `${count} credits`,
-    billingTitle: 'Membership & credits',
-    billingSubtitle: 'Members get monthly credits. Credit packs can be added anytime for more GPT-Image2 tests.',
+    billingTitle: 'Credit packs',
+    billingSubtitle: 'Buy credits anytime to run more GPT-Image2 tests.',
     balanceTitle: 'Current balance',
     transactionHistory: 'Credit history',
     noTransactions: 'No credit history yet.',
     loadBilling: 'Loading billing...',
-    openBilling: 'Open membership center',
+    openBilling: 'Open credit center',
     paymentReady: 'Secure checkout via Stripe.',
     billingNotReady: 'Stripe checkout is not configured yet.',
     adminAdjust: 'Adjust credits',
@@ -193,7 +176,7 @@ const copy = {
     signInToGenerate: 'Sign in to generate',
     creditsAvailable: (count) => `${count} credit${count === 1 ? '' : 's'} available`,
     adminTitle: 'User admin',
-    adminSubtitle: 'Traffic, users, memberships, credits, and generation activity in one dashboard.',
+    adminSubtitle: 'Traffic, users, credits, and generation activity in one dashboard.',
     adminMetrics: 'Dashboard',
     trafficMetrics: 'Traffic',
     businessMetrics: 'Business',
@@ -216,8 +199,6 @@ const copy = {
     newUsers: 'New users',
     registeredUsers: 'Registered users',
     newRegistrations: 'New registrations',
-    newMembers: 'New members',
-    activeMemberships: 'Active members',
     totalGenerationsMetric: 'Total generations',
     rangeGenerations: 'Range generations',
     succeeded: 'Succeeded',
@@ -226,7 +207,6 @@ const copy = {
     creditsConsumed: 'Credits consumed',
     creditsInCirculation: 'Credits in balances',
     purchasedCredits: 'Purchased credits',
-    membershipCredits: 'Membership credits',
     dailyTraffic: 'Daily traffic',
     trafficTrend: 'Traffic trend',
     businessTrend: 'Business trend',
@@ -255,27 +235,19 @@ const copy = {
     pitfalls: 'Pitfalls',
     examples: 'Example Cases',
     source: 'Source',
-    openOnGithub: 'Open on GitHub',
     limit: (count) => `Showing the first ${count} results for speed. Use search or filters to narrow the gallery.`
   },
   zh: {
     loading: '正在加载 GPT-Image2 案例...',
     brand: 'GPT-Image2 画廊',
-    navCases: '案例',
-    navSkill: '技能',
-    navTemplates: '模板',
-    navCommunity: '交流群',
-    navSponsor: 'API',
-    navMembership: '会员',
-    communityQrAlt: 'GPT-Image2 微信交流群邀请卡',
+    navCreate: '创作画板',
+    navTemplates: '行业模板',
+    navCases: '范例美图',
     eyebrow: '实时更新的 GPT-Image2 提示词画廊',
     title: '从爆款图片，到可复用 Prompt。',
     subtitle:
-      '一个面向 GPT-Image2 创作的可视化工作台：浏览真实案例、复制 Prompt、在线测试生图、查看工业级模板，并加入创作者交流群。',
+      '一个面向 GPT-Image2 创作的可视化工作台：浏览真实案例、复制 Prompt、在线测试生图、查看工业级模板。',
     explore: '浏览案例',
-    githubProject: 'GitHub 项目',
-    sponsorProject: 'API',
-    sponsorProjectLabel: '打开 APIMart API',
     cases: '个案例',
     categories: '个分类',
     templates: '套模板',
@@ -286,28 +258,12 @@ const copy = {
     templateSubtitle:
       '每套模板都从真实 GPT-Image2 案例里提炼，包含结构、约束和防坑经验，适合生产流程直接复用。',
     templateKind: '提示词模板',
-    openTemplate: '打开模板',
-    skillEyebrow: 'Agent Skill',
-    skillTitle: '把 GPT-Image2 风格库装进 Claude Code 和 Codex。',
-    skillSubtitle:
-      '安装一个 skill，让 Agent 从本站同源的模板、风格、场景和防坑规则里自动选型，直接输出可复制的 GPT Image 2 prompt。',
-    skillCommandLabel: '安装到本地 Agent',
-    skillPromptLabel: '试试这个请求',
-    skillPrompt: '用 gpt-image-2-style-library 技能生成城市生命系统图谱',
-    skillCopyCommand: '复制命令',
-    skillOpenDocs: '打开 skill 源码',
-    skillNpm: '查看 npm 包',
-    skillCopied: '命令已复制',
-    skillExampleAlt: '使用 GPT-Image2 风格库 skill 生成的城市生命系统图谱',
-    skillExampleCaption: '示例：用 gpt-image-2-style-library 生成“城市生命系统图谱”。',
-    skillStats: ['Claude Code 可用', 'Codex 可用', '20+ 套模板'],
     search: '搜索案例、来源、Prompt...',
     category: '分类',
     style: '风格',
     scene: '场景',
     all: '全部',
     matching: '个匹配案例',
-    openGithub: '打开 GitHub 项目',
     copied: '已复制',
     copyPrompt: '复制 Prompt',
     copyTemplatePrompt: '复制模板',
@@ -330,11 +286,19 @@ const copy = {
     originalImage: '原图',
     savedInBrowser: '已保存到本浏览器',
     resetPrompt: '重置 Prompt',
+    sanitizePrompt: '脱敏',
+    sanitizingPrompt: '正在合规改写...',
+    sanitizeDone: '已完成合规改写。',
+    sanitizeBlocked: '已使用安全模板完成改写。',
+    sanitizeFailed: '已使用本地安全模板完成改写。',
+    contentModerationBlocked: '内容审核未通过。',
+    sanitizeNoChange: '提示词未发生变化。',
     oneFreeGeneration: '免费生成 1 张测试图',
     superAdminGeneration: '超级管理员模式：每次生图消耗 1 积分。',
     generationCost: '本次消耗 1 积分',
-    freeLimitReached: '免费额度已用完，可购买积分包或开通会员继续生成。',
-    creditsRequired: '积分不足，可购买积分包或开通会员继续生成。',
+    freeLimitReached: '免费额度已用完，可购买积分继续生成。',
+    creditsRequired: '积分不足，可购买积分继续生成。',
+    guestFreeLimitReached: '游客免费图片已用完，请登录并获得积分后继续使用。',
     generationBusy: '生图服务繁忙，请稍后再试。',
     generationFailed: '生成失败，请稍后再试。',
     promptRequired: 'Prompt 不能为空，并且不能超过 6000 字符。',
@@ -342,11 +306,23 @@ const copy = {
     checkoutUnavailable: '支付功能还没有完成配置。',
     checkoutFailed: '创建支付失败，请稍后再试。',
     billingSuccess: '支付正在处理中，Stripe 确认后积分会自动到账。',
-    billingCancelled: '已取消支付，你可以随时换一个积分包或会员方案。',
+    billingCancelled: '已取消支付，你可以随时购买积分包。',
     authRequired: '登录后即可生成测试图。',
     signIn: '登录',
     signInTitle: '登录后生成测试图',
-    signInSubtitle: '使用 Google 或观猹登录，解锁生图测试、积分和会员能力。',
+    signInSubtitle: '注册或登录账户，解锁生图测试和积分能力。',
+    authLoginMode: '登录',
+    authRegisterMode: '注册账户',
+    authEmail: '邮箱',
+    authPassword: '密码',
+    authName: '显示名称',
+    authSubmitLogin: '登录',
+    authSubmitRegister: '创建账户',
+    authPasswordHint: '密码至少需要 8 个字符。',
+    authInvalidCredentials: '邮箱或密码不正确。',
+    authEmailRegistered: '该邮箱已经注册。',
+    authInvalidEmail: '请输入有效邮箱地址。',
+    authInvalidPassword: '密码至少需要 8 个字符。',
     authRateLimited: '登录尝试过于频繁，请稍后再试。',
     googleNotConfigured: 'Google 登录还没有启用。',
     continueWithGoogle: '使用 Google 登录',
@@ -361,7 +337,7 @@ const copy = {
     account: '账号',
     accountSettings: '账户设置',
     accountTitle: '账户设置',
-    accountSubtitle: '管理你的显示名称、会员状态和 GPT-Image2 积分消耗。',
+    accountSubtitle: '管理你的显示名称和 GPT-Image2 积分消耗。',
     displayName: '显示名称',
     saveProfile: '保存资料',
     profileSaved: '资料已保存。',
@@ -375,26 +351,19 @@ const copy = {
     sourceCase: '关联案例',
     noGenerationTransactions: '暂无生图消耗记录。',
     adminPanel: '管理后台',
-    membershipCenter: '会员与积分',
+    creditCenter: '积分中心',
     superAdmin: '超级管理员',
     credits: '积分',
     buyCredits: '购买积分',
-    subscribe: '开通会员',
-    manageSubscription: '管理订阅',
-    currentPlan: '当前会员',
-    noPlan: '免费用户',
-    activeUntil: '有效期至',
-    membershipPlans: '会员套餐',
     creditPacks: '积分包',
-    monthlyCredits: (count) => `每月 ${count} 积分`,
     packCredits: (count) => `${count} 积分`,
-    billingTitle: '会员与积分',
-    billingSubtitle: '会员每月自动获得积分，也可以随时购买积分包，用来测试更多 GPT-Image2 案例。',
+    billingTitle: '积分包',
+    billingSubtitle: '随时购买积分，继续测试更多 GPT-Image2 案例。',
     balanceTitle: '当前余额',
     transactionHistory: '积分流水',
     noTransactions: '暂无积分流水。',
-    loadBilling: '正在加载会员与积分...',
-    openBilling: '打开会员中心',
+    loadBilling: '正在加载积分中心...',
+    openBilling: '打开积分中心',
     paymentReady: '使用 Stripe 安全支付。',
     billingNotReady: 'Stripe 支付还没有完成配置。',
     adminAdjust: '调整积分',
@@ -406,7 +375,7 @@ const copy = {
     signInToGenerate: '登录后生成',
     creditsAvailable: (count) => `可用积分 ${count}`,
     adminTitle: '用户管理',
-    adminSubtitle: '统一查看流量、用户、会员、积分和生图活跃情况。',
+    adminSubtitle: '统一查看流量、用户、积分和生图活跃情况。',
     adminMetrics: '数据看板',
     trafficMetrics: '流量数据',
     businessMetrics: '业务数据',
@@ -429,8 +398,6 @@ const copy = {
     newUsers: '新访客',
     registeredUsers: '注册用户',
     newRegistrations: '新增注册',
-    newMembers: '新增会员',
-    activeMemberships: '活跃会员',
     totalGenerationsMetric: '总生图量',
     rangeGenerations: '区间生图量',
     succeeded: '成功',
@@ -439,7 +406,6 @@ const copy = {
     creditsConsumed: '已消耗积分',
     creditsInCirculation: '账户积分余额',
     purchasedCredits: '购买积分',
-    membershipCredits: '会员发放积分',
     dailyTraffic: '每日流量',
     trafficTrend: '流量趋势',
     businessTrend: '业务趋势',
@@ -468,7 +434,6 @@ const copy = {
     pitfalls: '防坑指南',
     examples: '关联案例',
     source: '来源',
-    openOnGithub: '在 GitHub 打开',
     limit: (count) => `为了保证浏览速度，当前展示前 ${count} 条结果。可以用搜索或筛选缩小范围。`
   }
 };
@@ -543,6 +508,23 @@ const HERO_CASE_COUNT = 5;
 const HOT_STRIP_CASE_COUNT = 8;
 let bodyScrollLockCount = 0;
 let bodyScrollLockState = null;
+
+const PAGE_HASHES = {
+  cases: 'gallery',
+  templates: 'templates',
+  create: 'create'
+};
+
+function pageFromHash(hash = '') {
+  const value = String(hash || '').replace(/^#/, '');
+  if (value === PAGE_HASHES.templates) return 'templates';
+  if (value === PAGE_HASHES.cases) return 'cases';
+  return 'create';
+}
+
+function hashForPage(page) {
+  return PAGE_HASHES[page] || PAGE_HASHES.cases;
+}
 
 function pagePathWithHash() {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -798,18 +780,24 @@ function generationErrorMessage(error, language) {
   const t = copy[language];
   if (error === 'FREE_LIMIT_REACHED') return t.freeLimitReached;
   if (error === 'CREDITS_REQUIRED') return t.creditsRequired;
+  if (error === 'GUEST_FREE_LIMIT_REACHED') return t.guestFreeLimitReached;
   if (error === 'AUTH_REQUIRED') return t.authRequired;
   if (error === 'FORBIDDEN') return t.adminOnly;
   if (error === 'UPSTREAM_BUSY') return t.generationBusy;
   if (error === 'SERVER_NOT_CONFIGURED') return t.serverUnavailable;
   if (error === 'BILLING_NOT_CONFIGURED') return t.checkoutUnavailable;
-  if (error === 'CHECKOUT_FAILED' || error === 'BILLING_PORTAL_FAILED') return t.checkoutFailed;
+  if (error === 'CHECKOUT_FAILED') return t.checkoutFailed;
   if (error === 'INVALID_PROMPT') return t.promptRequired;
+  if (error === 'CONTENT_MODERATION_BLOCKED') return t.contentModerationBlocked;
   return t.generationFailed;
 }
 
 function getAuthHeaders(session) {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+}
+
+function isAuthenticatedSession(session) {
+  return Boolean(session?.user || session?.access_token);
 }
 
 function getGenerationQuotaText(profile, language) {
@@ -818,7 +806,6 @@ function getGenerationQuotaText(profile, language) {
   if (profile.isSuperAdmin) {
     return profile.creditBalance > 0 ? `${t.superAdminGeneration} ${t.creditsAvailable(profile.creditBalance)}` : t.creditsRequired;
   }
-  if (!profile.freeUsed) return t.oneFreeGeneration;
   if (profile.creditBalance > 0) return t.creditsAvailable(profile.creditBalance);
   return t.creditsRequired;
 }
@@ -828,20 +815,10 @@ function productText(value, language) {
   return value[language] || value.en || value.zh || '';
 }
 
-function formatMembershipStatus(membership, language) {
-  const t = copy[language];
-  if (!membership?.isActive) return t.noPlan;
-  const status = membership.status === 'trialing' ? 'trialing' : 'active';
-  if (!membership.currentPeriodEnd) return status;
-  const date = new Date(membership.currentPeriodEnd).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US');
-  return `${status} · ${t.activeUntil} ${date}`;
-}
-
 function transactionLabel(transaction, language) {
   const typeMap = {
     grant: language === 'zh' ? '赠送' : 'Grant',
     purchase: language === 'zh' ? '购买' : 'Purchase',
-    membership_grant: language === 'zh' ? '会员发放' : 'Membership grant',
     generation: language === 'zh' ? '生图消耗' : 'Generation',
     refund: language === 'zh' ? '失败返还' : 'Refund',
     adjustment: language === 'zh' ? '管理员调整' : 'Admin adjustment'
@@ -950,7 +927,7 @@ function formatTemplatePrompt(item, language, styleLibrary) {
   ].join('\n');
 }
 
-function Hero({ latestCases, language, repoUrl, totalCases, categoryCount, onOpenCase }) {
+function Hero({ latestCases, language, totalCases, categoryCount, onOpenCase, onExplore }) {
   const t = copy[language];
 
   return (
@@ -966,23 +943,16 @@ function Hero({ latestCases, language, repoUrl, totalCases, categoryCount, onOpe
         <h1>{t.title}</h1>
         <p>{t.subtitle}</p>
         <div className="heroActions">
-          <a className="primaryAction" href="#gallery">
+          <a
+            className="primaryAction"
+            href="#gallery"
+            onClick={(event) => {
+              event.preventDefault();
+              onExplore();
+            }}
+          >
             {t.explore}
             <ArrowUpRight size={18} />
-          </a>
-          <a className="secondaryAction" href={repoUrl} target="_blank" rel="noreferrer">
-            <Github size={18} />
-            {t.githubProject}
-          </a>
-          <a
-            className="secondaryAction sponsorAction"
-            href={sponsorUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={t.sponsorProjectLabel}
-          >
-            <Heart size={18} />
-            {t.sponsorProject}
           </a>
         </div>
         <div className="metrics">
@@ -1092,49 +1062,6 @@ function LanguageSwitch({ language, setLanguage }) {
   );
 }
 
-function WeChatIcon({ size = 17 }) {
-  return (
-    <svg className="wechatNavIcon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        fill="currentColor"
-        fillRule="evenodd"
-        d="M9.15 4.25c-4.16 0-7.45 2.72-7.45 6.12 0 1.93 1.08 3.62 2.76 4.74l-.62 2.08a.44.44 0 0 0 .62.52l2.46-1.26c.7.18 1.45.28 2.23.28.4 0 .79-.03 1.17-.08a5.31 5.31 0 0 1-.37-1.96c0-3.2 3.18-5.78 7.1-5.78.27 0 .53.01.79.04-.75-2.7-4.26-4.7-8.69-4.7Zm-2.35 4.9a.93.93 0 1 0 0-1.86.93.93 0 0 0 0 1.86Zm4.74 0a.93.93 0 1 0 0-1.86.93.93 0 0 0 0 1.86Zm5.51 1.32c-3.24 0-5.86 2.05-5.86 4.58 0 2.54 2.62 4.59 5.86 4.59.58 0 1.13-.07 1.66-.19l1.88.96a.37.37 0 0 0 .52-.44l-.48-1.59c1.39-.85 2.27-2.04 2.27-3.33 0-2.53-2.62-4.58-5.85-4.58Zm-1.92 3.67a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm3.86 0a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
-function CommunityNavItem({ language }) {
-  const t = copy[language];
-  const [open, setOpen] = useState(false);
-  return (
-    <span
-      className={cx('communityNavItem', open && 'open')}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-    >
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={t.navCommunity}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <WeChatIcon />
-        {t.navCommunity}
-      </button>
-      <span className="communityPopover" role="dialog" aria-label={t.navCommunity}>
-        <img src={wechatCommunityImage} alt={t.communityQrAlt} loading="lazy" />
-      </span>
-    </span>
-  );
-}
-
 function authErrorMessage(error, language) {
   const t = copy[language];
   const message = String(error?.message || error || '').trim();
@@ -1180,6 +1107,10 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
   const t = copy[language];
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   useBodyScrollLock(open);
 
   useEffect(() => {
@@ -1191,45 +1122,38 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
     }
     setStatus('idle');
     setMessage('');
+    setMode('login');
+    setEmail('');
+    setPassword('');
+    setFullName('');
   }, [open, initialErrorCode, language]);
 
   if (!open) return null;
 
-  const redirectTo = `${window.location.origin}${window.location.pathname}`;
-  const isLoading = status === 'loading-google' || status === 'loading-watcha';
+  const isLoading = status === 'loading';
 
-  async function handleGoogleSignIn() {
-    if (!isSupabaseConfigured || !supabase) {
-      setStatus('error');
-      setMessage(t.authNotConfigured);
-      return;
-    }
-
-    setStatus('loading-google');
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setStatus('loading');
     setMessage('');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo
+    try {
+      if (mode === 'register') {
+        await authClient.signUp(email, password, fullName);
+      } else {
+        await authClient.signIn(email, password);
       }
-    });
-
-    if (error) {
+      onClose();
+    } catch (error) {
+      const code = error?.code || '';
+      const nextMessage =
+        code === 'INVALID_CREDENTIALS' ? t.authInvalidCredentials
+          : code === 'EMAIL_ALREADY_REGISTERED' ? t.authEmailRegistered
+            : code === 'INVALID_EMAIL' ? t.authInvalidEmail
+              : code === 'INVALID_PASSWORD' ? t.authInvalidPassword
+                : t.authError;
       setStatus('error');
-      setMessage(authErrorMessage(error, language));
+      setMessage(nextMessage);
     }
-  }
-
-  function handleWatchaSignIn() {
-    if (!isSupabaseConfigured || !supabase) {
-      setStatus('error');
-      setMessage(t.authNotConfigured);
-      return;
-    }
-
-    setStatus('loading-watcha');
-    setMessage('');
-    window.location.assign(`/api/auth/watcha/start?returnTo=${encodeURIComponent(redirectTo)}`);
   }
 
   return (
@@ -1247,18 +1171,37 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
         <div className="authIcon">
           <UserCircle size={28} />
         </div>
-        <h2 id="auth-title">{t.signInTitle}</h2>
+        <h2 id="auth-title">{mode === 'login' ? t.signInTitle : t.authRegisterMode}</h2>
         <p>{t.signInSubtitle}</p>
-        <div className="authProviders" aria-label={t.signInTitle}>
-          <button className="googleButton" type="button" onClick={handleGoogleSignIn} disabled={isLoading}>
-            {status === 'loading-google' ? <LoaderCircle className="spinIcon" size={18} /> : <GoogleIcon />}
-            {t.continueWithGoogle}
+        <div className="authModeSwitch" role="tablist" aria-label={t.signInTitle}>
+          <button type="button" className={cx(mode === 'login' && 'active')} onClick={() => setMode('login')}>
+            {t.authLoginMode}
           </button>
-          <button className="watchaButton" type="button" onClick={handleWatchaSignIn} disabled={isLoading}>
-            {status === 'loading-watcha' ? <LoaderCircle className="spinIcon" size={18} /> : <WatchaIcon />}
-            {t.continueWithWatcha}
+          <button type="button" className={cx(mode === 'register' && 'active')} onClick={() => setMode('register')}>
+            {t.authRegisterMode}
           </button>
         </div>
+        <form className="localAuthForm" onSubmit={handleSubmit}>
+          {mode === 'register' ? (
+            <label>
+              <span>{t.authName}</span>
+              <input value={fullName} maxLength={80} onChange={(event) => setFullName(event.target.value)} />
+            </label>
+          ) : null}
+          <label>
+            <span>{t.authEmail}</span>
+            <input type="email" value={email} autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
+          </label>
+          <label>
+            <span>{t.authPassword}</span>
+            <input type="password" value={password} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
+          </label>
+          {mode === 'register' ? <small>{t.authPasswordHint}</small> : null}
+          <button className="localAuthSubmit" type="submit" disabled={isLoading}>
+            {isLoading ? <LoaderCircle className="spinIcon" size={18} /> : <LogIn size={18} />}
+            {mode === 'login' ? t.authSubmitLogin : t.authSubmitRegister}
+          </button>
+        </form>
         {message ? (
           <p className={cx('authMessage', status === 'error' && 'error', status === 'sent' && 'sent')}>
             {message}
@@ -1324,10 +1267,6 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onAdmin, on
               {profile?.creditBalance || 0} {t.credits}
             </span>
             <span className="userStat">
-              <Crown size={15} />
-              {formatMembershipStatus(profile?.membership, language)}
-            </span>
-            <span className="userStat">
               <ReceiptText size={15} />
               {t.totalGenerationCredits}: {totalSpent}
             </span>
@@ -1367,7 +1306,7 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onAdmin, on
             }}
           >
             <CreditCard size={17} />
-            {t.membershipCenter}
+            {t.creditCenter}
           </button>
           {profile?.isSuperAdmin ? (
             <button
@@ -1543,10 +1482,6 @@ function AccountPanel({
                 <strong>{profile?.creditBalance || 0}</strong>
               </div>
               <div>
-                <span>{t.currentPlan}</span>
-                <strong>{formatMembershipStatus(profile?.membership, language)}</strong>
-              </div>
-              <div>
                 <span>{t.totalGenerations}</span>
                 <strong>{Number(usage.totalGenerations || 0)}</strong>
               </div>
@@ -1557,7 +1492,7 @@ function AccountPanel({
             </div>
             <button className="portalButton accountBillingButton" type="button" onClick={onBilling}>
               <CreditCard size={16} />
-              {t.membershipCenter}
+              {t.creditCenter}
             </button>
           </section>
         </div>
@@ -1806,7 +1741,7 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
   useBodyScrollLock(open);
 
   async function loadAdminData(nextRange = range, nextStart = customStart, nextEnd = customEnd) {
-    if (!session?.access_token) {
+    if (!isAuthenticatedSession(session)) {
       setStatus('error');
       setMessage(t.adminOnly);
       return;
@@ -1890,7 +1825,7 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
 
   useEffect(() => {
     if (open) loadAdminData(range);
-  }, [open, session?.access_token, range]);
+  }, [open, isAuthenticatedSession(session), range]);
 
   if (!open) return null;
   const traffic = metrics?.traffic || {};
@@ -2032,7 +1967,6 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
               </h3>
               <div className="adminMetricGrid">
                 <AdminMetricCard icon={<Users size={18} />} label={t.registeredUsers} value={firstNumber(businessTotals.registeredUsers, business.totalUsers)} hint={`${t.newRegistrations}: ${formatNumber(firstNumber(businessRange.newRegistrations, business.rangeUsers))}`} />
-                <AdminMetricCard icon={<Crown size={18} />} label={t.activeMemberships} value={firstNumber(businessTotals.activeMembers, business.activeMemberships)} hint={`${t.newMembers}: ${formatNumber(firstNumber(businessRange.newMembers, business.rangeMemberships))}`} />
                 <AdminMetricCard icon={<ImageIcon size={18} />} label={t.totalGenerationsMetric} value={firstNumber(businessTotals.totalGenerations, business.totalGenerations)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.generations, business.rangeGenerations))}`} />
                 <AdminMetricCard icon={<PackageCheck size={18} />} label={t.succeeded} value={firstNumber(businessTotals.succeededGenerations, business.succeededGenerations)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.succeededGenerations, business.rangeSucceededGenerations))}`} />
                 <AdminMetricCard icon={<Coins size={18} />} label={t.creditsConsumed} value={firstNumber(businessTotals.totalCreditsConsumed, business.totalGenerationCredits)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.creditsConsumed, business.rangeGenerationCredits))}`} />
@@ -2040,7 +1974,6 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
                 <AdminMetricCard icon={<LoaderCircle size={18} />} label={t.pending} value={firstNumber(businessTotals.pendingGenerations, business.pendingGenerations)} />
                 <AdminMetricCard icon={<Coins size={18} />} label={t.creditsInCirculation} value={firstNumber(businessTotals.totalCreditBalance, business.totalCreditBalance)} />
                 <AdminMetricCard icon={<CreditCard size={18} />} label={t.purchasedCredits} value={firstNumber(businessTotals.purchasedCredits, business.purchasedCredits)} />
-                <AdminMetricCard icon={<Crown size={18} />} label={t.membershipCredits} value={firstNumber(businessTotals.membershipCredits, business.membershipCredits)} />
               </div>
               <div className="adminChartGrid">
                 <div className="adminPanelCard chart">
@@ -2112,7 +2045,6 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
                   <th>{t.users}</th>
                   <th>{t.role}</th>
                   <th>{t.creditBalance}</th>
-                  <th>{t.currentPlan}</th>
                   <th>{t.freeGeneration}</th>
                   <th>{t.totalGenerations}</th>
                   <th>{t.spentCredits}</th>
@@ -2136,7 +2068,6 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
                     </td>
                     <td><span className="roleBadge">{user.role}</span></td>
                     <td>{user.creditBalance}</td>
-                    <td>{formatMembershipStatus(user.membership, language)}</td>
                     <td>{user.freeUsed ? t.freeUsedShort : t.freeReady}</td>
                     <td>{formatNumber(user.usage?.totalGenerations)}</td>
                     <td>{formatNumber(user.usage?.totalGenerationCredits)}</td>
@@ -2184,7 +2115,7 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
   );
 }
 
-function BillingPanel({
+function CreditPanel({
   open,
   language,
   session,
@@ -2197,7 +2128,6 @@ function BillingPanel({
   onOpenCase
 }) {
   const t = copy[language];
-  const [plans, setPlans] = useState([]);
   const [packs, setPacks] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [checkoutAvailable, setCheckoutAvailable] = useState(false);
@@ -2212,21 +2142,20 @@ function BillingPanel({
 
     try {
       const headers = getAuthHeaders(session);
-      const [plansResponse, historyResponse] = await Promise.all([
-        fetch('/api/billing/plans', { headers }),
-        session?.access_token
+      const [catalogResponse, historyResponse] = await Promise.all([
+        fetch('/api/billing/catalog', { headers }),
+        isAuthenticatedSession(session)
           ? fetch('/api/billing/history', { headers })
           : Promise.resolve(null)
       ]);
-      const plansPayload = await plansResponse.json().catch(() => ({}));
-      if (!plansResponse.ok || !plansPayload.ok) {
-        throw new Error(plansPayload.error || 'SERVER_NOT_CONFIGURED');
+      const catalogPayload = await catalogResponse.json().catch(() => ({}));
+      if (!catalogResponse.ok || !catalogPayload.ok) {
+        throw new Error(catalogPayload.error || 'SERVER_NOT_CONFIGURED');
       }
 
-      setPlans(plansPayload.plans || []);
-      setPacks(plansPayload.packs || []);
-      setCheckoutAvailable(Boolean(plansPayload.checkoutAvailable));
-      if (plansPayload.user) onProfileChange(plansPayload.user);
+      setPacks(catalogPayload.packs || []);
+      setCheckoutAvailable(Boolean(catalogPayload.checkoutAvailable));
+      if (catalogPayload.user) onProfileChange(catalogPayload.user);
 
       if (historyResponse) {
         const historyPayload = await historyResponse.json().catch(() => ({}));
@@ -2246,10 +2175,10 @@ function BillingPanel({
 
   useEffect(() => {
     if (open) loadBilling();
-  }, [open, session?.access_token]);
+  }, [open, isAuthenticatedSession(session)]);
 
   async function handleCheckout(product) {
-    if (!session?.access_token) {
+    if (!isAuthenticatedSession(session)) {
       onAuthRequired();
       return;
     }
@@ -2269,7 +2198,6 @@ function BillingPanel({
           ...getAuthHeaders(session)
         },
         body: JSON.stringify({
-          productType: product.type,
           productId: product.id
         })
       });
@@ -2285,35 +2213,7 @@ function BillingPanel({
     }
   }
 
-  async function handlePortal() {
-    if (!session?.access_token) {
-      onAuthRequired();
-      return;
-    }
-    setBusyProduct('portal');
-    setMessage('');
-
-    try {
-      const response = await fetch('/api/billing/portal', {
-        method: 'POST',
-        headers: getAuthHeaders(session)
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok || !payload.url) {
-        throw new Error(payload.error || 'BILLING_PORTAL_FAILED');
-      }
-      window.location.href = payload.url;
-    } catch (error) {
-      setBusyProduct('');
-      setMessage(generationErrorMessage(error.message, language));
-    }
-  }
-
   if (!open) return null;
-
-  const activePlanId = profile?.membership?.isActive ? profile.membership.planId : '';
-  const activePlan = plans.find((plan) => plan.id === activePlanId);
-  const activePlanName = activePlan ? productText(activePlan.name, language) : activePlanId || t.noPlan;
 
   return (
     <div
@@ -2330,7 +2230,7 @@ function BillingPanel({
         <div className="billingHero">
           <span className="eyebrow">
             <CreditCard size={16} />
-            {t.membershipCenter}
+            {t.creditCenter}
           </span>
           <h2 id="billing-title">{t.billingTitle}</h2>
           <p>{t.billingSubtitle}</p>
@@ -2343,18 +2243,13 @@ function BillingPanel({
             <em>{t.credits}</em>
           </div>
           <div>
-            <span>{t.currentPlan}</span>
-            <strong>{activePlanName}</strong>
-            <em>{formatMembershipStatus(profile?.membership, language)}</em>
-          </div>
-          <div>
             <span>{t.freeGeneration}</span>
             <strong>{profile?.freeUsed ? t.freeUsedShort : t.freeReady}</strong>
             <em>{checkoutAvailable ? t.paymentReady : t.billingNotReady}</em>
           </div>
         </div>
 
-        {!session?.access_token ? (
+        {!isAuthenticatedSession(session) ? (
           <div className="billingState">
             <p>{t.authRequired}</p>
             <button type="button" onClick={onAuthRequired}>
@@ -2376,37 +2271,6 @@ function BillingPanel({
         ) : null}
 
         <div className="billingSections">
-          <section>
-            <h3>
-              <Crown size={18} />
-              {t.membershipPlans}
-            </h3>
-            <div className="billingCards">
-              {plans.map((plan) => {
-                const isCurrent = activePlanId === plan.id;
-                const busy = busyProduct === `${plan.type}:${plan.id}`;
-                return (
-                  <article className={cx('billingCard', isCurrent && 'current')} key={plan.id}>
-                    <span>{productText(plan.name, language)}</span>
-                    <strong>{plan.priceLabel}<small>/{plan.interval}</small></strong>
-                    <p>{productText(plan.description, language)}</p>
-                    <div className="billingCredits">{t.monthlyCredits(plan.monthlyCredits)}</div>
-                    <button type="button" disabled={busy || isCurrent} onClick={() => handleCheckout(plan)}>
-                      {busy ? <LoaderCircle className="spinIcon" size={16} /> : <Crown size={16} />}
-                      {isCurrent ? t.currentPlan : t.subscribe}
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-            {profile?.membership?.isActive ? (
-              <button className="portalButton" type="button" onClick={handlePortal} disabled={busyProduct === 'portal'}>
-                {busyProduct === 'portal' ? <LoaderCircle className="spinIcon" size={16} /> : <CreditCard size={16} />}
-                {t.manageSubscription}
-              </button>
-            ) : null}
-          </section>
-
           <section>
             <h3>
               <Coins size={18} />
@@ -2458,82 +2322,8 @@ function BillingPanel({
   );
 }
 
-function SkillSection({ language, repoUrl }) {
-  const t = copy[language];
-  const [commandCopied, setCommandCopied] = useState(false);
-  const installCommand =
-    'npx skills add freestylefly/awesome-gpt-image-2 --skill gpt-image-2-style-library --agent claude-code codex --global --yes --copy';
-  const skillSourceUrl = `${repoUrl}/tree/main/agents/skills/gpt-image-2-style-library`;
-  const npmUrl = 'https://www.npmjs.com/package/gpt-image-2-style-library';
-
-  async function handleCopyCommand() {
-    await copyToClipboard(installCommand);
-    setCommandCopied(true);
-    window.setTimeout(() => setCommandCopied(false), 1600);
-  }
-
-  return (
-    <section className="skillSection" id="agent-skill">
-      <div className="skillGrid">
-        <div className="skillCopy">
-          <span className="eyebrow">
-            <Bot size={16} />
-            {t.skillEyebrow}
-          </span>
-          <h2>{t.skillTitle}</h2>
-          <p>{t.skillSubtitle}</p>
-          <div className="skillStats">
-            {t.skillStats.map((item, index) => {
-              const icons = [Bot, Terminal, PackageCheck];
-              const Icon = icons[index] || Check;
-              return (
-                <span key={item}>
-                  <Icon size={16} />
-                  {item}
-                </span>
-              );
-            })}
-          </div>
-          <div className="skillCommand">
-            <div className="skillCommandHeader">
-              <strong>{t.skillCommandLabel}</strong>
-              <button type="button" onClick={handleCopyCommand}>
-                {commandCopied ? <Check size={16} /> : <Copy size={16} />}
-                {commandCopied ? t.skillCopied : t.skillCopyCommand}
-              </button>
-            </div>
-            <code>{installCommand}</code>
-          </div>
-          <div className="skillPrompt">
-            <span>{t.skillPromptLabel}</span>
-            <code>{t.skillPrompt}</code>
-          </div>
-          <div className="skillActions">
-            <a href={skillSourceUrl} target="_blank" rel="noreferrer">
-              <Github size={18} />
-              {t.skillOpenDocs}
-            </a>
-            <a href={npmUrl} target="_blank" rel="noreferrer">
-              <PackageCheck size={18} />
-              {t.skillNpm}
-            </a>
-          </div>
-        </div>
-        <figure className="skillPreview">
-          <img src={skillExampleImage} alt={t.skillExampleAlt} loading="lazy" />
-          <figcaption>
-            <Sparkles size={15} />
-            {t.skillExampleCaption}
-          </figcaption>
-        </figure>
-      </div>
-    </section>
-  );
-}
-
 function TemplateSection({ language, styleLibrary, onOpenTemplate }) {
   const t = copy[language];
-  const repoDocsUrl = `${styleLibrary.repository || fallbackRepoUrl}/blob/main/${styleLibrary.templateDocument}`;
   const templates = styleLibrary.templates || [];
 
   return (
@@ -2544,10 +2334,6 @@ function TemplateSection({ language, styleLibrary, onOpenTemplate }) {
           <h2>{t.templateTitle}</h2>
           <p>{t.templateSubtitle}</p>
         </div>
-        <a className="templateCta" href={`${repoDocsUrl}#section-templates`} target="_blank" rel="noreferrer">
-          {t.openTemplate}
-          <ArrowUpRight size={16} />
-        </a>
       </div>
       <div className="caseGrid templateCaseGrid">
         {templates.map((item, index) => {
@@ -2586,10 +2372,6 @@ function TemplateSection({ language, styleLibrary, onOpenTemplate }) {
                     <Eye size={17} />
                     {t.viewDetails}
                   </button>
-                  <a href={`${repoDocsUrl}#${item.anchor}`} target="_blank" rel="noreferrer">
-                    {t.openTemplate}
-                    <ArrowUpRight size={17} />
-                  </a>
                 </div>
               </div>
             </article>
@@ -2666,10 +2448,6 @@ function PromptCard({
             <ImageIcon size={17} />
             {t.generateTest}
           </button>
-          <a href={caseItem.githubUrl} target="_blank" rel="noreferrer" aria-label={t.openOnGithub}>
-            <Github size={18} />
-            GitHub
-          </a>
         </div>
       </div>
     </article>
@@ -2693,11 +2471,14 @@ function PreviewDialog({
   onProfileChange
 }) {
   const t = copy[language];
-  const repoDocsUrl = `${styleLibrary.repository || fallbackRepoUrl}/blob/main/${styleLibrary.templateDocument}`;
   const [editablePrompt, setEditablePrompt] = useState('');
   const [generationState, setGenerationState] = useState({
     status: 'idle',
     image: '',
+    message: ''
+  });
+  const [sanitizeState, setSanitizeState] = useState({
+    status: 'idle',
     message: ''
   });
   useBodyScrollLock(Boolean(preview));
@@ -2730,6 +2511,7 @@ function PreviewDialog({
           }
         : { status: 'idle', image: '', message: '', prompt: '', savedAt: '' }
     );
+    setSanitizeState({ status: 'idle', message: '' });
   }, [preview]);
 
   if (!preview) return null;
@@ -2743,8 +2525,6 @@ function PreviewDialog({
   const promptText = isTemplate ? formatTemplatePrompt(item, language, styleLibrary) : editablePrompt;
   const copyId = isTemplate ? `template-${item.id}` : `case-${item.id}`;
   const isCopied = copiedId === copyId;
-  const primaryLink = isTemplate ? `${repoDocsUrl}#${item.anchor}` : item.githubUrl;
-  const primaryLabel = isTemplate ? t.openTemplate : t.openOnGithub;
   const meta = isTemplate
     ? [t.templateKind, localizeLabel(item.category, language, styleLibrary)]
     : [
@@ -2758,16 +2538,91 @@ function PreviewDialog({
   const pitfalls = listFor(item.pitfalls, language);
   const isGenerating = generationState.status === 'generating';
   const generatedImage = !isTemplate ? generationState.image : '';
-  const isSignedIn = Boolean(session?.access_token);
+  const isSignedIn = isAuthenticatedSession(session);
   const creditBalance = Number(profile?.creditBalance || 0);
-  const isOutOfCredits = isSignedIn
-    && creditBalance <= 0
-    && (profile?.isSuperAdmin || Boolean(profile?.freeUsed));
-  const generationLocked = isGenerating;
+  const isOutOfCredits = isSignedIn && creditBalance <= 0 && !profile?.isSuperAdmin;
+  const isSanitizing = sanitizeState.status === 'processing';
+  const moderationLocked = generationState.status === 'content_moderation_blocked';
+  const generationLocked = isGenerating || isSanitizing || moderationLocked;
   const quotaText = isSignedIn ? getGenerationQuotaText(profile, language) : t.authRequired;
 
+  async function handleSanitize() {
+    if (isTemplate || isSanitizing) return;
+    if (!isSignedIn) {
+      onAuthRequired();
+      return;
+    }
+
+    const prompt = editablePrompt.trim();
+    if (!prompt || prompt.length > 6000) {
+      setSanitizeState({ status: 'error', message: t.promptRequired });
+      return;
+    }
+
+    setSanitizeState({ status: 'processing', message: '' });
+    try {
+      const response = await fetch('/api/sanitize-prompt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(session)
+        },
+        body: JSON.stringify({ prompt })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok || !payload.prompt) {
+        if (payload.error === 'AUTH_REQUIRED') {
+          onAuthRequired();
+          setSanitizeState({ status: 'idle', message: '' });
+          return;
+        }
+        const fallbackPrompt = buildSafePromptFallback(prompt);
+        setEditablePrompt(fallbackPrompt);
+        if (moderationLocked) {
+          setGenerationState((current) => ({
+            ...current,
+            status: 'idle',
+            image: '',
+            message: '',
+            prompt: fallbackPrompt
+          }));
+        }
+        setSanitizeState({ status: 'success', message: t.sanitizeDone });
+        return;
+      }
+
+      let nextPrompt = String(payload.prompt).trim();
+      if (!nextPrompt || nextPrompt === prompt) nextPrompt = buildSafePromptFallback(prompt);
+      const changed = nextPrompt !== prompt;
+      setEditablePrompt(nextPrompt);
+      if (moderationLocked) {
+        setGenerationState((current) => ({
+          ...current,
+          status: 'idle',
+          image: '',
+          message: '',
+          prompt: nextPrompt
+        }));
+      }
+      setSanitizeState({ status: 'success', message: t.sanitizeDone });
+    } catch {
+      const fallbackPrompt = buildSafePromptFallback(prompt);
+      setEditablePrompt(fallbackPrompt);
+      if (moderationLocked) {
+        setGenerationState((current) => ({
+          ...current,
+          status: 'idle',
+          image: '',
+          message: '',
+          prompt: fallbackPrompt
+        }));
+      }
+      setSanitizeState({ status: 'success', message: t.sanitizeDone });
+    }
+  }
+
   async function handleGenerate() {
-    if (isTemplate || isGenerating) return;
+    if (isTemplate || isGenerating || isSanitizing || moderationLocked) return;
     if (!isSignedIn) {
       onAuthRequired();
       setGenerationState({ status: 'idle', image: generatedImage, message: '' });
@@ -2807,6 +2662,16 @@ function PreviewDialog({
           setGenerationState({ status: 'idle', image: generatedImage, message: '' });
           return;
         }
+        if (payload.error === 'CONTENT_MODERATION_BLOCKED') {
+          setGenerationState({
+            status: 'content_moderation_blocked',
+            image: '',
+            message: t.contentModerationBlocked,
+            prompt
+          });
+          setSanitizeState({ status: 'error', message: '' });
+          return;
+        }
         throw new Error(payload.error || 'GENERATION_FAILED');
       }
 
@@ -2822,9 +2687,22 @@ function PreviewDialog({
       setGenerationState({
         status: 'error',
         image: '',
-        message: generationErrorMessage(error.message, language)
+        message: generationErrorMessage(error.message, language),
+        prompt
       });
     }
+  }
+
+  function handlePromptChange(event) {
+    setEditablePrompt(event.target.value);
+    if (sanitizeState.status === 'success') {
+      setSanitizeState({ status: 'idle', message: '' });
+    }
+  }
+
+  function handleResetPrompt() {
+    setEditablePrompt(item.prompt || '');
+    setSanitizeState({ status: 'idle', message: '' });
   }
 
   return (
@@ -2881,20 +2759,20 @@ function PreviewDialog({
               <p>{textFor(item.useWhen, language)}</p>
             </div>
           ) : null}
-          <div className="previewActions">
+          <div className={cx('previewActions', moderationLocked && 'moderationLocked')}>
             {!isTemplate ? (
               <button
                 className={cx('favoriteAction', favorite && 'active')}
                 type="button"
                 onClick={() => onToggleFavorite(item)}
-                disabled={favoriteBusy}
+                disabled={favoriteBusy || moderationLocked}
                 aria-pressed={Boolean(favorite)}
               >
                 {favoriteBusy ? <LoaderCircle className="spinIcon" size={17} /> : <Heart size={17} />}
                 {favorite ? t.unfavorite : t.favorite}
               </button>
             ) : null}
-            <button type="button" onClick={() => onCopyText(promptText, copyId)}>
+            <button type="button" onClick={() => onCopyText(promptText, copyId)} disabled={moderationLocked}>
               {isCopied ? <Check size={17} /> : <Copy size={17} />}
               {isCopied ? t.copied : isTemplate ? t.copyTemplatePrompt : t.copyPrompt}
             </button>
@@ -2904,12 +2782,18 @@ function PreviewDialog({
                 {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? t.generateTest : t.signInToGenerate}
               </button>
             ) : null}
-            <a href={primaryLink} target="_blank" rel="noreferrer">
-              {primaryLabel}
-              <ArrowUpRight size={17} />
-            </a>
             {!isTemplate && item.sourceUrl ? (
-              <a href={item.sourceUrl} target="_blank" rel="noreferrer">
+              <a
+                className={moderationLocked ? 'moderationLockedAction' : undefined}
+                href={item.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-disabled={moderationLocked}
+                tabIndex={moderationLocked ? -1 : undefined}
+                onClick={(event) => {
+                  if (moderationLocked) event.preventDefault();
+                }}
+              >
                 {t.source}
                 <ArrowUpRight size={17} />
               </a>
@@ -2919,24 +2803,39 @@ function PreviewDialog({
             <div className="sectionTitleRow">
               <h3>{isTemplate ? t.templatePrompt : t.editablePrompt}</h3>
               {!isTemplate ? (
-                <button type="button" onClick={() => setEditablePrompt(item.prompt || '')}>
-                  {t.resetPrompt}
-                </button>
+                <div className="promptActionGroup">
+                  <button type="button" onClick={handleSanitize} disabled={isSanitizing || isGenerating}>
+                    {isSanitizing ? <LoaderCircle className="spinIcon" size={14} /> : <WandSparkles size={14} />}
+                    {isSanitizing ? t.sanitizingPrompt : t.sanitizePrompt}
+                  </button>
+                  <button type="button" onClick={handleResetPrompt} disabled={isSanitizing}>
+                    {t.resetPrompt}
+                  </button>
+                </div>
               ) : null}
             </div>
             {isTemplate ? (
               <pre className="promptBlock">{promptText}</pre>
             ) : (
               <textarea
-                className="promptEditor"
+                className={cx(
+                  'promptEditor',
+                  moderationLocked && 'moderationBlocked',
+                  sanitizeState.status === 'success' && 'promptSanitized'
+                )}
                 value={editablePrompt}
-                onChange={(event) => setEditablePrompt(event.target.value)}
+                onChange={handlePromptChange}
                 maxLength={6000}
               />
             )}
+            {!isTemplate && sanitizeState.message ? (
+              <p className={cx('promptSafetyMessage', moderationLocked && 'moderationLocked', sanitizeState.status === 'error' && 'error')}>
+                {sanitizeState.message}
+              </p>
+            ) : null}
           </div>
           {!isTemplate ? (
-            <div className="generationPanel">
+            <div className={cx('generationPanel', moderationLocked && 'moderationLocked')}>
               <div className={cx('generationQuota', (!isSignedIn || isOutOfCredits) && 'used')}>
                 {quotaText}
               </div>
@@ -2944,7 +2843,7 @@ function PreviewDialog({
                 {isGenerating ? <LoaderCircle className="spinIcon" size={17} /> : <ImageIcon size={17} />}
                 {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? t.generateImage : t.signInToGenerate}
               </button>
-              {generationState.status === 'error' ? (
+              {generationState.status === 'error' || moderationLocked ? (
                 <p className="generationMessage">{generationState.message}</p>
               ) : null}
             </div>
@@ -2976,14 +2875,9 @@ function PreviewDialog({
                   <h3>{t.examples}</h3>
                   <div className="exampleCaseRow">
                     {item.exampleCases.map((caseId) => (
-                      <a
-                        href={`${styleLibrary.repository || fallbackRepoUrl}/blob/main/docs/gallery.md#case-${caseId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        key={caseId}
-                      >
+                      <span key={caseId}>
                         #{caseId}
-                      </a>
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -3001,10 +2895,12 @@ function App() {
   const [siteData, setSiteData] = useState(null);
   const [styleLibrary, setStyleLibrary] = useState(null);
   const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'en');
+  const [activePage, setActivePage] = useState(() => pageFromHash(window.location.hash));
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [style, setStyle] = useState('All');
   const [scene, setScene] = useState('All');
+  const [creationCategory, setCreationCategory] = useState('All');
   const [preview, setPreview] = useState(null);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -3019,7 +2915,6 @@ function App() {
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
   const { copiedId, copyPrompt, copyText } = useCopy();
-  const repoUrl = siteData?.repository || fallbackRepoUrl;
   const t = copy[language];
 
   useEffect(() => {
@@ -3059,27 +2954,27 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return undefined;
-
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (active) setSession(data.session || null);
+    authClient.getSession().then((nextSession) => {
+      if (active) setSession(nextSession || null);
+    }).catch(() => {
+      if (active) setSession(null);
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const unsubscribe = authClient.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession || null);
     });
 
     return () => {
       active = false;
-      data.subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!session?.access_token) {
+    if (!isAuthenticatedSession(session)) {
       setProfile(null);
       setFavoriteRows([]);
       return () => {
@@ -3103,10 +2998,10 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [session?.access_token]);
+  }, [isAuthenticatedSession(session)]);
 
   async function loadFavorites({ silent = true } = {}) {
-    if (!session?.access_token) {
+    if (!isAuthenticatedSession(session)) {
       setFavoriteRows([]);
       return [];
     }
@@ -3131,7 +3026,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!session?.access_token) {
+    if (!isAuthenticatedSession(session)) {
       setFavoriteRows([]);
       return () => {
         cancelled = true;
@@ -3146,16 +3041,27 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [session?.access_token]);
+  }, [isAuthenticatedSession(session)]);
 
   useEffect(() => {
-    if (!siteData || !styleLibrary || !window.location.hash) return;
-    const target = document.getElementById(window.location.hash.slice(1));
-    if (!target) return;
-    window.requestAnimationFrame(() => {
-      target.scrollIntoView({ block: 'start' });
-    });
-  }, [siteData, styleLibrary]);
+    function handleHashChange() {
+      setActivePage(pageFromHash(window.location.hash));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  function handlePageChange(nextPage) {
+    const page = PAGE_HASHES[nextPage] ? nextPage : 'cases';
+    setActivePage(page);
+    const nextHash = `#${hashForPage(page)}`;
+    if (window.location.hash !== nextHash) {
+      window.history.pushState({}, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   function openAuth() {
     setAuthErrorCode('');
@@ -3224,6 +3130,23 @@ function App() {
     [siteData, styleLibrary]
   );
 
+  const creationCategoryOptions = useMemo(() => {
+    if (!siteData || !styleLibrary) return [];
+    const templateCategories = (styleLibrary.templates || []).map((item) => item.category);
+    const values = [...new Set([...siteData.categories, ...templateCategories])];
+    return orderByLibrary(values, styleLibrary.categories).map((value) => ({
+      value,
+      label: localizeLabel(value, language, styleLibrary)
+    }));
+  }, [language, siteData, styleLibrary]);
+
+  const creationCases = useMemo(() => {
+    if (!siteData) return [];
+    return siteData.cases
+      .filter((item) => creationCategory === 'All' || item.category === creationCategory)
+      .slice(0, 12);
+  }, [creationCategory, siteData]);
+
   const visibleCases = filteredCases.slice(0, 72);
   const casesById = useMemo(() => new Map((siteData?.cases || []).map((caseItem) => [caseItem.id, caseItem])), [siteData]);
   const favoriteCaseIds = useMemo(
@@ -3232,7 +3155,7 @@ function App() {
   );
 
   async function handleSignOut() {
-    if (supabase) await supabase.auth.signOut();
+    await authClient.signOut().catch(() => undefined);
     setSession(null);
     setProfile(null);
     setFavoriteRows([]);
@@ -3266,7 +3189,7 @@ function App() {
 
   async function handleToggleFavorite(caseItem) {
     if (!caseItem?.id) return;
-    if (!session?.access_token) {
+    if (!isAuthenticatedSession(session)) {
       openAuth();
       setTimedFavoriteMessage(t.signInToFavorite);
       return;
@@ -3352,27 +3275,28 @@ function App() {
           {t.brand}
         </a>
         <div className="topbarControls">
-          <nav>
-            <a href="#gallery">{t.navCases}</a>
-            <a href="#templates">{t.navTemplates}</a>
-            <a href="#agent-skill">{t.navSkill}</a>
-            <CommunityNavItem language={language} />
-            <a
-              className="sponsorNavLink"
-              href={sponsorUrl}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={t.sponsorProjectLabel}
+          <nav className="pageTabs" aria-label={language === 'zh' ? '主页面' : 'Main pages'}>
+            <button
+              className={cx('pageTab', activePage === 'create' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('create')}
             >
-              <Heart size={16} />
-              {t.navSponsor}
-            </a>
-            <a href={membershipUrl} target="_blank" rel="noreferrer">
-              {t.navMembership}
-            </a>
-            <a href={repoUrl} target="_blank" rel="noreferrer">
-              GitHub
-            </a>
+              {t.navCreate}
+            </button>
+            <button
+              className={cx('pageTab', activePage === 'templates' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('templates')}
+            >
+              {t.navTemplates}
+            </button>
+            <button
+              className={cx('pageTab', activePage === 'cases' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('cases')}
+            >
+              {t.navCases}
+            </button>
           </nav>
           <LanguageSwitch language={language} setLanguage={setLanguage} />
           <UserMenu
@@ -3393,13 +3317,15 @@ function App() {
       </header>
       {favoriteMessage ? <div className="toastNotice">{favoriteMessage}</div> : null}
 
+      {activePage === 'cases' ? (
+        <>
       <Hero
         latestCases={heroCases}
         language={language}
-        repoUrl={repoUrl}
         totalCases={siteData.totalCases}
         categoryCount={siteData.categories.length}
         onOpenCase={(item) => setPreview({ type: 'case', item })}
+        onExplore={() => handlePageChange('cases')}
       />
 
       <section className="hotStrip">
@@ -3470,10 +3396,6 @@ function App() {
 
         <div className="resultBar">
           <span>{language === 'zh' ? `${filteredCases.length} ${t.matching}` : `${filteredCases.length} ${t.matching}`}</span>
-          <a href={repoUrl} target="_blank" rel="noreferrer">
-            {t.openGithub}
-            <ArrowUpRight size={16} />
-          </a>
         </div>
 
         <div className="caseGrid">
@@ -3488,7 +3410,7 @@ function App() {
               onOpen={(item) => setPreview({ type: 'case', item })}
               onGenerate={(item) => {
                 setPreview({ type: 'case', item });
-                if (!session?.access_token) openAuth();
+                if (!isAuthenticatedSession(session)) openAuth();
               }}
               onToggleFavorite={handleToggleFavorite}
               styleLibrary={styleLibrary}
@@ -3504,13 +3426,38 @@ function App() {
         )}
       </section>
 
-      <TemplateSection
-        language={language}
-        styleLibrary={styleLibrary}
-        onOpenTemplate={(item) => setPreview({ type: 'template', item })}
-      />
+        </>
+      ) : null}
 
-      <SkillSection language={language} repoUrl={repoUrl} />
+      {activePage === 'templates' ? (
+        <>
+          <TemplateSection
+            language={language}
+            styleLibrary={styleLibrary}
+            onOpenTemplate={(item) => setPreview({ type: 'template', item })}
+          />
+        </>
+      ) : null}
+
+      {activePage === 'create' ? (
+        <CreateWorkspace
+          language={language}
+          session={session}
+          profile={profile}
+          cases={creationCases}
+          categoryOptions={creationCategoryOptions}
+          category={creationCategory}
+          onCategoryChange={setCreationCategory}
+          onOpenCase={(item) => setPreview({ type: 'case', item })}
+          onBrowseCases={() => handlePageChange('cases')}
+          onSignIn={openAuth}
+          onBilling={() => {
+            setBillingNotice(t.creditsRequired);
+            setBillingOpen(true);
+          }}
+          onProfileChange={handleProfileChange}
+        />
+      ) : null}
       <PreviewDialog
         preview={preview}
         language={language}
@@ -3564,7 +3511,7 @@ function App() {
         onClose={() => setAdminOpen(false)}
         onOpenCase={handleOpenCaseFromAdmin}
       />
-      <BillingPanel
+      <CreditPanel
         open={billingOpen}
         language={language}
         session={session}

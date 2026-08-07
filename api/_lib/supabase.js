@@ -51,30 +51,6 @@ export function isSuperAdminEmail(email) {
   return getAdminEmails().includes(String(email).trim().toLowerCase());
 }
 
-function formatMembership(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    planId: row.plan_id || '',
-    status: row.status || 'inactive',
-    isActive: ['trialing', 'active'].includes(row.status),
-    currentPeriodEnd: row.current_period_end || '',
-    cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
-    monthlyCreditsGrantedAt: row.monthly_credits_granted_at || ''
-  };
-}
-
-async function getMembershipForUser(client, userId) {
-  const { data, error } = await client
-    .from('user_memberships')
-    .select('id,plan_id,status,current_period_end,cancel_at_period_end,monthly_credits_granted_at')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return formatMembership(data);
-}
-
 function profilePayloadFromUser(user, existingProfile) {
   const metadata = user.user_metadata || {};
   const email = String(user.email || existingProfile?.email || '').trim().toLowerCase();
@@ -92,7 +68,7 @@ function profilePayloadFromUser(user, existingProfile) {
   };
 }
 
-export function normalizeProfile(row, membership = null) {
+export function normalizeProfile(row) {
   if (!row) return null;
   return {
     id: row.id,
@@ -105,7 +81,6 @@ export function normalizeProfile(row, membership = null) {
     creditBalance: Number(row.credit_balance || 0),
     freeGenerationsUsed: Number(row.free_generations_used || 0),
     freeUsed: Number(row.free_generations_used || 0) >= 1,
-    membership,
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || ''
   };
@@ -131,8 +106,7 @@ export async function ensureProfileForUser(user) {
     .single();
 
   if (error) throw error;
-  const membership = await getMembershipForUser(client, user.id).catch(() => null);
-  return normalizeProfile(data, membership);
+  return normalizeProfile(data);
 }
 
 export async function getProfileById(userId) {
@@ -146,8 +120,7 @@ export async function getProfileById(userId) {
     .maybeSingle();
 
   if (error) throw error;
-  const membership = await getMembershipForUser(client, userId).catch(() => null);
-  return normalizeProfile(data, membership);
+  return normalizeProfile(data);
 }
 
 export async function getAuthContext(req, options = {}) {

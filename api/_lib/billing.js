@@ -61,27 +61,6 @@ function moneyLabel(amountCents, currency) {
   }).format(Number(amountCents || 0) / 100);
 }
 
-export function formatPlan(row) {
-  return {
-    id: row.id,
-    type: 'membership',
-    name: {
-      en: row.name_en,
-      zh: row.name_zh
-    },
-    description: {
-      en: row.description_en,
-      zh: row.description_zh
-    },
-    monthlyCredits: Number(row.monthly_credits || 0),
-    amountCents: Number(row.amount_cents || 0),
-    currency: normalizeCurrency(row.currency),
-    interval: row.interval || 'month',
-    priceLabel: moneyLabel(row.amount_cents, row.currency),
-    active: Boolean(row.active)
-  };
-}
-
 export function formatPack(row) {
   return {
     id: row.id,
@@ -103,32 +82,22 @@ export function formatPack(row) {
 }
 
 export async function getBillingCatalog(client) {
-  const [plansResult, packsResult] = await Promise.all([
-    client
-      .from('membership_plans')
-      .select('*')
-      .eq('active', true)
-      .order('sort_order', { ascending: true }),
-    client
-      .from('credit_packs')
-      .select('*')
-      .eq('active', true)
-      .order('sort_order', { ascending: true })
-  ]);
+  const packsResult = await client
+    .from('credit_packs')
+    .select('*')
+    .eq('active', true)
+    .order('sort_order', { ascending: true });
 
-  if (plansResult.error) throw plansResult.error;
   if (packsResult.error) throw packsResult.error;
 
   return {
-    plans: (plansResult.data || []).map(formatPlan),
     packs: (packsResult.data || []).map(formatPack)
   };
 }
 
-export async function getBillingProduct(client, productType, productId) {
-  const table = productType === 'membership' ? 'membership_plans' : 'credit_packs';
+export async function getBillingProduct(client, productId) {
   const { data, error } = await client
-    .from(table)
+    .from('credit_packs')
     .select('*')
     .eq('id', productId)
     .eq('active', true)
@@ -136,7 +105,7 @@ export async function getBillingProduct(client, productType, productId) {
 
   if (error) throw error;
   if (!data) return null;
-  return productType === 'membership' ? formatPlan(data) : formatPack(data);
+  return formatPack(data);
 }
 
 export async function getOrCreateStripeCustomer({ client, stripe, user, profile }) {
@@ -173,12 +142,6 @@ export function checkoutLineItem(product) {
     }
   };
 
-  if (product.type === 'membership') {
-    priceData.recurring = {
-      interval: product.interval || 'month'
-    };
-  }
-
   return {
     quantity: 1,
     price_data: priceData
@@ -186,7 +149,6 @@ export function checkoutLineItem(product) {
 }
 
 export async function createPaymentOrder(client, { userId, product, customerId }) {
-  const credits = product.type === 'membership' ? product.monthlyCredits : product.credits;
   const { data, error } = await client
     .from('payment_orders')
     .insert({
@@ -197,7 +159,7 @@ export async function createPaymentOrder(client, { userId, product, customerId }
       stripe_customer_id: customerId,
       amount_cents: product.amountCents,
       currency: product.currency,
-      credits
+      credits: product.credits
     })
     .select('*')
     .single();
@@ -205,7 +167,6 @@ export async function createPaymentOrder(client, { userId, product, customerId }
   if (error) throw error;
   return data;
 }
-
 export async function markOrderCheckoutCreated(client, orderId, session) {
   const { data, error } = await client
     .from('payment_orders')
@@ -213,7 +174,6 @@ export async function markOrderCheckoutCreated(client, orderId, session) {
       status: 'checkout_created',
       stripe_session_id: session.id,
       stripe_customer_id: typeof session.customer === 'string' ? session.customer : null,
-      stripe_subscription_id: typeof session.subscription === 'string' ? session.subscription : null,
       metadata: {
         checkoutUrl: session.url || ''
       }
@@ -224,55 +184,6 @@ export async function markOrderCheckoutCreated(client, orderId, session) {
 
   if (error) throw error;
   return data;
-}
-
-function stripeTimestampToIso(value) {
-  return value ? new Date(value * 1000).toISOString() : null;
-}
-
-function normalizeSubscriptionStatus(status) {
-  if (['trialing', 'active', 'past_due', 'canceled', 'unpaid'].includes(status)) return status;
-  return 'inactive';
-}
-
-export async function upsertMembershipFromSubscription(client, subscription, fallback = {}) {
-  const userId = subscription.metadata?.userId || fallback.userId;
-  const planId = subscription.metadata?.productId || subscription.metadata?.planId || fallback.planId;
-  if (!userId || !planId) return null;
-
-  const item = subscription.items?.data?.[0] || {};
-  const payload = {
-    user_id: userId,
-    plan_id: planId,
-    status: normalizeSubscriptionStatus(subscription.status),
-    stripe_customer_id: typeof subscription.customer === 'string' ? subscription.customer : fallback.customerId || null,
-    stripe_subscription_id: subscription.id,
-    current_period_start: stripeTimestampToIso(subscription.current_period_start || item.current_period_start),
-    current_period_end: stripeTimestampToIso(subscription.current_period_end || item.current_period_end),
-    cancel_at_period_end: Boolean(subscription.cancel_at_period_end)
-  };
-
-  const { data, error } = await client
-    .from('user_memberships')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function hasTransactionWithMetadata(client, userId, source, metadata) {
-  const { data, error } = await client
-    .from('credit_transactions')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('source', source)
-    .contains('metadata', metadata)
-    .limit(1);
-
-  if (error) throw error;
-  return Boolean(data?.length);
 }
 
 export async function grantCredits(client, { userId, amount, type, source, referenceId = null, metadata = {} }) {
@@ -325,39 +236,4 @@ export async function completeCreditPackOrder(client, session) {
 
   if (updateError) throw updateError;
   return data;
-}
-
-export async function grantMembershipCredits(client, { userId, planId, source, metadata, orderId = null }) {
-  const { data: plan, error } = await client
-    .from('membership_plans')
-    .select('*')
-    .eq('id', planId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!plan || !plan.active) return null;
-
-  if (await hasTransactionWithMetadata(client, userId, source, metadata)) {
-    return null;
-  }
-
-  await grantCredits(client, {
-    userId,
-    amount: Number(plan.monthly_credits || 0),
-    type: 'membership_grant',
-    source,
-    referenceId: orderId,
-    metadata: {
-      ...metadata,
-      planId,
-      monthlyCredits: Number(plan.monthly_credits || 0)
-    }
-  });
-
-  await client
-    .from('user_memberships')
-    .update({ monthly_credits_granted_at: new Date().toISOString() })
-    .eq('user_id', userId);
-
-  return plan;
 }

@@ -27,17 +27,9 @@ Use the live site at [gpt-image2.canghe.ai](https://gpt-image2.canghe.ai/) to br
   </a>
 </p>
 
-## WeChat Official Account
-
-Search **苍何** on WeChat or scan the QR card below. To join the GPT-Image2 community group, follow the account and reply with **gpt-image-2交流群**.
-
-<p align="center">
-  <img src="data/images/wechat-community.jpg" alt="Canghe WeChat community QR card" width="760">
-</p>
-
 ## ❤️ Sponsors
 
-> [Want to appear here?](data/images/sponsors/wechat-personal.jpg) Support the project through GitHub Sponsors, or follow the WeChat official account above and send your product name plus a short sponsorship note.
+> [Want to appear here?](data/images/sponsors/wechat-personal.jpg) Support the project through GitHub Sponsors and send your product name plus a short sponsorship note.
 
 | Sponsor | Description |
 | ------- | ----------- |
@@ -329,7 +321,7 @@ GOOGLE_ANALYTICS_REFRESH_TOKEN=
 Setup checklist:
 
 - Apply [`supabase/migrations/202605090001_user_credits.sql`](supabase/migrations/202605090001_user_credits.sql) to the Supabase project.
-- Apply [`supabase/migrations/20260509090000_membership_billing.sql`](supabase/migrations/20260509090000_membership_billing.sql) to add membership plans, credit packs, Stripe order records, and credit adjustment RPCs.
+- Apply [`supabase/migrations/20260509090000_membership_billing.sql`](supabase/migrations/20260509090000_membership_billing.sql) to add credit packs, Stripe order records, and credit adjustment RPCs.
 - Apply [`supabase/migrations/20260512090000_google_account_center.sql`](supabase/migrations/20260512090000_google_account_center.sql) to add account usage summaries and forced credit charging for super admins.
 - Apply [`supabase/migrations/20260512143000_pricing_admin_metrics.sql`](supabase/migrations/20260512143000_pricing_admin_metrics.sql) to update the `$5 / 300 credits` catalog and add admin dashboard metrics.
 - Apply [`supabase/migrations/20260515090000_case_favorites.sql`](supabase/migrations/20260515090000_case_favorites.sql) to add per-user case favorites.
@@ -338,7 +330,7 @@ Setup checklist:
 - To force Google-only sign-in, disable the Email Provider in Supabase Auth settings.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in server-side environments such as Vercel Environment Variables.
 - Configure Stripe Checkout with the webhook URL `https://gpt-image2.canghe.ai/api/billing/webhook`.
-- Subscribe the Stripe webhook to `checkout.session.completed`, `invoice.payment_succeeded`, `customer.subscription.updated`, and `customer.subscription.deleted`.
+- Subscribe the Stripe webhook to `checkout.session.completed`.
 - Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` only in server-side Vercel Environment Variables.
 - Create a GA4 property for `gpt-image2.canghe.ai`, add the measurement ID to `VITE_GA_MEASUREMENT_ID`, and copy the numeric property ID to `GA4_PROPERTY_ID`.
 - Create a Google OAuth Web Client with `http://localhost:8080/oauth2callback` as an authorized redirect URI, then add `GOOGLE_ANALYTICS_CLIENT_ID` and `GOOGLE_ANALYTICS_CLIENT_SECRET` to local `.env.local`.

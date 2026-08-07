@@ -73,7 +73,6 @@ function normalizeBusinessDailyRows(rows) {
   return (rows || []).map((row) => ({
     date: row?.date || row?.metric_date || '',
     registrations: Number(row?.registrations || row?.new_registrations || 0),
-    newMembers: Number(row?.new_members || 0),
     generations: Number(row?.generations || 0),
     succeededGenerations: Number(row?.succeeded_generations || 0),
     failedGenerations: Number(row?.failed_generations || 0),
@@ -86,8 +85,6 @@ function normalizeBusinessMetrics(row, dailyRows = []) {
     totalUsers: Number(row?.total_users || 0),
     rangeUsers: Number(row?.range_users || 0),
     superAdmins: Number(row?.super_admins || 0),
-    activeMemberships: Number(row?.active_memberships || 0),
-    rangeMemberships: Number(row?.range_memberships || 0),
     totalCreditBalance: Number(row?.total_credit_balance || 0),
     totalGenerations: Number(row?.total_generations || 0),
     rangeGenerations: Number(row?.range_generations || 0),
@@ -97,20 +94,17 @@ function normalizeBusinessMetrics(row, dailyRows = []) {
     rangeSucceededGenerations: Number(row?.range_succeeded_generations || 0),
     totalGenerationCredits: Number(row?.total_generation_credits || 0),
     rangeGenerationCredits: Number(row?.range_generation_credits || 0),
-    purchasedCredits: Number(row?.purchased_credits || 0),
-    membershipCredits: Number(row?.membership_credits || 0)
+    purchasedCredits: Number(row?.purchased_credits || 0)
   };
 
   return {
     ...legacy,
     totals: {
       registeredUsers: legacy.totalUsers,
-      activeMembers: legacy.activeMemberships,
       totalGenerations: legacy.totalGenerations,
       totalCreditsConsumed: legacy.totalGenerationCredits,
       totalCreditBalance: legacy.totalCreditBalance,
       purchasedCredits: legacy.purchasedCredits,
-      membershipCredits: legacy.membershipCredits,
       superAdmins: legacy.superAdmins,
       succeededGenerations: legacy.succeededGenerations,
       failedGenerations: legacy.failedGenerations,
@@ -118,7 +112,6 @@ function normalizeBusinessMetrics(row, dailyRows = []) {
     },
     range: {
       newRegistrations: legacy.rangeUsers,
-      newMembers: legacy.rangeMemberships,
       generations: legacy.rangeGenerations,
       succeededGenerations: legacy.rangeSucceededGenerations,
       failedGenerations: Number(row?.range_failed_generations || 0),

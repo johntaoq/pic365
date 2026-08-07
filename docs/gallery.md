@@ -6,7 +6,7 @@
 - [Part 1：例 1-165](./gallery-part-1.md)
 - [Part 2：例 166-520](./gallery-part-2.md)
 - [工业级提示词模板与防坑指南](./templates.md)
-- [声明、Star 趋势图与公众号](./disclaimer.md)
+- [声明与 Star 趋势图](./disclaimer.md)
 
 ## 推荐入口
 
