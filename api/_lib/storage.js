@@ -3,6 +3,8 @@ import path from 'node:path';
 import { BlobServiceClient } from '@azure/storage-blob';
 
 const DEFAULT_LOCAL_ROOT = path.resolve(process.cwd(), 'data', 'generated');
+const MAX_REMOTE_IMAGE_BYTES = 32 * 1024 * 1024;
+const REMOTE_IMAGE_TIMEOUT_MS = 45 * 1000;
 let azureContainerClient;
 
 function parseDataUrl(value) {
@@ -26,12 +28,22 @@ export function inspectImageDataUrl(value) {
 async function readImage(value) {
   const parsed = parseDataUrl(value);
   if (parsed) return parsed;
-  const response = await fetch(value);
-  if (!response.ok) throw new Error(`IMAGE_DOWNLOAD_FAILED_${response.status}`);
-  return {
-    contentType: response.headers.get('content-type') || 'image/png',
-    bytes: Buffer.from(await response.arrayBuffer())
-  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REMOTE_IMAGE_TIMEOUT_MS);
+  try {
+    const response = await fetch(value, { signal: controller.signal });
+    if (!response.ok) throw new Error(`IMAGE_DOWNLOAD_FAILED_${response.status}`);
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > MAX_REMOTE_IMAGE_BYTES) throw new Error('IMAGE_DOWNLOAD_TOO_LARGE');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_REMOTE_IMAGE_BYTES) throw new Error('IMAGE_DOWNLOAD_TOO_LARGE');
+    return {
+      contentType: response.headers.get('content-type') || 'image/png',
+      bytes
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function extensionForContentType(contentType) {

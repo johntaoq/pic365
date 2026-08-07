@@ -3620,6 +3620,101 @@ button {
   gap: 12px;
 }
 
+.ecommerceTemplatePanel {
+  background:
+    radial-gradient(circle at 6% 0%, rgba(141, 244, 204, 0.1), transparent 34%),
+    linear-gradient(145deg, rgba(14, 23, 42, 0.78), rgba(8, 13, 27, 0.72));
+  border: 1px solid rgba(141, 244, 204, 0.15);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.ecommerceTemplatePanel > strong,
+.ecommerceVisualStyleTitle {
+  color: #dce9fb;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.ecommerceTemplateGrid {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ecommerceTemplateGrid > button {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(149, 167, 220, 0.15);
+  border-radius: 12px;
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: auto 1fr;
+  min-width: 0;
+  padding: 11px;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.ecommerceTemplateGrid > button:hover,
+.ecommerceTemplateGrid > button:focus-visible {
+  background: rgba(103, 232, 249, 0.06);
+  border-color: rgba(103, 232, 249, 0.36);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.ecommerceTemplateGrid > button.active {
+  background: linear-gradient(145deg, rgba(141, 244, 204, 0.12), rgba(86, 179, 255, 0.06));
+  border-color: rgba(141, 244, 204, 0.52);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.ecommerceTemplateGrid > button > span {
+  align-items: center;
+  background: rgba(103, 232, 249, 0.1);
+  border-radius: 9px;
+  color: #8feeff;
+  display: flex;
+  grid-row: 1 / span 3;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.ecommerceTemplateGrid > button.active > span {
+  background: rgba(141, 244, 204, 0.16);
+  color: #a9f8d9;
+}
+
+.ecommerceTemplateGrid strong {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ecommerceTemplateGrid small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.ecommerceTemplateGrid em {
+  align-items: center;
+  color: #8feeff;
+  display: inline-flex;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  gap: 4px;
+}
+
+.ecommerceTemplateGrid > button.active em {
+  color: #a9f8d9;
+}
+
 .ecommerceVisualStyleGrid {
   display: grid;
   gap: 10px;
@@ -3800,7 +3895,7 @@ button {
 .ecommerceAssetGrid {
   display: grid;
   gap: 9px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .ecommerceAssetGrid article {
@@ -3842,6 +3937,73 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ecommerceAssetInfo > label {
+  display: grid;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.ecommerceAssetInfo > label small {
+  color: #8393ad;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.ecommerceAssetInfo select {
+  background: #11192b;
+  border: 1px solid rgba(149, 167, 220, 0.2);
+  border-radius: 7px;
+  color: #dce8fa;
+  font: inherit;
+  font-size: 9px;
+  min-width: 0;
+  padding: 6px 7px;
+  width: 100%;
+}
+
+.ecommerceAssetOrder {
+  align-items: center;
+  background: rgba(4, 8, 18, 0.42);
+  border: 1px solid rgba(149, 167, 220, 0.11);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: 28px 1fr 28px;
+  margin-top: 2px;
+  padding: 4px;
+}
+
+.ecommerceAssetOrder button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(149, 167, 220, 0.13);
+  border-radius: 6px;
+  color: #aac0df;
+  cursor: pointer;
+  display: flex;
+  height: 26px;
+  justify-content: center;
+  padding: 0;
+}
+
+.ecommerceAssetOrder button:hover:not(:disabled),
+.ecommerceAssetOrder button:focus-visible:not(:disabled) {
+  border-color: rgba(103, 232, 249, 0.34);
+  color: #aef4ff;
+  outline: none;
+}
+
+.ecommerceAssetOrder button:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.ecommerceAssetOrder > span {
+  color: #91a5c4;
+  font-size: 9px;
+  text-align: center;
 }
 
 .ecommerceAssetGrid article > button {
@@ -3896,6 +4058,99 @@ button {
   font-size: 10px;
   line-height: 1.5;
   margin: 0;
+}
+
+.ecommerceIdentityPanel {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(103, 232, 249, 0.08), transparent 35%),
+    rgba(5, 10, 22, 0.42);
+  border: 1px solid rgba(141, 244, 204, 0.16);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+}
+
+.ecommerceIdentityPanel > header {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.ecommerceIdentityPanel > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ecommerceIdentityPanel > header strong {
+  align-items: center;
+  color: #dff9ef;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.ecommerceIdentityPanel > header span {
+  color: #8799b5;
+  font-size: 10px;
+}
+
+.ecommerceIdentityPanel > header button {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(141, 244, 204, 0.15), rgba(86, 179, 255, 0.11));
+  border: 1px solid rgba(141, 244, 204, 0.28);
+  border-radius: 10px;
+  color: #bdffe6;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+}
+
+.ecommerceIdentityGrid {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ecommerceIdentityGrid > label {
+  display: grid;
+  gap: 5px;
+}
+
+.ecommerceIdentityGrid > label.wide {
+  grid-column: 1 / -1;
+}
+
+.ecommerceIdentityGrid span {
+  color: #aebbd1;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.ecommerceIdentityGrid textarea {
+  background: #11192b;
+  border: 1px solid rgba(149, 167, 220, 0.18);
+  border-radius: 9px;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.55;
+  min-height: 72px;
+  padding: 9px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.ecommerceIdentityGrid textarea:focus {
+  border-color: #8df4cc;
+  outline: 3px solid rgba(141, 244, 204, 0.09);
 }
 
 .ecommerceProductionSection {
@@ -3984,6 +4239,11 @@ button {
 .ecommerceProductionGrid article.selected {
   border-color: rgba(141, 244, 204, 0.5);
   box-shadow: 0 0 0 1px rgba(141, 244, 204, 0.08);
+}
+
+.ecommerceProductionGrid article.locked {
+  border-color: rgba(255, 209, 105, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 105, 0.06);
 }
 
 .ecommerceProductionPreview {
@@ -4115,6 +4375,16 @@ button {
   right: 8px;
   top: 8px;
   z-index: 3;
+}
+
+.ecommerceTaskStatus svg {
+  flex: 0 0 auto;
+  vertical-align: -2px;
+}
+
+.ecommerceTaskStatus.locked {
+  border-color: rgba(255, 209, 105, 0.3);
+  color: #ffe0a0;
 }
 
 .ecommerceImageLightbox {
@@ -4277,6 +4547,380 @@ button {
   transition: none;
 }
 
+.ecommerceVersionOverlay {
+  backdrop-filter: blur(18px) saturate(1.05);
+  background: rgba(2, 5, 13, 0.84);
+  display: grid;
+  inset: 0;
+  padding: 22px;
+  place-items: center;
+  position: fixed;
+  z-index: 170;
+}
+
+.ecommerceVersionDialog {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(103, 232, 249, 0.09), transparent 30%),
+    linear-gradient(145deg, rgba(14, 21, 38, 0.99), rgba(6, 10, 21, 0.99));
+  border: 1px solid rgba(184, 211, 255, 0.2);
+  border-radius: 19px;
+  box-shadow: 0 34px 110px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: grid;
+  gap: 13px;
+  max-height: 92vh;
+  overflow: auto;
+  padding: 16px;
+  width: min(1180px, 96vw);
+}
+
+.ecommerceVersionHeader {
+  align-items: center;
+  border-bottom: 1px solid rgba(149, 167, 220, 0.13);
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 2px 2px 13px;
+}
+
+.ecommerceVersionHeader > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.ecommerceVersionHeader small {
+  color: #8df4cc;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ecommerceVersionHeader h3 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.ecommerceVersionHeader span {
+  color: #90a2be;
+  font-size: 10px;
+}
+
+.ecommerceVersionHeader > div:last-child {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.ecommerceVersionHeader button,
+.ecommerceConsistencyBar > button,
+.ecommerceRevisionPanel > button {
+  align-items: center;
+  background: rgba(149, 167, 220, 0.08);
+  border: 1px solid rgba(149, 167, 220, 0.18);
+  border-radius: 9px;
+  color: #d8e4f7;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 6px;
+  justify-content: center;
+  min-height: 35px;
+  padding: 0 11px;
+}
+
+.ecommerceVersionHeader button.locked {
+  background: rgba(255, 209, 105, 0.1);
+  border-color: rgba(255, 209, 105, 0.27);
+  color: #ffe0a0;
+}
+
+.ecommerceVersionHeader button.close {
+  padding: 0;
+  width: 35px;
+}
+
+.ecommerceVersionHeader button:disabled,
+.ecommerceConsistencyBar > button:disabled,
+.ecommerceRevisionPanel > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.ecommerceConsistencyBar {
+  align-items: center;
+  background: rgba(5, 10, 22, 0.48);
+  border: 1px solid rgba(149, 167, 220, 0.13);
+  border-radius: 12px;
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 10px;
+}
+
+.ecommerceConsistencyBar > span {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 10px;
+  gap: 6px;
+  padding: 6px 9px;
+}
+
+.ecommerceConsistencyBar > span.unchecked {
+  background: rgba(149, 167, 220, 0.09);
+  color: #a7b7cf;
+}
+
+.ecommerceConsistencyBar > span.passed {
+  background: rgba(141, 244, 204, 0.1);
+  color: #a8f6d8;
+}
+
+.ecommerceConsistencyBar > span.warning {
+  background: rgba(255, 209, 105, 0.1);
+  color: #ffe0a0;
+}
+
+.ecommerceConsistencyBar > span.failed {
+  background: rgba(255, 113, 132, 0.1);
+  color: #ffb1bc;
+}
+
+.ecommerceConsistencyBar em {
+  font-size: 9px;
+  font-style: normal;
+}
+
+.ecommerceConsistencyBar p,
+.ecommerceConsistencyBar ul {
+  color: #aab9d0;
+  font-size: 10px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ecommerceConsistencyBar ul {
+  grid-column: 1 / -1;
+  padding-left: 20px;
+}
+
+.ecommerceConsistencyBar > button {
+  background: rgba(103, 232, 249, 0.08);
+  border-color: rgba(103, 232, 249, 0.22);
+  color: #baf5ff;
+}
+
+.ecommerceVersionGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ecommerceVersionGrid article {
+  background: rgba(255, 255, 255, 0.027);
+  border: 1px solid rgba(149, 167, 220, 0.14);
+  border-radius: 12px;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ecommerceVersionGrid article.adopted {
+  border-color: rgba(141, 244, 204, 0.54);
+  box-shadow: 0 0 0 1px rgba(141, 244, 204, 0.08);
+}
+
+.ecommerceVersionGrid article.failed,
+.ecommerceVersionGrid article.cancelled {
+  border-color: rgba(255, 113, 132, 0.22);
+}
+
+.ecommerceVersionImage {
+  aspect-ratio: 1;
+  background: rgba(4, 8, 18, 0.55);
+  position: relative;
+}
+
+.ecommerceVersionImage > button {
+  background: transparent;
+  border: 0;
+  cursor: zoom-in;
+  height: 100%;
+  padding: 0;
+  position: relative;
+  width: 100%;
+}
+
+.ecommerceVersionImage img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.ecommerceVersionImage > button > svg {
+  background: rgba(4, 8, 18, 0.7);
+  border-radius: 8px;
+  bottom: 8px;
+  color: white;
+  padding: 7px;
+  position: absolute;
+  right: 8px;
+  width: 31px;
+}
+
+.ecommerceVersionImage > div {
+  align-items: center;
+  color: #d3949e;
+  display: flex;
+  flex-direction: column;
+  font-size: 9px;
+  gap: 7px;
+  height: 100%;
+  justify-content: center;
+  padding: 10px;
+  text-align: center;
+}
+
+.ecommerceVersionImage > em {
+  align-items: center;
+  background: rgba(7, 17, 28, 0.88);
+  border: 1px solid rgba(141, 244, 204, 0.4);
+  border-radius: 999px;
+  color: #a8f6d8;
+  display: inline-flex;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 850;
+  gap: 3px;
+  left: 7px;
+  padding: 4px 6px;
+  position: absolute;
+  top: 7px;
+}
+
+.ecommerceVersionMeta {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+}
+
+.ecommerceVersionMeta strong {
+  font-size: 11px;
+}
+
+.ecommerceVersionMeta span,
+.ecommerceVersionMeta time {
+  color: #8fa0bc;
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ecommerceVersionActions {
+  display: grid;
+  gap: 5px;
+  padding: 0 9px 9px;
+}
+
+.ecommerceVersionActions button,
+.ecommerceVersionActions a {
+  align-items: center;
+  background: rgba(141, 244, 204, 0.08);
+  border: 1px solid rgba(141, 244, 204, 0.2);
+  border-radius: 7px;
+  color: #b9ffe3;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  gap: 4px;
+  justify-content: center;
+  min-height: 29px;
+  padding: 0 6px;
+  text-decoration: none;
+}
+
+.ecommerceVersionActions button.danger {
+  background: rgba(255, 113, 132, 0.07);
+  border-color: rgba(255, 113, 132, 0.18);
+  color: #ffb4bf;
+}
+
+.ecommerceVersionActions a {
+  background: rgba(103, 232, 249, 0.07);
+  border-color: rgba(103, 232, 249, 0.18);
+  color: #baf5ff;
+}
+
+.ecommerceVersionActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.ecommerceVersionEmpty {
+  color: #8fa0bc;
+  font-size: 11px;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 34px;
+  text-align: center;
+}
+
+.ecommerceRevisionPanel {
+  align-items: end;
+  background: linear-gradient(145deg, rgba(86, 179, 255, 0.055), rgba(141, 244, 204, 0.035));
+  border: 1px solid rgba(103, 232, 249, 0.14);
+  border-radius: 12px;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: minmax(170px, 0.34fr) minmax(0, 1fr) auto;
+  padding: 11px;
+}
+
+.ecommerceRevisionPanel > div {
+  display: grid;
+  gap: 5px;
+}
+
+.ecommerceRevisionPanel strong {
+  font-size: 10px;
+}
+
+.ecommerceRevisionPanel select,
+.ecommerceRevisionPanel textarea {
+  background: #10182a;
+  border: 1px solid rgba(149, 167, 220, 0.19);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  padding: 8px 9px;
+}
+
+.ecommerceRevisionPanel textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.ecommerceRevisionPanel > button {
+  background: linear-gradient(135deg, rgba(141, 244, 204, 0.16), rgba(86, 179, 255, 0.12));
+  border-color: rgba(141, 244, 204, 0.28);
+  color: #c5ffea;
+  min-height: 40px;
+}
+
+.ecommerceRevisionPanel > p {
+  color: #ffe0a0;
+  font-size: 9px;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .ecommerceProductionCopy {
   display: grid;
   gap: 3px;
@@ -4298,6 +4942,48 @@ button {
   color: var(--muted);
   font-size: 9px;
   font-style: normal;
+}
+
+.ecommerceProductionMeta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.ecommerceProductionMeta .consistency {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 8px;
+  gap: 3px;
+  padding: 3px 6px;
+}
+
+.ecommerceProductionMeta .consistency.unchecked {
+  background: rgba(149, 167, 220, 0.09);
+  color: #95a6c1;
+}
+
+.ecommerceProductionMeta .consistency.passed {
+  background: rgba(141, 244, 204, 0.1);
+  color: #a8f6d8;
+}
+
+.ecommerceProductionMeta .consistency.warning {
+  background: rgba(255, 209, 105, 0.1);
+  color: #ffdc91;
+}
+
+.ecommerceProductionMeta .consistency.failed {
+  background: rgba(255, 113, 132, 0.1);
+  color: #ffb1bc;
+}
+
+.ecommerceProductionCopy .ecommerceLatestAttemptFailed {
+  color: #ffbdc6;
+  line-height: 1.45;
 }
 
 .ecommerceProductionActions {
@@ -4339,6 +5025,18 @@ button {
   background: rgba(255, 113, 132, 0.1);
   border-color: rgba(255, 113, 132, 0.3);
   color: #ffb1bc;
+}
+
+.ecommerceProductionActions button.retry {
+  background: rgba(255, 209, 105, 0.1);
+  border-color: rgba(255, 209, 105, 0.28);
+  color: #ffe0a0;
+}
+
+.ecommerceProductionActions button.versions {
+  background: rgba(149, 167, 220, 0.07);
+  border-color: rgba(149, 167, 220, 0.18);
+  color: #c8d5ea;
 }
 
 .ecommerceProductionActions a {
@@ -5073,6 +5771,15 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ecommerceVersionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ecommerceRevisionPanel {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
   .ecommerceProductionGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5136,6 +5843,45 @@ button {
 
   .ecommerceVisualStyleGrid {
     grid-template-columns: 1fr;
+  }
+
+  .ecommerceTemplateGrid,
+  .ecommerceIdentityGrid,
+  .ecommerceVersionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ecommerceIdentityGrid > label.wide {
+    grid-column: auto;
+  }
+
+  .ecommerceIdentityPanel > header,
+  .ecommerceVersionHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ecommerceIdentityPanel > header button {
+    justify-content: center;
+  }
+
+  .ecommerceVersionOverlay {
+    padding: 8px;
+  }
+
+  .ecommerceVersionDialog {
+    border-radius: 14px;
+    max-height: 96vh;
+    padding: 11px;
+    width: 100%;
+  }
+
+  .ecommerceConsistencyBar {
+    grid-template-columns: 1fr;
+  }
+
+  .ecommerceConsistencyBar > button {
+    width: 100%;
   }
 
   .ecommerceBatchToolbar {

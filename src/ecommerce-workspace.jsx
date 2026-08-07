@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronDown,
   CircleHelp,
@@ -10,17 +12,22 @@ import {
   GripVertical,
   ImagePlus,
   ImageUp,
+  History,
   ListChecks,
   LoaderCircle,
+  Lock,
   Maximize2,
   Minus,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  ShieldAlert,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Trash2,
+  Unlock,
   WandSparkles,
   X,
   Zap
@@ -30,6 +37,8 @@ import {
   ECOMMERCE_PLATFORMS,
   getDefaultSlotIds,
   getEcommercePlatform,
+  getEcommerceTemplate,
+  getEcommerceTemplates,
   getEcommerceVisualStyle,
   getVisualStylesForIndustry
 } from '../shared/ecommerce-catalog.js';
@@ -76,8 +85,28 @@ const copy = {
     masterAsset: 'Product master',
     setMaster: 'Use as master',
     masterHint: 'The master image locks the product structure, color, packaging, and accessory count for later generation.',
+    assetPurpose: 'Reference purpose',
+    assetPurposeOptions: {
+      '': 'Follow material type', identity: 'Product identity', angle: 'Angle and geometry', packaging: 'Packaging',
+      brand: 'Brand mark', material: 'Material', detail: 'Detail', composition: 'Composition only', lighting: 'Lighting only', scene: 'Scene only'
+    },
+    moveAssetUp: 'Move earlier',
+    moveAssetDown: 'Move later',
+    identitySpec: 'Product identity lock',
+    identitySpecHint: 'These facts are hard constraints for every generated image.',
+    buildIdentitySpec: 'Build lock specification',
+    identityStructure: 'Structure and proportions',
+    identityColorsMaterials: 'Colors and materials',
+    identityBrandMarks: 'Brand marks',
+    identityPackaging: 'Packaging',
+    identityIncludedItems: 'Included items',
+    identityMustKeep: 'Must keep',
+    identityMustAvoid: 'Must avoid',
     visualDirection: '4. Visual direction',
     visualStyle: 'Visual style',
+    templates: 'Recommended image-set templates',
+    applyTemplate: 'Apply template',
+    templateApplied: 'Applied',
     outputSlots: '5. Images to produce',
     slotHint: 'Each selected slot will later have its own prompt, generation status, and version history.',
     expandSection: 'Expand',
@@ -94,6 +123,10 @@ const copy = {
     generateSlot: 'Generate · 1 credit',
     regenerateSlot: 'New version · 1 credit',
     queued: 'Queued',
+    running: 'Generating',
+    interrupted: 'Interrupted',
+    taskAlreadyActive: 'This image already has a task in progress.',
+    retry: 'Retry',
     cancel: 'Cancel',
     cancelling: 'Cancelling...',
     selectAtLeastOne: 'Select at least one image.',
@@ -103,6 +136,27 @@ const copy = {
     generationFailed: 'This image could not be generated. Your reserved credit was returned.',
     moderationBlocked: 'This slot needs safer product wording. Update the project facts or restricted-content field, save, and try again.',
     downloadOutput: 'Download',
+    versions: 'Versions',
+    versionCenter: 'Version center',
+    adoptedVersion: 'Current version',
+    adoptVersion: 'Use this version',
+    archiveVersion: 'Remove version',
+    outputLocked: 'Locked',
+    lockOutput: 'Lock result',
+    unlockOutput: 'Unlock result',
+    slotLocked: 'Unlock this result before generating or changing versions.',
+    latestAttemptFailed: 'Latest attempt failed; the adopted result is still preserved.',
+    noVersions: 'No versions yet.',
+    localRevision: 'Revise from this version',
+    localRevisionPlaceholder: 'Describe only what should change; product identity remains locked.',
+    createRevision: 'Create revised version · 1 credit',
+    consistencyCheck: 'Check consistency',
+    consistencyChecking: 'Checking...',
+    consistencyUnchecked: 'Not checked',
+    consistencyPassed: 'Consistent',
+    consistencyWarning: 'Review suggested',
+    consistencyFailed: 'Identity drift',
+    consistencyFailedRequest: 'Consistency check failed. Try again later.',
     viewImage: 'Open image preview',
     imagePreview: 'Image preview',
     zoomIn: 'Zoom in',
@@ -177,8 +231,28 @@ const copy = {
     masterAsset: '商品母版',
     setMaster: '设为母版',
     masterHint: '商品母版用于锁定后续生成中的商品结构、颜色、包装和配件数量。',
+    assetPurpose: '参考用途',
+    assetPurposeOptions: {
+      '': '按素材类型使用', identity: '商品身份', angle: '角度与几何', packaging: '包装结构',
+      brand: '品牌标识', material: '材质', detail: '局部细节', composition: '仅参考构图', lighting: '仅参考光线', scene: '仅参考场景'
+    },
+    moveAssetUp: '向前移动',
+    moveAssetDown: '向后移动',
+    identitySpec: '商品身份锁定',
+    identitySpecHint: '以下内容是整套图片必须遵守的硬约束。',
+    buildIdentitySpec: '建立锁定规范',
+    identityStructure: '结构与比例',
+    identityColorsMaterials: '颜色与材质',
+    identityBrandMarks: '品牌与标识',
+    identityPackaging: '包装',
+    identityIncludedItems: '配件与包含物',
+    identityMustKeep: '必须保留',
+    identityMustAvoid: '必须避免',
     visualDirection: '4. 视觉方向',
     visualStyle: '视觉风格',
+    templates: '推荐套图模板',
+    applyTemplate: '应用模板',
+    templateApplied: '已应用',
     outputSlots: '5. 需要生成的图片',
     slotHint: '下一阶段，每个已选槽位都会拥有独立 Prompt、生成状态和版本历史。',
     expandSection: '展开',
@@ -195,6 +269,10 @@ const copy = {
     generateSlot: '生成此图 · 1积分',
     regenerateSlot: '生成新版本 · 1积分',
     queued: '排队中',
+    running: '生成中',
+    interrupted: '任务中断',
+    taskAlreadyActive: '这张图片已有任务正在执行。',
+    retry: '重试',
     cancel: '取消',
     cancelling: '取消中……',
     selectAtLeastOne: '请至少选择一张图片。',
@@ -204,6 +282,27 @@ const copy = {
     generationFailed: '本张图片生成失败，预留积分已经退回。',
     moderationBlocked: '当前商品表述需要调整。请修改商品资料或禁止内容，保存后再试。',
     downloadOutput: '下载图片',
+    versions: '版本',
+    versionCenter: '版本中心',
+    adoptedVersion: '当前采用',
+    adoptVersion: '采用此版本',
+    archiveVersion: '删除版本',
+    outputLocked: '已锁定',
+    lockOutput: '锁定结果',
+    unlockOutput: '解除锁定',
+    slotLocked: '请先解除锁定，再生成或切换版本。',
+    latestAttemptFailed: '最近一次生成失败，当前采用结果已保留。',
+    noVersions: '还没有生成版本。',
+    localRevision: '基于此版本修改',
+    localRevisionPlaceholder: '只描述要修改的部分；商品身份仍保持锁定。',
+    createRevision: '生成修改版本 · 1积分',
+    consistencyCheck: '一致性检查',
+    consistencyChecking: '检查中……',
+    consistencyUnchecked: '未检查',
+    consistencyPassed: '一致',
+    consistencyWarning: '建议复核',
+    consistencyFailed: '商品身份漂移',
+    consistencyFailedRequest: '一致性检查失败，请稍后重试。',
     viewImage: '放大查看图片',
     imagePreview: '图片预览',
     zoomIn: '放大',
@@ -243,6 +342,9 @@ const copy = {
 };
 
 const SECTION_KEYS = ['platform', 'brief', 'assets', 'visual', 'outputs'];
+const IDENTITY_SPEC_FIELDS = [
+  'structure', 'colorsMaterials', 'brandMarks', 'packaging', 'includedItems', 'mustKeep', 'mustAvoid'
+];
 
 function getCollapsedSectionsForStage(stage) {
   if (stage === 1 || stage === 2) {
@@ -267,6 +369,8 @@ function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
     sellingPoints: '',
     specifications: '',
     prohibitedContent: '',
+    identitySpec: {},
+    templateId: '',
     visualStyleId: getVisualStylesForIndustry(industryId)[0]?.id || 'clean-commercial',
     selectedSlots: getDefaultSlotIds(platformId)
   };
@@ -278,6 +382,8 @@ function projectToForm(project) {
     ...createEmptyForm(project.platformId),
     ...project,
     industryId,
+    identitySpec: project.identitySpec || {},
+    templateId: project.templateId || '',
     visualStyleId: project.visualStyleId || getVisualStylesForIndustry(industryId)[0]?.id || 'clean-commercial',
     sellingPoints: (project.sellingPoints || []).join('\n'),
     selectedSlots: project.selectedSlots?.length ? project.selectedSlots : getDefaultSlotIds(project.platformId)
@@ -516,6 +622,153 @@ function EcommerceImageLightbox({ image, t, onClose }) {
   );
 }
 
+function EcommerceVersionCenterModal({
+  slot,
+  versions,
+  output,
+  t,
+  language,
+  platformName,
+  productName,
+  actionState,
+  onClose,
+  onPreview,
+  onSelect,
+  onArchive,
+  onLock,
+  onCheck,
+  onRevise
+}) {
+  const successfulVersions = versions.filter((item) => item.status === 'succeeded' && item.imageUrl);
+  const [baseGenerationId, setBaseGenerationId] = useState(output?.selectedGenerationId || successfulVersions[0]?.id || '');
+  const [adjustment, setAdjustment] = useState('');
+
+  useEffect(() => {
+    setBaseGenerationId(output?.selectedGenerationId || successfulVersions[0]?.id || '');
+    setAdjustment('');
+  }, [slot?.id, output?.selectedGenerationId]);
+
+  if (!slot) return null;
+  const consistencyLabel = output?.consistencyStatus === 'passed'
+    ? t.consistencyPassed
+    : output?.consistencyStatus === 'warning'
+      ? t.consistencyWarning
+      : output?.consistencyStatus === 'failed'
+        ? t.consistencyFailed
+        : t.consistencyUnchecked;
+
+  return (
+    <div className="ecommerceVersionOverlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="ecommerceVersionDialog" role="dialog" aria-modal="true" aria-labelledby="ecommerce-version-title">
+        <header className="ecommerceVersionHeader">
+          <div>
+            <small>{t.versionCenter}</small>
+            <h3 id="ecommerce-version-title">{slot.name}</h3>
+            <span>{slot.aspectRatio} · {slot.recommendedSize}</span>
+          </div>
+          <div>
+            <button
+              className={output?.locked ? 'locked' : ''}
+              type="button"
+              disabled={!output?.selectedGenerationId || actionState === 'lock'}
+              onClick={() => onLock(!output?.locked)}
+            >
+              {actionState === 'lock' ? <LoaderCircle className="spin" size={16} /> : output?.locked ? <Unlock size={16} /> : <Lock size={16} />}
+              {output?.locked ? t.unlockOutput : t.lockOutput}
+            </button>
+            <button className="close" type="button" onClick={onClose} aria-label={t.closePreview}><X size={19} /></button>
+          </div>
+        </header>
+
+        <div className="ecommerceConsistencyBar">
+          <span className={output?.consistencyStatus || 'unchecked'}>
+            {output?.consistencyStatus === 'passed' ? <ShieldCheck size={17} /> : <ShieldAlert size={17} />}
+            <strong>{consistencyLabel}</strong>
+            {output?.consistencyScore != null ? <em>{output.consistencyScore}/100</em> : null}
+          </span>
+          {output?.consistencySummary ? <p>{output.consistencySummary}</p> : null}
+          {output?.consistencyIssues?.length ? (
+            <ul>{output.consistencyIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+          ) : null}
+          <button
+            type="button"
+            disabled={!output?.selectedGenerationId || actionState === 'check'}
+            onClick={onCheck}
+          >
+            {actionState === 'check' ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}
+            {actionState === 'check' ? t.consistencyChecking : t.consistencyCheck}
+          </button>
+        </div>
+
+        <div className="ecommerceVersionGrid">
+          {versions.length ? versions.map((version) => {
+            const adopted = output?.selectedGenerationId === version.id;
+            const busy = actionState === `select:${version.id}` || actionState === `archive:${version.id}`;
+            return (
+              <article className={`${adopted ? 'adopted' : ''} ${version.status}`} key={version.id}>
+                <div className="ecommerceVersionImage">
+                  {version.imageUrl ? (
+                    <button type="button" onClick={() => onPreview(version)} aria-label={`${t.viewImage}: ${t.version(version.versionNumber)}`}>
+                      <img src={version.imageUrl} alt={`${slot.name} ${t.version(version.versionNumber)}`} loading="lazy" />
+                      <Maximize2 size={17} />
+                    </button>
+                  ) : <div><ShieldAlert size={22} /><span>{version.errorCode || version.status}</span></div>}
+                  {adopted ? <em><Check size={12} /> {t.adoptedVersion}</em> : null}
+                </div>
+                <div className="ecommerceVersionMeta">
+                  <strong>{t.version(version.versionNumber)}</strong>
+                  <span>{version.quality} · {version.size}</span>
+                  <time>{version.completedAt || version.createdAt}</time>
+                </div>
+                <div className="ecommerceVersionActions">
+                  {version.status === 'succeeded' ? (
+                    <button type="button" disabled={adopted || output?.locked || busy} onClick={() => onSelect(version.id)}>
+                      {actionState === `select:${version.id}` ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}
+                      {adopted ? t.adoptedVersion : t.adoptVersion}
+                    </button>
+                  ) : null}
+                  <button className="danger" type="button" disabled={adopted || output?.locked || busy} onClick={() => onArchive(version.id)}>
+                    {actionState === `archive:${version.id}` ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}
+                    {t.archiveVersion}
+                  </button>
+                  {version.imageUrl ? (
+                    <a href={version.imageUrl} download={buildDownloadFilename({
+                      productName,
+                      slotName: slot.name,
+                      platformName,
+                      versionNumber: version.versionNumber,
+                      language
+                    })}><Download size={14} /> {t.downloadOutput}</a>
+                  ) : null}
+                </div>
+              </article>
+            );
+          }) : <p className="ecommerceVersionEmpty">{t.noVersions}</p>}
+        </div>
+
+        <div className="ecommerceRevisionPanel">
+          <div>
+            <strong>{t.localRevision}</strong>
+            <select value={baseGenerationId} onChange={(event) => setBaseGenerationId(event.target.value)} disabled={output?.locked}>
+              {successfulVersions.map((version) => <option value={version.id} key={version.id}>{t.version(version.versionNumber)}</option>)}
+            </select>
+          </div>
+          <textarea value={adjustment} onChange={(event) => setAdjustment(event.target.value)} placeholder={t.localRevisionPlaceholder} disabled={output?.locked} />
+          <button
+            type="button"
+            disabled={output?.locked || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
+            onClick={() => onRevise({ baseGenerationId, adjustment: adjustment.trim() })}
+          >
+            {actionState === 'revise' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+            {t.createRevision}
+          </button>
+          {output?.locked ? <p>{t.slotLocked}</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function clampFloatingPoint(x, y, width, height) {
   const margin = 14;
   const halfWidth = width / 2;
@@ -712,6 +965,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [assetType, setAssetType] = useState('product');
   const [assetStatus, setAssetStatus] = useState('idle');
   const [generations, setGenerations] = useState([]);
+  const [outputs, setOutputs] = useState([]);
   const [selectedProductionSlots, setSelectedProductionSlots] = useState([]);
   const [generationTasks, setGenerationTasks] = useState({});
   const [batchRunning, setBatchRunning] = useState(false);
@@ -721,6 +975,8 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [aiBriefStatus, setAiBriefStatus] = useState('idle');
   const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(0));
   const [previewImage, setPreviewImage] = useState(null);
+  const [versionCenterSlotId, setVersionCenterSlotId] = useState('');
+  const [versionActionState, setVersionActionState] = useState('');
   const fileInputRef = useRef(null);
   const generationTasksRef = useRef(new Map());
   const platform = useMemo(() => getEcommercePlatform(form.platformId), [form.platformId]);
@@ -729,6 +985,10 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     [form.industryId]
   );
   const recommendedVisualStyles = useMemo(() => getVisualStylesForIndustry(form.industryId), [form.industryId]);
+  const recommendedTemplates = useMemo(
+    () => getEcommerceTemplates(form.platformId, form.industryId),
+    [form.platformId, form.industryId]
+  );
   const visualStyles = useMemo(() => {
     const selectedStyle = getEcommerceVisualStyle(form.visualStyleId);
     return recommendedVisualStyles.some((item) => item.id === selectedStyle.id)
@@ -804,6 +1064,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     generationTasksRef.current.clear();
     setGenerationTasks({});
     setBatchRunning(false);
+    setVersionCenterSlotId('');
   }, [form.id]);
 
   useEffect(() => {
@@ -811,18 +1072,40 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   }, [form.selectedSlots]);
 
   useEffect(() => {
+    const lockedSlots = new Set(outputs.filter((output) => output.locked).map((output) => output.slotId));
+    if (!lockedSlots.size) return;
+    setSelectedProductionSlots((current) => current.filter((slotId) => !lockedSlots.has(slotId)));
+  }, [outputs]);
+
+  useEffect(() => {
     let active = true;
     setGenerations([]);
+    setOutputs([]);
     setGenerationMessage('');
     if (!signedIn || !form.id) return () => {
       active = false;
     };
 
-    fetch(`/api/ecommerce/outputs?projectId=${encodeURIComponent(form.id)}`)
-      .then((response) => response.json().then((payload) => ({ response, payload })))
-      .then(({ response, payload }) => {
-        if (!active || !response.ok || !payload?.ok) return;
-        setGenerations(payload.generations || []);
+    Promise.all([
+      fetch(`/api/ecommerce/outputs?projectId=${encodeURIComponent(form.id)}`)
+        .then((response) => response.json().then((payload) => ({ response, payload }))),
+      fetch(`/api/ecommerce/tasks?projectId=${encodeURIComponent(form.id)}`)
+        .then((response) => response.json().then((payload) => ({ response, payload })))
+    ])
+      .then(([outputResult, taskResult]) => {
+        if (!active) return;
+        if (outputResult.response.ok && outputResult.payload?.ok) {
+          setGenerations(outputResult.payload.generations || []);
+          setOutputs(outputResult.payload.outputs || []);
+        }
+        if (taskResult.response.ok && taskResult.payload?.ok) {
+          const latestBySlot = new Map();
+          for (const task of taskResult.payload.tasks || []) {
+            if (!latestBySlot.has(task.slotId)) latestBySlot.set(task.slotId, { ...task, taskId: task.id });
+          }
+          generationTasksRef.current = latestBySlot;
+          setGenerationTasks(Object.fromEntries(latestBySlot));
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -840,12 +1123,66 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateIdentitySpec(field, value) {
+    if (!IDENTITY_SPEC_FIELDS.includes(field)) return;
+    setMessage('');
+    if (form.id) setStatus('dirty');
+    setForm((current) => ({
+      ...current,
+      identitySpec: { ...(current.identitySpec || {}), [field]: value }
+    }));
+  }
+
+  function buildIdentitySpec() {
+    const isChinese = language === 'zh';
+    const brandText = form.brandName.trim()
+      ? isChinese
+        ? `${form.brandName.trim()} 的现有 Logo、字形、位置和比例必须保持一致，不添加其他品牌。`
+        : `Keep the existing ${form.brandName.trim()} logo, lettering, placement, and proportions unchanged. Do not add another brand.`
+      : isChinese
+        ? '不得自行添加品牌、Logo、认证或第三方商标。'
+        : 'Do not invent a brand, logo, certification, or third-party trademark.';
+    const spec = isChinese ? {
+      structure: `严格以商品母版为准，保持${form.productName || '商品'}的外形、长宽比例、开合结构、接口、按钮、把手和关键轮廓一致。`,
+      colorsMaterials: '保持母版中的主色、金属或非金属材质、表面纹理、透明度、光泽和边缘处理一致。',
+      brandMarks: brandText,
+      packaging: form.specifications.trim() || '包装结构、标签布局、包装颜色和原有文字必须以真实包装素材为准。',
+      includedItems: form.specifications.trim() || '只展示素材和商品资料明确存在的配件、数量与包装包含物。',
+      mustKeep: '商品主体几何、颜色、材质、品牌位置、配件数量和相互比例在所有槽位中保持一致。',
+      mustAvoid: form.prohibitedContent.trim() || '不得增加、删除或替换部件，不得生成伪 Logo、乱码、错误包装和虚构规格。'
+    } : {
+      structure: `Use the product master as the authority. Preserve the shape, proportions, opening mechanism, ports, controls, handles, and defining outline of ${form.productName || 'the product'}.`,
+      colorsMaterials: 'Preserve the master image colors, materials, surface texture, transparency, gloss, and edge treatment.',
+      brandMarks: brandText,
+      packaging: form.specifications.trim() || 'Packaging structure, label layout, colors, and existing text must follow the real packaging reference.',
+      includedItems: form.specifications.trim() || 'Show only accessories, quantities, and package contents explicitly supported by the project materials.',
+      mustKeep: 'Keep product geometry, color, material, brand placement, included-item count, and relative scale consistent across every slot.',
+      mustAvoid: form.prohibitedContent.trim() || 'Do not add, remove, or replace parts. Avoid fake logos, garbled text, incorrect packaging, and invented specifications.'
+    };
+    setForm((current) => ({ ...current, identitySpec: spec }));
+    if (form.id) setStatus('dirty');
+  }
+
+  function applyTemplate(templateId) {
+    const template = getEcommerceTemplate(templateId);
+    if (!template || template.platformId !== form.platformId) return;
+    const validSlotIds = new Set(platform.slots.map((item) => item.id));
+    setForm((current) => ({
+      ...current,
+      templateId: template.id,
+      visualStyleId: template.visualStyleId,
+      selectedSlots: template.selectedSlotIds.filter((slotId) => validSlotIds.has(slotId))
+    }));
+    if (form.id) setStatus('dirty');
+  }
+
   function selectPlatform(platformId) {
     setMessage('');
     if (form.id) setStatus('dirty');
     setForm((current) => ({
       ...current,
       platformId,
+      templateId: '',
       selectedSlots: getDefaultSlotIds(platformId)
     }));
   }
@@ -859,6 +1196,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setForm((current) => ({
       ...current,
       industryId,
+      templateId: '',
       visualStyleId: firstStyle?.id || 'clean-commercial'
     }));
   }
@@ -1025,7 +1363,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         failed = true;
       }
     }
-    if (uploaded.length) setAssets((current) => [...uploaded, ...current]);
+    if (uploaded.length) setAssets((current) => [...current, ...uploaded].sort((a, b) => a.sortOrder - b.sortOrder));
     setAssetStatus(failed ? 'error' : 'idle');
   }
 
@@ -1054,7 +1392,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const response = await fetch('/api/ecommerce/assets', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: form.id, assetId })
+        body: JSON.stringify({ action: 'set-master', projectId: form.id, assetId })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.project) throw new Error(payload?.error || 'MASTER_UPDATE_FAILED');
@@ -1063,6 +1401,46 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setProjects((current) => current.map((item) => item.id === payload.project.id ? payload.project : item));
       setAssetStatus('idle');
     } catch {
+      setAssetStatus('error');
+    }
+  }
+
+  async function handleAssetPurpose(assetId, purpose) {
+    if (!hasAccess || !form.id || assetStatus === 'uploading') return;
+    setAssetStatus('updating');
+    try {
+      const response = await fetch('/api/ecommerce/assets', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'purpose', projectId: form.id, assetId, purpose })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'ASSET_UPDATE_FAILED');
+      setAssets(payload.assets || []);
+      setAssetStatus('idle');
+    } catch {
+      setAssetStatus('error');
+    }
+  }
+
+  async function moveAsset(assetId, direction) {
+    const currentIndex = assets.findIndex((item) => item.id === assetId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= assets.length || !form.id) return;
+    const nextAssets = [...assets];
+    [nextAssets[currentIndex], nextAssets[nextIndex]] = [nextAssets[nextIndex], nextAssets[currentIndex]];
+    setAssets(nextAssets.map((item, index) => ({ ...item, sortOrder: index + 1 })));
+    try {
+      const response = await fetch('/api/ecommerce/assets', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reorder', projectId: form.id, assetIds: nextAssets.map((item) => item.id) })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'ASSET_REORDER_FAILED');
+      setAssets(payload.assets || nextAssets);
+    } catch {
+      setAssets(assets);
       setAssetStatus('error');
     }
   }
@@ -1078,12 +1456,56 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   }
 
   function toggleProductionSlot(slotId) {
+    if (outputs.find((item) => item.slotId === slotId)?.locked) return;
     setSelectedProductionSlots((current) => current.includes(slotId)
       ? current.filter((item) => item !== slotId)
       : [...current, slotId]);
   }
 
-  async function runSlotGeneration(slotId, taskId = createGenerationTaskId()) {
+  async function refreshProjectRuntime() {
+    if (!form.id) return;
+    const [outputResponse, taskResponse] = await Promise.all([
+      fetch(`/api/ecommerce/outputs?projectId=${encodeURIComponent(form.id)}`),
+      fetch(`/api/ecommerce/tasks?projectId=${encodeURIComponent(form.id)}`)
+    ]);
+    const [outputPayload, taskPayload] = await Promise.all([
+      outputResponse.json().catch(() => ({})),
+      taskResponse.json().catch(() => ({}))
+    ]);
+    if (outputResponse.ok && outputPayload?.ok) {
+      setGenerations(outputPayload.generations || []);
+      setOutputs(outputPayload.outputs || []);
+    }
+    if (taskResponse.ok && taskPayload?.ok) {
+      const latestBySlot = new Map();
+      for (const task of taskPayload.tasks || []) {
+        if (!latestBySlot.has(task.slotId)) latestBySlot.set(task.slotId, { ...task, taskId: task.id });
+      }
+      generationTasksRef.current = latestBySlot;
+      setGenerationTasks(Object.fromEntries(latestBySlot));
+    }
+  }
+
+  async function createServerTasks(requests) {
+    const response = await fetch('/api/ecommerce/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: form.id, requests })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.ok || !payload.tasks?.length) {
+      if (payload.error === 'SLOT_LOCKED') setGenerationMessage(t.slotLocked);
+      if (payload.error === 'TASK_ALREADY_ACTIVE') {
+        await refreshProjectRuntime();
+        setGenerationMessage(t.taskAlreadyActive);
+      }
+      throw new Error(payload.error || 'TASK_CREATE_FAILED');
+    }
+    for (const task of payload.tasks) updateGenerationTask(task.slotId, { ...task, taskId: task.id });
+    return payload.tasks;
+  }
+
+  async function runSlotGeneration(slotId, taskId = '', request = {}) {
     if (!hasAccess) {
       onBilling?.();
       return false;
@@ -1096,45 +1518,69 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setGenerationMessage(t.saveChangesFirst);
       return false;
     }
+    const output = outputs.find((item) => item.slotId === slotId);
+    if (output?.locked) {
+      setGenerationMessage(t.slotLocked);
+      return false;
+    }
 
+    let serverTask = taskId ? generationTasksRef.current.get(slotId) : null;
+    try {
+      if (!taskId) {
+        [serverTask] = await createServerTasks([{
+          id: createGenerationTaskId(),
+          slotId,
+          quality: 'medium',
+          adjustment: request.adjustment || '',
+          baseGenerationId: request.baseGenerationId || ''
+        }]);
+        taskId = serverTask.id;
+      }
+    } catch (error) {
+      if (!['TASK_ALREADY_ACTIVE', 'SLOT_LOCKED'].includes(error?.message)) setGenerationMessage(t.generationFailed);
+      return false;
+    }
     const queuedTask = generationTasksRef.current.get(slotId);
     if (queuedTask && queuedTask.taskId !== taskId) return false;
-    updateGenerationTask(slotId, { taskId, status: 'generating' });
+    updateGenerationTask(slotId, { ...(serverTask || queuedTask), taskId, status: 'running' });
     setGenerationMessage('');
     try {
       const response = await fetch('/api/ecommerce/generate-slot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: form.id, slotId, quality: 'medium', taskId })
+        body: JSON.stringify({ projectId: form.id, slotId, taskId })
       });
       const payload = await response.json().catch(() => ({}));
       if (payload.user) onProfileChange?.(payload.user);
       if (payload.generation) {
         setGenerations((current) => [payload.generation, ...current.filter((item) => item.id !== payload.generation.id)]);
       }
+      if (payload.output) {
+        setOutputs((current) => [payload.output, ...current.filter((item) => item.slotId !== payload.output.slotId)]);
+      }
+      if (payload.task) updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
       if (!response.ok || !payload?.ok || !payload.generation) {
         if (payload.error === 'GENERATION_CANCELLED') return false;
         if (payload.error === 'CREDITS_REQUIRED') onBilling?.();
-        setGenerationMessage(payload.error === 'CONTENT_MODERATION_BLOCKED' ? t.moderationBlocked : t.generationFailed);
+        setGenerationMessage(
+          payload.error === 'CONTENT_MODERATION_BLOCKED'
+            ? t.moderationBlocked
+            : payload.error === 'SLOT_LOCKED'
+              ? t.slotLocked
+              : t.generationFailed
+        );
         return false;
       }
       return true;
     } catch {
       setGenerationMessage(t.generationFailed);
       return false;
-    } finally {
-      const currentTask = generationTasksRef.current.get(slotId);
-      if (currentTask?.taskId === taskId) updateGenerationTask(slotId, null);
     }
   }
 
   async function handleCancelGeneration(slotId) {
     const task = generationTasksRef.current.get(slotId);
     if (!task) return;
-    if (task.status === 'queued') {
-      updateGenerationTask(slotId, null);
-      return;
-    }
     if (task.status === 'cancelling') return;
 
     updateGenerationTask(slotId, { ...task, status: 'cancelling' });
@@ -1146,15 +1592,37 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'CANCEL_FAILED');
+      if (payload.task) updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
     } catch {
       const currentTask = generationTasksRef.current.get(slotId);
-      if (currentTask?.taskId === task.taskId) updateGenerationTask(slotId, { ...task, status: 'generating' });
+      if (currentTask?.taskId === task.taskId) updateGenerationTask(slotId, { ...task, status: 'running' });
       setGenerationMessage(t.generationFailed);
     }
   }
 
+  async function handleRetryTask(slotId) {
+    const task = generationTasksRef.current.get(slotId);
+    if (!task?.taskId) return runSlotGeneration(slotId);
+    try {
+      const response = await fetch('/api/ecommerce/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'retry', taskId: task.taskId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload.task) throw new Error(payload.error || 'TASK_RETRY_FAILED');
+      updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
+      return runSlotGeneration(slotId, payload.task.id);
+    } catch {
+      setGenerationMessage(t.generationFailed);
+      return false;
+    }
+  }
+
   async function handleGenerateSelected() {
-    const slotIds = selectedProductionSlots.filter((slotId) => form.selectedSlots.includes(slotId));
+    const slotIds = selectedProductionSlots.filter((slotId) => (
+      form.selectedSlots.includes(slotId) && !outputs.find((item) => item.slotId === slotId)?.locked
+    ));
     if (!slotIds.length) {
       setGenerationMessage(t.selectAtLeastOne);
       return;
@@ -1174,8 +1642,15 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       return;
     }
 
-    const jobs = slotIds.map((slotId) => ({ slotId, taskId: createGenerationTaskId() }));
-    jobs.forEach((job) => updateGenerationTask(job.slotId, { taskId: job.taskId, status: 'queued' }));
+    let jobs;
+    try {
+      jobs = (await createServerTasks(slotIds.map((slotId) => ({
+        id: createGenerationTaskId(), slotId, quality: 'medium'
+      })))).map((task) => ({ slotId: task.slotId, taskId: task.id }));
+    } catch (error) {
+      if (!['TASK_ALREADY_ACTIVE', 'SLOT_LOCKED'].includes(error?.message)) setGenerationMessage(t.generationFailed);
+      return;
+    }
     setBatchRunning(true);
     setGenerationMessage('');
     await runTaskPool(jobs, BATCH_GENERATION_CONCURRENCY, async (job) => {
@@ -1186,29 +1661,144 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setBatchRunning(false);
   }
 
+  async function handleSelectVersion(slotId, generationId) {
+    setVersionActionState(`select:${generationId}`);
+    try {
+      const response = await fetch('/api/ecommerce/outputs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'select', projectId: form.id, slotId, generationId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload.output) throw new Error(payload.error || 'VERSION_SELECT_FAILED');
+      setOutputs((current) => [payload.output, ...current.filter((item) => item.slotId !== slotId)]);
+    } catch {
+      setGenerationMessage(t.generationFailed);
+    } finally {
+      setVersionActionState('');
+    }
+  }
+
+  async function handleArchiveVersion(slotId, generationId) {
+    setVersionActionState(`archive:${generationId}`);
+    try {
+      const response = await fetch(`/api/ecommerce/outputs?projectId=${encodeURIComponent(form.id)}&slotId=${encodeURIComponent(slotId)}&generationId=${encodeURIComponent(generationId)}`, {
+        method: 'DELETE'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) throw new Error(payload.error || 'VERSION_ARCHIVE_FAILED');
+      setGenerations((current) => current.filter((item) => item.id !== generationId));
+    } catch {
+      setGenerationMessage(t.generationFailed);
+    } finally {
+      setVersionActionState('');
+    }
+  }
+
+  async function handleLockOutput(slotId, locked) {
+    setVersionActionState('lock');
+    try {
+      const response = await fetch('/api/ecommerce/outputs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'lock', projectId: form.id, slotId, locked })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload.output) throw new Error(payload.error || 'OUTPUT_LOCK_FAILED');
+      setOutputs((current) => [payload.output, ...current.filter((item) => item.slotId !== slotId)]);
+    } catch {
+      setGenerationMessage(t.generationFailed);
+    } finally {
+      setVersionActionState('');
+    }
+  }
+
+  async function handleConsistencyCheck(slotId) {
+    setVersionActionState('check');
+    try {
+      const response = await fetch('/api/ecommerce/check-consistency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: form.id, slotId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload.output) throw new Error(payload.error || 'CONSISTENCY_CHECK_FAILED');
+      setOutputs((current) => [payload.output, ...current.filter((item) => item.slotId !== slotId)]);
+    } catch {
+      setGenerationMessage(t.consistencyFailedRequest);
+    } finally {
+      setVersionActionState('');
+    }
+  }
+
+  async function handleCreateRevision(slotId, request) {
+    setVersionActionState('revise');
+    try {
+      const success = await runSlotGeneration(slotId, '', request);
+      if (success) await refreshProjectRuntime();
+    } finally {
+      setVersionActionState('');
+    }
+  }
+
   const localName = (item) => language === 'zh' ? item.nameZh : item.nameEn;
   const localDescription = (item) => language === 'zh' ? item.descriptionZh : item.descriptionEn;
   const localPurpose = (item) => language === 'zh' ? item.purposeZh : item.purposeEn;
   const localExamples = (item) => language === 'zh' ? item.examplesZh : item.examplesEn;
-  const latestGenerationBySlot = useMemo(() => {
-    const latest = new Map();
+  const generationsBySlot = useMemo(() => {
+    const grouped = new Map();
     for (const generation of generations) {
       if (!generation.slotId) continue;
-      const current = latest.get(generation.slotId);
-      if (!current || (current.status !== 'succeeded' && generation.status === 'succeeded')) {
-        latest.set(generation.slotId, generation);
-      }
+      if (!grouped.has(generation.slotId)) grouped.set(generation.slotId, []);
+      grouped.get(generation.slotId).push(generation);
     }
-    return latest;
+    for (const versions of grouped.values()) {
+      versions.sort((left, right) => Number(right.versionNumber || 0) - Number(left.versionNumber || 0));
+    }
+    return grouped;
   }, [generations]);
+  const outputsBySlot = useMemo(
+    () => new Map(outputs.map((output) => [output.slotId, output])),
+    [outputs]
+  );
+  const adoptedGenerationBySlot = useMemo(() => {
+    const adopted = new Map();
+    for (const [slotId, versions] of generationsBySlot) {
+      const output = outputsBySlot.get(slotId);
+      const selected = output?.selectedGenerationId
+        ? versions.find((version) => version.id === output.selectedGenerationId)
+        : null;
+      adopted.set(slotId, selected || versions.find((version) => version.status === 'succeeded') || null);
+    }
+    return adopted;
+  }, [generationsBySlot, outputsBySlot]);
+  const latestAttemptBySlot = useMemo(() => {
+    const latest = new Map();
+    for (const [slotId, versions] of generationsBySlot) latest.set(slotId, versions[0] || null);
+    return latest;
+  }, [generationsBySlot]);
   const productionSlots = platform.slots.filter((item) => form.selectedSlots.includes(item.id));
-  const allProductionSelected = Boolean(productionSlots.length) && productionSlots.every((item) => selectedProductionSlots.includes(item.id));
-  const activeGenerationCount = Object.values(generationTasks).filter((task) => ['queued', 'generating', 'cancelling'].includes(task.status)).length;
+  const selectableProductionSlots = productionSlots.filter((item) => !outputsBySlot.get(item.id)?.locked);
+  const allProductionSelected = Boolean(selectableProductionSlots.length) && selectableProductionSlots.every((item) => selectedProductionSlots.includes(item.id));
+  const activeGenerationCount = Object.values(generationTasks).filter((task) => ['queued', 'running', 'cancelling'].includes(task.status)).length;
+  const versionCenterCatalogSlot = platform.slots.find((item) => item.id === versionCenterSlotId);
+  const versionCenterSlot = versionCenterCatalogSlot
+    ? { ...versionCenterCatalogSlot, name: localName(versionCenterCatalogSlot) }
+    : null;
   const assetTypeLabels = {
     product: t.assetProduct,
     packaging: t.assetPackaging,
     logo: t.assetLogo,
     reference: t.assetReference
+  };
+  const identityFieldLabels = {
+    structure: t.identityStructure,
+    colorsMaterials: t.identityColorsMaterials,
+    brandMarks: t.identityBrandMarks,
+    packaging: t.identityPackaging,
+    includedItems: t.identityIncludedItems,
+    mustKeep: t.identityMustKeep,
+    mustAvoid: t.identityMustAvoid
   };
   const hasAiOriginal = (field) => Object.prototype.hasOwnProperty.call(aiBriefOriginals, field);
   const resetLabelFor = (field) => hasAiOriginal(field) ? t.restoreAiField : t.clearField;
@@ -1475,15 +2065,44 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                 {assetStatus === 'loading' ? <LoaderCircle className="spin ecommerceListLoader" size={21} /> : null}
                 {assets.length ? (
                   <div className="ecommerceAssetGrid">
-                    {assets.map((asset) => (
+                    {assets.map((asset, index) => (
                       <article className={asset.isMaster ? 'master' : ''} key={asset.id}>
                         <img src={asset.imageUrl} alt={asset.fileName} loading="lazy" />
                         {asset.isMaster ? <em className="ecommerceMasterBadge"><Check size={12} /> {t.masterAsset}</em> : null}
-                        <div>
+                        <div className="ecommerceAssetInfo">
                           <span>{assetTypeLabels[asset.assetType] || asset.assetType}</span>
                           <strong title={asset.fileName}>{asset.fileName}</strong>
+                          <label>
+                            <small>{t.assetPurpose}</small>
+                            <select
+                              value={asset.purpose || ''}
+                              onChange={(event) => handleAssetPurpose(asset.id, event.target.value)}
+                              disabled={assetStatus === 'updating'}
+                            >
+                              {Object.entries(t.assetPurposeOptions).map(([value, label]) => (
+                                <option value={value} key={value}>{label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="ecommerceAssetOrder" aria-label={t.assetPurpose}>
+                            <button
+                              type="button"
+                              title={t.moveAssetUp}
+                              aria-label={`${t.moveAssetUp}: ${asset.fileName}`}
+                              onClick={() => moveAsset(asset.id, -1)}
+                              disabled={index === 0}
+                            ><ArrowUp size={13} /></button>
+                            <span>{index + 1}</span>
+                            <button
+                              type="button"
+                              title={t.moveAssetDown}
+                              aria-label={`${t.moveAssetDown}: ${asset.fileName}`}
+                              onClick={() => moveAsset(asset.id, 1)}
+                              disabled={index === assets.length - 1}
+                            ><ArrowDown size={13} /></button>
+                          </div>
                         </div>
-                        <button type="button" aria-label={`${t.deleteAsset}: ${asset.fileName}`} onClick={() => handleDeleteAsset(asset.id)}>
+                        <button className="ecommerceAssetDeleteButton" type="button" aria-label={`${t.deleteAsset}: ${asset.fileName}`} onClick={() => handleDeleteAsset(asset.id)}>
                           <Trash2 size={14} />
                         </button>
                         {!asset.isMaster && ['product', 'packaging'].includes(asset.assetType) ? (
@@ -1496,6 +2115,26 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   </div>
                 ) : assetStatus !== 'loading' ? <div className="ecommerceAssetEmpty"><ImageUp size={22} /><span>{t.assetLimit}</span></div> : null}
                 {assets.length ? <p className="ecommerceMasterHint">{t.masterHint}</p> : null}
+                <div className="ecommerceIdentityPanel">
+                  <header>
+                    <div>
+                      <strong><Lock size={15} /> {t.identitySpec}</strong>
+                      <span>{t.identitySpecHint}</span>
+                    </div>
+                    <button type="button" onClick={buildIdentitySpec}><WandSparkles size={15} /> {t.buildIdentitySpec}</button>
+                  </header>
+                  <div className="ecommerceIdentityGrid">
+                    {IDENTITY_SPEC_FIELDS.map((field) => (
+                      <label className={field === 'mustKeep' || field === 'mustAvoid' ? 'wide' : ''} key={field}>
+                        <span>{identityFieldLabels[field]}</span>
+                        <textarea
+                          value={form.identitySpec?.[field] || ''}
+                          onChange={(event) => updateIdentitySpec(field, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 </>
               )}
             </div>
@@ -1512,6 +2151,29 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               onToggle={() => toggleSection('visual')}
             />
             <div className="ecommerceCollapsibleContent" id="ecommerce-visual-section" hidden={collapsedSections.visual}>
+              <div className="ecommerceTemplatePanel">
+                <strong>{t.templates}</strong>
+                <div className="ecommerceTemplateGrid">
+                  {recommendedTemplates.map((template) => {
+                    const active = form.templateId === template.id;
+                    return (
+                      <button
+                        className={active ? 'active' : ''}
+                        type="button"
+                        onClick={() => applyTemplate(template.id)}
+                        aria-pressed={active}
+                        key={template.id}
+                      >
+                        <span><Box size={16} /></span>
+                        <strong>{localName(template)}</strong>
+                        <small>{localDescription(template)}</small>
+                        <em>{active ? <Check size={13} /> : <Plus size={13} />}{active ? t.templateApplied : t.applyTemplate}</em>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <strong className="ecommerceVisualStyleTitle">{t.visualStyle}</strong>
               <div className="ecommerceVisualStyleGrid" aria-label={t.visualStyle}>
                 {visualStyles.map((item) => {
                   const active = form.visualStyleId === item.id;
@@ -1584,7 +2246,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               <div className="ecommerceBatchToolbar">
                 <button
                   type="button"
-                  onClick={() => setSelectedProductionSlots(allProductionSelected ? [] : productionSlots.map((item) => item.id))}
+                  onClick={() => setSelectedProductionSlots(allProductionSelected ? [] : selectableProductionSlots.map((item) => item.id))}
                   disabled={batchRunning}
                 >
                   <ListChecks size={15} />
@@ -1604,70 +2266,108 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               {generationMessage ? <p className="ecommerceGenerationMessage">{generationMessage}</p> : null}
               <div className="ecommerceProductionGrid">
                 {productionSlots.map((item) => {
-                  const latest = latestGenerationBySlot.get(item.id);
+                  const output = outputsBySlot.get(item.id);
+                  const versions = generationsBySlot.get(item.id) || [];
+                  const adopted = adoptedGenerationBySlot.get(item.id);
+                  const latestAttempt = latestAttemptBySlot.get(item.id);
                   const task = generationTasks[item.id];
-                  const taskActive = Boolean(task && ['queued', 'generating', 'cancelling'].includes(task.status));
+                  const taskActive = Boolean(task && ['queued', 'running', 'cancelling'].includes(task.status));
+                  const retryable = Boolean(task && ['failed', 'cancelled', 'interrupted'].includes(task.status));
+                  const latestAttemptFailed = Boolean(adopted && latestAttempt && latestAttempt.id !== adopted.id && latestAttempt.status !== 'succeeded');
                   const selectedForBatch = selectedProductionSlots.includes(item.id);
+                  const taskLabel = task?.status === 'queued'
+                    ? t.queued
+                    : task?.status === 'running'
+                      ? t.running
+                      : task?.status === 'cancelling'
+                        ? t.cancelling
+                        : task?.status === 'interrupted'
+                          ? t.interrupted
+                          : '';
+                  const consistencyLabel = output?.consistencyStatus === 'passed'
+                    ? t.consistencyPassed
+                    : output?.consistencyStatus === 'warning'
+                      ? t.consistencyWarning
+                      : output?.consistencyStatus === 'failed'
+                        ? t.consistencyFailed
+                        : t.consistencyUnchecked;
                   return (
-                    <article className={selectedForBatch ? 'selected' : ''} key={item.id}>
+                    <article className={`${selectedForBatch ? 'selected' : ''} ${output?.locked ? 'locked' : ''}`} key={item.id}>
                       <div className="ecommerceProductionPreview">
-                        {latest?.imageUrl ? (
+                        {adopted?.imageUrl ? (
                           <button
                             className="ecommerceProductionImageButton"
                             type="button"
                             aria-label={`${t.viewImage}: ${localName(item)}`}
                             title={t.viewImage}
                             onClick={() => setPreviewImage({
-                              imageUrl: latest.imageUrl,
+                              imageUrl: adopted.imageUrl,
                               alt: localName(item),
                               title: localName(item),
-                              meta: `${item.aspectRatio} · ${item.recommendedSize} · ${t.version(latest.versionNumber)}`
+                              meta: `${item.aspectRatio} · ${item.recommendedSize} · ${t.version(adopted.versionNumber)}`
                             })}
                           >
-                            <img src={latest.imageUrl} alt={localName(item)} loading="lazy" />
+                            <img src={adopted.imageUrl} alt={localName(item)} loading="lazy" />
                             <span><Maximize2 size={18} /></span>
                           </button>
                         ) : (
-                          <div><ImagePlus size={24} /><span>{latest?.status === 'failed' ? t.generationFailed : t.noOutput}</span></div>
+                          <div><ImagePlus size={24} /><span>{latestAttempt?.status === 'failed' ? t.generationFailed : t.noOutput}</span></div>
                         )}
                         <label className="ecommerceProductionSelect" aria-label={`${t.selectAll}: ${localName(item)}`}>
                           <input
                             type="checkbox"
                             checked={selectedForBatch}
                             onChange={() => toggleProductionSlot(item.id)}
-                            disabled={batchRunning}
+                            disabled={batchRunning || output?.locked}
                           />
                           <span>{selectedForBatch ? <Check size={14} /> : null}</span>
                         </label>
-                        {task?.status === 'queued' ? <em className="ecommerceTaskStatus">{t.queued}</em> : null}
+                        {taskLabel ? <em className="ecommerceTaskStatus">{taskActive ? <LoaderCircle className="spin" size={11} /> : null}{taskLabel}</em> : null}
+                        {!taskLabel && output?.locked ? <em className="ecommerceTaskStatus locked"><Lock size={11} /> {t.outputLocked}</em> : null}
                       </div>
                       <div className="ecommerceProductionCopy">
                         <span>{item.aspectRatio} · {item.recommendedSize}</span>
                         <strong>{localName(item)}</strong>
-                        {latest ? <em>{t.version(latest.versionNumber)}</em> : null}
+                        <div className="ecommerceProductionMeta">
+                          {adopted ? <em>{t.adoptedVersion} · {t.version(adopted.versionNumber)}</em> : <em>{t.noOutput}</em>}
+                          {adopted ? (
+                            <span className={`consistency ${output?.consistencyStatus || 'unchecked'}`}>
+                              {output?.consistencyStatus === 'passed' ? <ShieldCheck size={12} /> : <ShieldAlert size={12} />}
+                              {consistencyLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        {latestAttemptFailed ? <em className="ecommerceLatestAttemptFailed">{t.latestAttemptFailed}</em> : null}
                       </div>
                       <div className="ecommerceProductionActions">
                         <button
-                          className={taskActive ? 'cancel' : ''}
+                          className={taskActive ? 'cancel' : retryable ? 'retry' : ''}
                           type="button"
-                          onClick={() => taskActive ? handleCancelGeneration(item.id) : runSlotGeneration(item.id)}
-                          disabled={task?.status === 'cancelling' || (!taskActive && (batchRunning || !form.masterAssetId || status === 'dirty'))}
+                          onClick={() => taskActive
+                            ? handleCancelGeneration(item.id)
+                            : retryable
+                              ? handleRetryTask(item.id)
+                              : runSlotGeneration(item.id)}
+                          disabled={output?.locked || task?.status === 'cancelling' || (!taskActive && (batchRunning || !form.masterAssetId || status === 'dirty'))}
                         >
                           {taskActive
                             ? task.status === 'cancelling' ? <LoaderCircle size={15} className="spin" /> : <X size={15} />
-                            : latest ? <RefreshCw size={15} /> : <Sparkles size={15} />}
+                            : retryable ? <RotateCcw size={15} /> : adopted ? <RefreshCw size={15} /> : <Sparkles size={15} />}
                           {taskActive
                             ? task.status === 'cancelling' ? t.cancelling : t.cancel
-                            : status === 'dirty' ? t.saveChangesFirst : latest ? t.regenerateSlot : t.generateSlot}
+                            : retryable ? t.retry : status === 'dirty' ? t.saveChangesFirst : adopted ? t.regenerateSlot : t.generateSlot}
                         </button>
-                        {latest?.imageUrl ? (
+                        <button className="versions" type="button" onClick={() => setVersionCenterSlotId(item.id)}>
+                          <History size={14} /> {t.versions}{versions.length ? ` · ${versions.length}` : ''}
+                        </button>
+                        {adopted?.imageUrl ? (
                           <a
-                            href={latest.imageUrl}
+                            href={adopted.imageUrl}
                             download={buildDownloadFilename({
                               productName: form.productName,
                               slotName: localName(item),
                               platformName: localName(platform),
-                              versionNumber: latest.versionNumber,
+                              versionNumber: adopted.versionNumber,
                               language
                             })}
                           >
@@ -1700,6 +2400,28 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         saving={status === 'saving'}
         disabled={status === 'saving' || !hasAccess}
         formId="ecommerce-product-project-form"
+      />
+      <EcommerceVersionCenterModal
+        slot={versionCenterSlot}
+        versions={versionCenterSlotId ? generationsBySlot.get(versionCenterSlotId) || [] : []}
+        output={versionCenterSlotId ? outputsBySlot.get(versionCenterSlotId) : null}
+        t={t}
+        language={language}
+        platformName={localName(platform)}
+        productName={form.productName}
+        actionState={versionActionState}
+        onClose={() => setVersionCenterSlotId('')}
+        onPreview={(version) => setPreviewImage({
+          imageUrl: version.imageUrl,
+          alt: versionCenterSlot?.name || '',
+          title: `${versionCenterSlot?.name || ''} · ${t.version(version.versionNumber)}`,
+          meta: `${versionCenterSlot?.aspectRatio || ''} · ${versionCenterSlot?.recommendedSize || ''}`
+        })}
+        onSelect={(generationId) => handleSelectVersion(versionCenterSlotId, generationId)}
+        onArchive={(generationId) => handleArchiveVersion(versionCenterSlotId, generationId)}
+        onLock={(locked) => handleLockOutput(versionCenterSlotId, locked)}
+        onCheck={() => handleConsistencyCheck(versionCenterSlotId)}
+        onRevise={(request) => handleCreateRevision(versionCenterSlotId, request)}
       />
       <EcommerceImageLightbox image={previewImage} t={t} onClose={() => setPreviewImage(null)} />
     </div>

@@ -49,15 +49,41 @@ const ASSET_ROLES = {
   reference: '视觉参考图，只参考构图、光线或氛围，绝不能复制其中品牌或商品'
 };
 
-export function buildEcommerceSlotPrompt({ project, platform, slot, assets }) {
+const ASSET_PURPOSES = {
+  identity: '商品身份与结构参照',
+  angle: '角度与几何参照',
+  packaging: '包装结构与文字参照',
+  brand: '品牌标识参照',
+  material: '材质与表面处理参照',
+  detail: '局部细节参照',
+  composition: '仅用于构图参照',
+  lighting: '仅用于光线参照',
+  scene: '仅用于场景氛围参照'
+};
+
+export function buildEcommerceSlotPrompt({ project, platform, slot, assets, revisionRequest = '' }) {
   const sellingPoints = (project.sellingPoints || []).map((item) => `- ${item}`).join('\n') || '- 未填写；不得自行编造';
   const assetGuide = (assets || []).map((asset, index) => {
     const master = asset.id === project.masterAssetId ? '，这是唯一权威商品母版' : '';
-    return `- 输入图片 ${index + 1}：${ASSET_ROLES[asset.assetType] || '项目素材'}${master}`;
+    const purpose = asset.purpose ? `；指定用途：${ASSET_PURPOSES[asset.purpose] || asset.purpose}` : '';
+    return `- 输入图片 ${index + 1}：${ASSET_ROLES[asset.assetType] || '项目素材'}${master}${purpose}`;
   }).join('\n');
   const slotRule = SLOT_RULES[`${platform.id}:${slot.id}`] || slot.purposeZh;
   const industry = getEcommerceIndustry(project.industryId);
   const visualStyle = getEcommerceVisualStyle(project.visualStyleId);
+  const identitySpec = project.identitySpec || {};
+  const identityLines = [
+    ['结构与比例', identitySpec.structure],
+    ['颜色与材质', identitySpec.colorsMaterials],
+    ['品牌与标识', identitySpec.brandMarks],
+    ['包装', identitySpec.packaging],
+    ['配件与包含物', identitySpec.includedItems],
+    ['必须保留', identitySpec.mustKeep],
+    ['必须避免', identitySpec.mustAvoid]
+  ].filter(([, value]) => String(value || '').trim()).map(([label, value]) => `- ${label}：${value}`).join('\n');
+  const revisionSection = String(revisionRequest || '').trim()
+    ? `\n本次修改要求\n- 在保持商品身份锁定不变的前提下，只执行以下调整：${String(revisionRequest).trim()}\n`
+    : '';
 
   return `请基于输入图片制作一张可交付的电商商品图片。
 
@@ -82,6 +108,10 @@ ${assetGuide}
 ${sellingPoints}
 - 禁止出现或避免表达：${project.prohibitedContent || '无额外说明'}
 - 视觉方向：${visualStyle.nameZh}。${visualStyle.promptZh}
+
+商品身份锁定规范
+${identityLines || '- 未单独填写；严格以商品母版、商品事实和包装素材为准'}
+${revisionSection}
 
 必须遵守
 1. 输入图片中的商品母版是唯一结构依据。保持商品外形、比例、颜色、包装、Logo位置、开口、按钮、接口、把手、配件和数量一致。

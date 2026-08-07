@@ -57,6 +57,8 @@ function migrate(db) {
       specifications TEXT NOT NULL DEFAULT '',
       prohibited_content TEXT NOT NULL DEFAULT '',
       ai_brief_originals TEXT NOT NULL DEFAULT '{}',
+      identity_spec TEXT NOT NULL DEFAULT '{}',
+      template_id TEXT NOT NULL DEFAULT '',
       visual_style_id TEXT NOT NULL DEFAULT 'clean-commercial',
       selected_slots TEXT NOT NULL DEFAULT '[]',
       master_asset_id TEXT,
@@ -114,6 +116,7 @@ function migrate(db) {
       storage_path TEXT,
       output_url TEXT,
       error_code TEXT,
+      archived_at TEXT,
       created_at TEXT NOT NULL,
       completed_at TEXT
     );
@@ -127,6 +130,14 @@ function migrate(db) {
       status TEXT NOT NULL DEFAULT 'planned',
       prompt TEXT NOT NULL DEFAULT '',
       version_number INTEGER NOT NULL DEFAULT 1,
+      locked INTEGER NOT NULL DEFAULT 0,
+      locked_at TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      consistency_status TEXT NOT NULL DEFAULT 'unchecked',
+      consistency_score INTEGER,
+      consistency_issues TEXT NOT NULL DEFAULT '[]',
+      consistency_summary TEXT NOT NULL DEFAULT '',
+      checked_at TEXT,
       metadata TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -141,7 +152,27 @@ function migrate(db) {
       mime_type TEXT NOT NULL,
       file_size INTEGER NOT NULL DEFAULT 0,
       storage_path TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ecommerce_generation_tasks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES ecommerce_projects(id) ON DELETE CASCADE,
+      slot_id TEXT NOT NULL,
+      generation_id TEXT REFERENCES generations(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      quality TEXT NOT NULL DEFAULT 'medium',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      cancel_requested INTEGER NOT NULL DEFAULT 0,
+      request_json TEXT NOT NULL DEFAULT '{}',
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS favorites (
@@ -195,6 +226,8 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS ecommerce_projects_user_updated_idx ON ecommerce_projects(user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS ecommerce_outputs_project_slot_idx ON ecommerce_project_outputs(project_id, slot_id, version_number DESC);
     CREATE INDEX IF NOT EXISTS ecommerce_assets_project_created_idx ON ecommerce_project_assets(project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS ecommerce_tasks_project_created_idx ON ecommerce_generation_tasks(project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS ecommerce_tasks_user_status_idx ON ecommerce_generation_tasks(user_id, status);
     CREATE INDEX IF NOT EXISTS ledger_user_created_idx ON credit_ledger(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS reservations_user_status_idx ON credit_reservations(user_id, status);
   `);
@@ -202,9 +235,78 @@ function migrate(db) {
   ensureColumn(db, 'generations', 'project_id', 'TEXT');
   ensureColumn(db, 'generations', 'slot_id', 'TEXT');
   ensureColumn(db, 'generations', 'version_number', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'generations', 'archived_at', 'TEXT');
   ensureColumn(db, 'ecommerce_projects', 'master_asset_id', 'TEXT');
   ensureColumn(db, 'ecommerce_projects', 'ai_brief_originals', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'ecommerce_projects', 'identity_spec', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'ecommerce_projects', 'template_id', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_project_assets', 'purpose', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_project_assets', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'ecommerce_project_outputs', 'locked', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'ecommerce_project_outputs', 'locked_at', 'TEXT');
+  ensureColumn(db, 'ecommerce_project_outputs', 'active', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'ecommerce_project_outputs', 'consistency_status', "TEXT NOT NULL DEFAULT 'unchecked'");
+  ensureColumn(db, 'ecommerce_project_outputs', 'consistency_score', 'INTEGER');
+  ensureColumn(db, 'ecommerce_project_outputs', 'consistency_issues', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, 'ecommerce_project_outputs', 'consistency_summary', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_project_outputs', 'checked_at', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS generations_project_slot_idx ON generations(project_id, slot_id, created_at DESC)');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ecommerce_outputs_project_slot_unique_idx ON ecommerce_project_outputs(project_id, slot_id)');
+
+  db.prepare(`
+    UPDATE ecommerce_generation_tasks
+    SET status = 'interrupted', error_code = 'SERVER_RESTARTED', updated_at = ?, completed_at = ?
+    WHERE status = 'running'
+  `).run(now(), now());
+
+  const assetProjects = db.prepare('SELECT DISTINCT project_id FROM ecommerce_project_assets').all();
+  const updateAssetOrder = db.prepare('UPDATE ecommerce_project_assets SET sort_order = ? WHERE id = ?');
+  for (const { project_id: projectId } of assetProjects) {
+    const projectAssets = db.prepare(`
+      SELECT id FROM ecommerce_project_assets WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC
+    `).all(projectId);
+    projectAssets.forEach((asset, index) => updateAssetOrder.run(index + 1, asset.id));
+  }
+
+  const projectRows = db.prepare('SELECT id, user_id, selected_slots FROM ecommerce_projects WHERE status != ?').all('deleted');
+  const insertOutput = db.prepare(`
+    INSERT OR IGNORE INTO ecommerce_project_outputs
+      (id, project_id, user_id, slot_id, status, version_number, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'planned', 0, '{}', ?, ?)
+  `);
+  for (const project of projectRows) {
+    let slotIds = [];
+    try {
+      const parsed = JSON.parse(project.selected_slots || '[]');
+      if (Array.isArray(parsed)) slotIds = parsed;
+    } catch {
+      slotIds = [];
+    }
+    for (const slotId of slotIds) {
+      const createdAt = now();
+      insertOutput.run(randomUUID(), project.id, project.user_id, String(slotId), createdAt, createdAt);
+    }
+  }
+
+  const emptyOutputs = db.prepare(`
+    SELECT id, user_id, project_id, slot_id FROM ecommerce_project_outputs WHERE generation_id IS NULL
+  `).all();
+  const latestSucceededGeneration = db.prepare(`
+    SELECT id, version_number, prompt FROM generations
+    WHERE user_id = ? AND project_id = ? AND slot_id = ? AND status = 'succeeded' AND archived_at IS NULL
+    ORDER BY version_number DESC, created_at DESC LIMIT 1
+  `);
+  const selectOutputGeneration = db.prepare(`
+    UPDATE ecommerce_project_outputs
+    SET generation_id = ?, version_number = ?, prompt = ?, status = 'selected', updated_at = ?
+    WHERE id = ?
+  `);
+  for (const output of emptyOutputs) {
+    const generation = latestSucceededGeneration.get(output.user_id, output.project_id, output.slot_id);
+    if (generation) {
+      selectOutputGeneration.run(generation.id, Number(generation.version_number || 1), generation.prompt || '', now(), output.id);
+    }
+  }
 
   const productCount = db.prepare('SELECT COUNT(*) AS count FROM credit_products').get().count;
   if (Number(productCount) === 0) {
@@ -459,9 +561,9 @@ export function updateGeneration(id, updates) {
 
 export function listGenerations(userId, limit = 30) {
   return getDb().prepare(`
-    SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status, storage_path, output_url, error_code, created_at, completed_at
+    SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status, storage_path, output_url, error_code, archived_at, created_at, completed_at
     FROM generations
-    WHERE user_id = ?
+    WHERE user_id = ? AND archived_at IS NULL
     ORDER BY created_at DESC
     LIMIT ?
   `).all(userId, limit);
@@ -470,7 +572,7 @@ export function listGenerations(userId, limit = 30) {
 export function getGeneration(userId, generationId) {
   return getDb().prepare(`
     SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status,
-      storage_path, output_url, error_code, created_at, completed_at
+      storage_path, output_url, error_code, archived_at, created_at, completed_at
     FROM generations WHERE id = ? AND user_id = ?
   `).get(generationId, userId);
 }
@@ -478,9 +580,9 @@ export function getGeneration(userId, generationId) {
 export function listEcommerceProjectGenerations(userId, projectId, limit = 200) {
   return getDb().prepare(`
     SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status,
-      storage_path, output_url, error_code, created_at, completed_at
+      storage_path, output_url, error_code, archived_at, created_at, completed_at
     FROM generations
-    WHERE user_id = ? AND project_id = ?
+    WHERE user_id = ? AND project_id = ? AND archived_at IS NULL
     ORDER BY created_at DESC
     LIMIT ?
   `).all(userId, projectId, Math.max(1, Math.min(Number(limit) || 200, 500)));
@@ -551,6 +653,8 @@ export function normalizeEcommerceProject(row) {
     specifications: row.specifications || '',
     prohibitedContent: row.prohibited_content || '',
     aiBriefOriginals: parseJsonObject(row.ai_brief_originals),
+    identitySpec: parseJsonObject(row.identity_spec),
+    templateId: row.template_id || '',
     visualStyleId: row.visual_style_id || 'clean-commercial',
     selectedSlots: parseJsonArray(row.selected_slots),
     masterAssetId: row.master_asset_id || '',
@@ -581,9 +685,9 @@ export function createEcommerceProject(userId, values) {
   getDb().prepare(`
     INSERT INTO ecommerce_projects (
       id, user_id, project_name, platform_id, industry_id, product_name, brand_name,
-      target_audience, selling_points, specifications, prohibited_content, ai_brief_originals,
+      target_audience, selling_points, specifications, prohibited_content, ai_brief_originals, identity_spec, template_id,
       visual_style_id, selected_slots, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
   `).run(
     id,
     userId,
@@ -597,6 +701,8 @@ export function createEcommerceProject(userId, values) {
     values.specifications,
     values.prohibitedContent,
     JSON.stringify(values.aiBriefOriginals || {}),
+    JSON.stringify(values.identitySpec || {}),
+    values.templateId || '',
     values.visualStyleId,
     JSON.stringify(values.selectedSlots || []),
     createdAt,
@@ -611,7 +717,7 @@ export function updateEcommerceProject(userId, projectId, values) {
     UPDATE ecommerce_projects SET
       project_name = ?, platform_id = ?, industry_id = ?, product_name = ?, brand_name = ?,
       target_audience = ?, selling_points = ?, specifications = ?, prohibited_content = ?,
-      ai_brief_originals = ?, visual_style_id = ?, selected_slots = ?, updated_at = ?
+      ai_brief_originals = ?, identity_spec = ?, template_id = ?, visual_style_id = ?, selected_slots = ?, updated_at = ?
     WHERE id = ? AND user_id = ?
   `).run(
     values.projectName,
@@ -624,6 +730,8 @@ export function updateEcommerceProject(userId, projectId, values) {
     values.specifications,
     values.prohibitedContent,
     JSON.stringify(values.aiBriefOriginals || {}),
+    JSON.stringify(values.identitySpec || {}),
+    values.templateId || '',
     values.visualStyleId,
     JSON.stringify(values.selectedSlots || []),
     now(),
@@ -643,6 +751,8 @@ export function normalizeEcommerceProjectAsset(row) {
     mimeType: row.mime_type || 'image/png',
     fileSize: Number(row.file_size || 0),
     storagePath: row.storage_path || '',
+    purpose: row.purpose || '',
+    sortOrder: Number(row.sort_order || 0),
     createdAt: row.created_at || ''
   };
 }
@@ -652,8 +762,8 @@ export function createEcommerceProjectAsset(userId, values) {
   const createdAt = now();
   getDb().prepare(`
     INSERT INTO ecommerce_project_assets
-      (id, project_id, user_id, asset_type, file_name, mime_type, file_size, storage_path, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, project_id, user_id, asset_type, file_name, mime_type, file_size, storage_path, purpose, sort_order, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     values.projectId,
@@ -663,6 +773,8 @@ export function createEcommerceProjectAsset(userId, values) {
     values.mimeType,
     values.fileSize,
     values.storagePath,
+    values.purpose || '',
+    Number(values.sortOrder || 0),
     createdAt
   );
   return getEcommerceProjectAsset(userId, id);
@@ -678,7 +790,7 @@ export function listEcommerceProjectAssets(userId, projectId) {
   return getDb().prepare(`
     SELECT * FROM ecommerce_project_assets
     WHERE user_id = ? AND project_id = ?
-    ORDER BY created_at DESC
+    ORDER BY sort_order ASC, created_at ASC, id ASC
   `).all(userId, projectId).map(normalizeEcommerceProjectAsset);
 }
 

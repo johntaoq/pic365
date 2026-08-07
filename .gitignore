@@ -12,4 +12,5 @@ data/app.sqlite-wal
 data/generated/
 data/azurite/
 data/backups/
+data/*.log
 .env.production

@@ -8,6 +8,10 @@ import {
   setEcommerceProjectMasterAsset
 } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
+import {
+  reorderEcommerceProjectAssets,
+  updateEcommerceAssetPurpose
+} from '../_lib/ecommerce-p1-db.js';
 import { readJsonBody } from '../_lib/request.js';
 import {
   deleteStoredFile,
@@ -19,6 +23,9 @@ const ALLOWED_TYPES = new Set(['product', 'packaging', 'logo', 'reference']);
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const MAX_PROJECT_ASSETS = 30;
+const ALLOWED_PURPOSES = new Set([
+  '', 'identity', 'angle', 'packaging', 'brand', 'material', 'detail', 'composition', 'lighting', 'scene'
+]);
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -36,6 +43,8 @@ function publicAsset(asset, masterAssetId = '') {
     fileName: asset.fileName,
     mimeType: asset.mimeType,
     fileSize: asset.fileSize,
+    purpose: asset.purpose || '',
+    sortOrder: Number(asset.sortOrder || 0),
     isMaster: asset.id === masterAssetId,
     imageUrl: `/api/ecommerce/asset-file?id=${encodeURIComponent(asset.id)}`,
     createdAt: asset.createdAt
@@ -69,9 +78,25 @@ export default async function handler(req, res) {
       return json(res, 400, { ok: false, error: 'INVALID_ASSET' });
     }
     const projectId = cleanText(body.projectId, 80);
-    const assetId = cleanText(body.assetId, 80);
-    const project = setEcommerceProjectMasterAsset(auth.user.id, projectId, assetId);
-    if (!project) return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
+    const action = cleanText(body.action, 40) || 'set-master';
+    let project = getEcommerceProject(auth.user.id, projectId);
+    if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+    if (action === 'reorder') {
+      if (!reorderEcommerceProjectAssets(auth.user.id, projectId, body.assetIds)) {
+        return json(res, 400, { ok: false, error: 'INVALID_ASSET_ORDER' });
+      }
+    } else {
+      const assetId = cleanText(body.assetId, 80);
+      if (action === 'purpose') {
+        const purpose = ALLOWED_PURPOSES.has(body.purpose) ? body.purpose : '';
+        if (!updateEcommerceAssetPurpose(auth.user.id, projectId, assetId, purpose)) {
+          return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
+        }
+      } else {
+        project = setEcommerceProjectMasterAsset(auth.user.id, projectId, assetId);
+        if (!project) return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
+      }
+    }
     const assets = listEcommerceProjectAssets(auth.user.id, projectId).map((asset) => publicAsset(asset, project.masterAssetId));
     return json(res, 200, { ok: true, project, assets });
   }
@@ -91,7 +116,7 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req);
+    body = await readJsonBody(req, { maxBytes: 16 * 1024 * 1024 });
   } catch {
     return json(res, 400, { ok: false, error: 'INVALID_ASSET' });
   }
@@ -106,6 +131,7 @@ export default async function handler(req, res) {
   }
 
   const assetType = ALLOWED_TYPES.has(body.assetType) ? body.assetType : 'product';
+  const purpose = ALLOWED_PURPOSES.has(body.purpose) ? body.purpose : '';
   const fileName = cleanText(body.fileName, 180) || 'product-image';
   const dataUrl = String(body.dataUrl || '');
   if (!dataUrl || dataUrl.length > MAX_ASSET_BYTES * 1.5) {
@@ -135,7 +161,9 @@ export default async function handler(req, res) {
       fileName,
       mimeType: stored.contentType,
       fileSize: stored.byteLength,
-      storagePath: stored.storagePath
+      storagePath: stored.storagePath,
+      purpose,
+      sortOrder: listEcommerceProjectAssets(auth.user.id, projectId).length + 1
     });
     const nextProject = !project.masterAssetId && assetType === 'product'
       ? setEcommerceProjectMasterAsset(auth.user.id, projectId, asset.id)

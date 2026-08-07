@@ -32,7 +32,7 @@ export function getSessionToken(req) {
 
 function secureCookie(req) {
   const forwardedProto = String(req.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
-  return forwardedProto === 'https';
+  return process.env.NODE_ENV === 'production' || forwardedProto === 'https';
 }
 
 export function setSessionCookie(req, res, token) {

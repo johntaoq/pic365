@@ -282,6 +282,97 @@ export const ECOMMERCE_VISUAL_STYLES = [
   visualStyle('baby-soft', 'Gentle family light', '母婴柔光', 'Soft color, safety, hygiene and tender interaction.', '柔和配色、安全卫生与温柔互动。', '使用柔和低对比光线、洁净环境和安全自然互动，表现亲和、柔软和可信照护场景。', ['#f7dcc7', '#c9dbed', '#9fcfbe'])
 ];
 
+export const ECOMMERCE_P1_TEMPLATES = [
+  {
+    id: 'tmall-clean-launch',
+    platformId: 'taobao-tmall',
+    industryIds: ['beauty', 'health', 'food', 'beverage-alcohol', 'general'],
+    nameEn: 'Tmall clean launch set',
+    nameZh: '天猫洁净上新套图',
+    descriptionEn: 'A conversion-ready launch set balancing clean product evidence, one benefit, detail and scene.',
+    descriptionZh: '兼顾商品首图、单一卖点、细节与场景的上新转化套图。',
+    visualStyleId: 'clean-commercial',
+    selectedSlotIds: ['main-square', 'main-portrait', 'white-background', 'key-benefit', 'detail-material', 'usage-scene', 'spec-bundle']
+  },
+  {
+    id: 'tmall-fashion-drop',
+    platformId: 'taobao-tmall',
+    industryIds: ['apparel', 'footwear-bags', 'accessories-jewelry'],
+    nameEn: 'Tmall fashion drop',
+    nameZh: '天猫时尚上新套图',
+    descriptionEn: 'Consistent catalog, portrait, material and variant visuals for fashion launches.',
+    descriptionZh: '面向服饰鞋包上新的统一型录、竖版、材质与款式套图。',
+    visualStyleId: 'fashion-lookbook',
+    selectedSlotIds: ['main-square', 'main-portrait', 'white-background', 'detail-material', 'usage-scene', 'sku-variant', 'campaign']
+  },
+  {
+    id: 'douyin-three-second',
+    platformId: 'douyin',
+    industryIds: ['apparel', 'footwear-bags', 'beauty', 'sports-outdoor', 'general'],
+    nameEn: 'Douyin three-second conversion',
+    nameZh: '抖音三秒转化套图',
+    descriptionEn: 'Mobile-first cover, benefit, person scene, detail and video assets.',
+    descriptionZh: '覆盖封面、三秒卖点、真人场景、细节和短视频承接。',
+    visualStyleId: 'bold-conversion',
+    selectedSlotIds: ['cover-square', 'material-portrait', 'three-second-benefit', 'person-scene', 'detail-closeup', 'promotion-label', 'video-cover']
+  },
+  {
+    id: 'douyin-lifestyle-story',
+    platformId: 'douyin',
+    industryIds: ['home', 'appliances-kitchen', 'food', 'beverage-alcohol', 'baby-pet', 'general'],
+    nameEn: 'Douyin lifestyle story',
+    nameZh: '抖音生活方式套图',
+    descriptionEn: 'A warmer scene-led set with product evidence and a six-shot story.',
+    descriptionZh: '以温暖使用场景串联商品证据、细节和六镜头故事。',
+    visualStyleId: 'warm-lifestyle',
+    selectedSlotIds: ['cover-square', 'material-portrait', 'three-second-benefit', 'person-scene', 'detail-closeup', 'video-cover', 'video-storyboard']
+  },
+  {
+    id: 'amazon-compliance-core',
+    platformId: 'amazon',
+    industryIds: ['computer-office', 'consumer-electronics', 'appliances-kitchen', 'sports-outdoor', 'tools-commercial', 'automotive', 'general'],
+    nameEn: 'Amazon compliance core',
+    nameZh: 'Amazon 合规核心套图',
+    descriptionEn: 'White background, multiple angles, feature proof, dimensions, details and package contents.',
+    descriptionZh: '覆盖白底、多角度、功能证据、尺寸、细节和包装清单。',
+    visualStyleId: 'technical-proof',
+    selectedSlotIds: ['compliant-main', 'multi-angle', 'feature', 'dimensions', 'lifestyle', 'material-detail', 'package-contents']
+  },
+  {
+    id: 'amazon-lifestyle-plus',
+    platformId: 'amazon',
+    industryIds: ['apparel', 'footwear-bags', 'beauty', 'home', 'baby-pet', 'general'],
+    nameEn: 'Amazon lifestyle plus',
+    nameZh: 'Amazon 场景增强套图',
+    descriptionEn: 'A compliant listing set strengthened with believable lifestyle and variant visuals.',
+    descriptionZh: '在合规基础上强化可信使用场景、材质和规格变体。',
+    visualStyleId: 'warm-lifestyle',
+    selectedSlotIds: ['compliant-main', 'multi-angle', 'feature', 'dimensions', 'lifestyle', 'material-detail', 'variant']
+  },
+  {
+    id: 'shopify-brand-story',
+    platformId: 'shopify',
+    industryIds: ['beauty', 'home', 'food', 'beverage-alcohol', 'accessories-jewelry', 'general'],
+    nameEn: 'Shopify brand story',
+    nameZh: 'Shopify 品牌故事套图',
+    descriptionEn: 'Hero, gallery, lifestyle, detail, social and video assets with one coherent brand mood.',
+    descriptionZh: '以统一品牌气质覆盖 Hero、画廊、生活方式、细节、社交和视频。',
+    visualStyleId: 'premium-editorial',
+    selectedSlotIds: ['product-hero', 'collection-card', 'gallery-angle', 'lifestyle', 'material-detail', 'social-share', 'video-cover']
+  },
+  {
+    id: 'shopify-product-system',
+    platformId: 'shopify',
+    industryIds: ['computer-office', 'consumer-electronics', 'appliances-kitchen', 'sports-outdoor', 'tools-commercial', 'general'],
+    nameEn: 'Shopify product system',
+    nameZh: 'Shopify 产品系统套图',
+    descriptionEn: 'A structured product gallery with how-to, bundle, variants and 3D handoff references.',
+    descriptionZh: '结构化覆盖商品画廊、使用步骤、组合、变体与 3D 交接参考。',
+    visualStyleId: 'tech-precision',
+    selectedSlotIds: ['product-hero', 'collection-card', 'gallery-angle', 'lifestyle', 'material-detail', 'how-to', 'bundle-cross-sell', 'variant', 'model-brief']
+  }
+];
+
 function slot(id, nameEn, nameZh, aspectRatio, recommendedSize, required, purposeEn, purposeZh) {
   return { id, nameEn, nameZh, aspectRatio, recommendedSize, required, purposeEn, purposeZh };
 }
@@ -315,6 +406,18 @@ export function getVisualStylesForIndustry(industryId) {
   return (industryItem.visualStyleIds || [])
     .map((styleId) => ECOMMERCE_VISUAL_STYLES.find((styleItem) => styleItem.id === styleId))
     .filter(Boolean);
+}
+
+export function getEcommerceTemplates(platformId, industryId) {
+  const exact = ECOMMERCE_P1_TEMPLATES.filter((item) => (
+    item.platformId === platformId && item.industryIds.includes(industryId)
+  ));
+  if (exact.length) return exact;
+  return ECOMMERCE_P1_TEMPLATES.filter((item) => item.platformId === platformId);
+}
+
+export function getEcommerceTemplate(templateId) {
+  return ECOMMERCE_P1_TEMPLATES.find((item) => item.id === templateId) || null;
 }
 
 export function isValidIndustry(industryId) {

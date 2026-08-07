@@ -5,12 +5,14 @@ import {
   updateEcommerceProject
 } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
+import { syncEcommerceProjectOutputs } from '../_lib/ecommerce-p1-db.js';
 import { readJsonBody } from '../_lib/request.js';
 import {
   ECOMMERCE_INDUSTRIES,
   ECOMMERCE_PLATFORMS,
   ECOMMERCE_VISUAL_STYLES,
-  getDefaultSlotIds
+  getDefaultSlotIds,
+  getEcommerceTemplate
 } from '../../shared/ecommerce-catalog.js';
 
 function json(res, status, payload) {
@@ -37,6 +39,24 @@ function cleanAiBriefOriginals(value) {
   );
 }
 
+function cleanIdentitySpec(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const limits = {
+    structure: 1200,
+    colorsMaterials: 1200,
+    brandMarks: 1000,
+    packaging: 1200,
+    includedItems: 1200,
+    mustKeep: 1600,
+    mustAvoid: 1600
+  };
+  return Object.fromEntries(
+    Object.entries(limits)
+      .map(([field, maxLength]) => [field, cleanText(value[field], maxLength)])
+      .filter(([, content]) => Boolean(content))
+  );
+}
+
 function normalizeProjectInput(body) {
   const platformId = cleanText(body.platformId, 40);
   const platform = ECOMMERCE_PLATFORMS.find((item) => item.id === platformId);
@@ -47,6 +67,10 @@ function normalizeProjectInput(body) {
 
   const visualStyleId = cleanText(body.visualStyleId, 60);
   if (!ECOMMERCE_VISUAL_STYLES.some((item) => item.id === visualStyleId)) return { error: 'INVALID_VISUAL_STYLE' };
+
+  const templateId = cleanText(body.templateId, 80);
+  const template = templateId ? getEcommerceTemplate(templateId) : null;
+  if (templateId && (!template || template.platformId !== platformId)) return { error: 'INVALID_TEMPLATE' };
 
   const productName = cleanText(body.productName, 120);
   if (!productName) return { error: 'PRODUCT_NAME_REQUIRED' };
@@ -70,6 +94,8 @@ function normalizeProjectInput(body) {
       specifications: cleanText(body.specifications, 2000),
       prohibitedContent: cleanText(body.prohibitedContent, 2000),
       aiBriefOriginals: cleanAiBriefOriginals(body.aiBriefOriginals),
+      identitySpec: cleanIdentitySpec(body.identitySpec),
+      templateId,
       visualStyleId,
       selectedSlots: selectedSlots.length ? selectedSlots : getDefaultSlotIds(platformId)
     }
@@ -107,6 +133,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const project = createEcommerceProject(auth.user.id, normalized.value);
+    syncEcommerceProjectOutputs(auth.user.id, project.id, project.selectedSlots);
     return json(res, 201, { ok: true, project });
   }
 
@@ -114,5 +141,6 @@ export default async function handler(req, res) {
   if (!projectId) return json(res, 400, { ok: false, error: 'PROJECT_ID_REQUIRED' });
   const project = updateEcommerceProject(auth.user.id, projectId, normalized.value);
   if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+  syncEcommerceProjectOutputs(auth.user.id, project.id, project.selectedSlots);
   return json(res, 200, { ok: true, project });
 }
