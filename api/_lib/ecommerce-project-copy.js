@@ -22,6 +22,10 @@ import { createDeliveryDocumentDraft } from '../../shared/ecommerce-delivery.js'
 
 function projectValuesFromConfig(config, targetPlatformId, { projectName = '', useRecommendedTemplate = false } = {}) {
   const platform = getEcommercePlatform(targetPlatformId);
+  const coreUser = Object.prototype.hasOwnProperty.call(config, 'coreUser')
+    ? config.coreUser || ''
+    : config.targetAudience || '';
+  const coreScenario = config.coreScenario || '';
   const recommended = useRecommendedTemplate
     ? getEcommerceTemplates(targetPlatformId, config.industryId)?.[0]
     : null;
@@ -33,7 +37,9 @@ function projectValuesFromConfig(config, targetPlatformId, { projectName = '', u
     industryId: config.industryId,
     productName: config.productName,
     brandName: config.brandName || '',
-    targetAudience: config.targetAudience || '',
+    coreUser,
+    coreScenario,
+    targetAudience: [coreUser, coreScenario].filter(Boolean).join('\n'),
     sellingPoints: Array.isArray(config.sellingPoints) ? config.sellingPoints : [],
     specifications: config.specifications || '',
     prohibitedContent: config.prohibitedContent || '',

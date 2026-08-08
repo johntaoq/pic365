@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -17,6 +17,8 @@ import {
   Layers3,
   LayoutTemplate,
   LoaderCircle,
+  Maximize2,
+  Move,
   PackageCheck,
   Plus,
   RefreshCw,
@@ -27,7 +29,9 @@ import {
   Store,
   Trash2,
   TriangleAlert,
-  WandSparkles
+  Type,
+  WandSparkles,
+  X
 } from 'lucide-react';
 import {
   DELIVERY_FORMATS,
@@ -36,13 +40,15 @@ import {
   DELIVERY_TYPES,
   createDeliveryDocumentDraft,
   getDeliveryDefaultsForType,
-  getDeliveryTheme
+  getDeliveryTextScale,
+  getDeliveryTheme,
+  resolveDeliveryOverlayBoxes
 } from '../shared/ecommerce-delivery.js';
 import { ECOMMERCE_PLATFORMS } from '../shared/ecommerce-catalog.js';
 
 const copy = {
   zh: {
-    title: '6. 专业交付',
+    title: '专业交付',
     summaryEmpty: '等待准备',
     summaryReady: (ready, total) => `${ready}/${total} 可交付`,
     prepare: '一键准备交付',
@@ -146,6 +152,15 @@ const copy = {
     templateSaved: '已保存为个人模板。',
     projectCreated: '新项目已创建。',
     livePreview: '实时预览',
+    doubleClickPreview: '双击画布放大查看',
+    largePreview: '单图精修大画布',
+    closeLargePreview: '关闭大画布',
+    maskObject: '文字蒙版',
+    textObject: '文字容器',
+    objectOpacity: '透明度',
+    resetObject: '恢复默认边界',
+    dragObject: '拖动调整位置',
+    resizeObject: '拖动角点调整边界，文字会自动缩放',
     generatedPreview: '采用图',
     safeAreaLabel: '安全区',
     itemCount: (count) => `${count} 项`,
@@ -153,7 +168,7 @@ const copy = {
     requiresSave: '修改后请先保存本图设置。'
   },
   en: {
-    title: '6. Professional delivery',
+    title: 'Professional delivery',
     summaryEmpty: 'Not prepared',
     summaryReady: (ready, total) => `${ready}/${total} ready`,
     prepare: 'Prepare delivery',
@@ -257,6 +272,15 @@ const copy = {
     templateSaved: 'Saved as a personal template.',
     projectCreated: 'New project created.',
     livePreview: 'Live preview',
+    doubleClickPreview: 'Double-click the canvas for a larger view',
+    largePreview: 'Large finishing canvas',
+    closeLargePreview: 'Close large canvas',
+    maskObject: 'Text mask',
+    textObject: 'Text container',
+    objectOpacity: 'Opacity',
+    resetObject: 'Reset bounds',
+    dragObject: 'Drag to reposition',
+    resizeObject: 'Drag a corner to resize; copy scales automatically',
     generatedPreview: 'Adopted image',
     safeAreaLabel: 'Safe area',
     itemCount: (count) => `${count} items`,
@@ -271,6 +295,32 @@ function listToText(value) {
 
 function textToList(value, limit = 10) {
   return [...new Set(String(value || '').split(/\r?\n|[；;]/).map((item) => item.trim()).filter(Boolean))].slice(0, limit);
+}
+
+function clampCanvasBox(startBox, deltaX, deltaY, mode, handle, objectType) {
+  const minWidth = objectType === 'mask' ? 0.18 : 0.12;
+  const minHeight = objectType === 'mask' ? 0.1 : 0.07;
+  let left = startBox.x;
+  let top = startBox.y;
+  let right = startBox.x + startBox.width;
+  let bottom = startBox.y + startBox.height;
+  if (mode === 'drag') {
+    left = Math.max(0, Math.min(1 - startBox.width, left + deltaX));
+    top = Math.max(0, Math.min(1 - startBox.height, top + deltaY));
+    right = left + startBox.width;
+    bottom = top + startBox.height;
+  } else {
+    if (handle.includes('w')) left = Math.max(0, Math.min(right - minWidth, left + deltaX));
+    if (handle.includes('e')) right = Math.min(1, Math.max(left + minWidth, right + deltaX));
+    if (handle.includes('n')) top = Math.max(0, Math.min(bottom - minHeight, top + deltaY));
+    if (handle.includes('s')) bottom = Math.min(1, Math.max(top + minHeight, bottom + deltaY));
+  }
+  return {
+    x: Number(left.toFixed(5)),
+    y: Number(top.toFixed(5)),
+    width: Number((right - left).toFixed(5)),
+    height: Number((bottom - top).toFixed(5))
+  };
 }
 
 function localized(item, language, field = 'name') {
@@ -303,27 +353,72 @@ function DeliveryStatusBadge({ document, t }) {
   return <span className="issues"><TriangleAlert size={12} /> {t.hasIssues}</span>;
 }
 
-function GeneralPreviewPanel({ document }) {
+function deliveryBoxStyle(box) {
+  return {
+    left: `${box.x * 100}%`,
+    top: `${box.y * 100}%`,
+    width: `${box.width * 100}%`,
+    height: `${box.height * 100}%`
+  };
+}
+
+function DeliveryObjectHandles({ objectType, onBeginInteraction, t }) {
+  return ['nw', 'ne', 'sw', 'se'].map((handle) => (
+    <button
+      className={`deliveryObjectResizeHandle ${handle}`}
+      type="button"
+      aria-label={`${t.resizeObject}: ${handle}`}
+      title={t.resizeObject}
+      onPointerDown={(event) => onBeginInteraction(event, objectType, 'resize', handle)}
+      key={handle}
+    />
+  ));
+}
+
+function GeneralPreviewPanel({ document, editable, selectedObject, onSelectObject, onBeginInteraction, t }) {
   const content = document.content || {};
   if (document.advanced?.showText === false) return null;
+  const geometry = resolveDeliveryOverlayBoxes(document);
+  const copyScale = getDeliveryTextScale(content, geometry.textBox);
+  const centered = ['top-center', 'bottom-center'].includes(document.layoutId);
   return (
-    <div className={`deliveryPreviewPanel ${document.layoutId}`}>
-      {content.badge ? <em>{content.badge}</em> : null}
-      {content.headline ? <strong>{content.headline}</strong> : null}
-      {content.subtitle ? <span>{content.subtitle}</span> : null}
-      {content.bullets?.length ? <ul>{content.bullets.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul> : null}
-      {content.price ? <b>{content.price}</b> : null}
-    </div>
+    <>
+      <div
+        className={`deliveryCanvasObject deliveryMaskObject ${editable ? 'editable' : ''} ${selectedObject === 'mask' ? 'selected' : ''}`}
+        style={{ ...deliveryBoxStyle(geometry.maskBox), opacity: geometry.maskOpacity }}
+        title={editable ? t.dragObject : undefined}
+        onPointerDown={editable ? (event) => onBeginInteraction(event, 'mask', 'drag') : undefined}
+        onClick={editable ? () => onSelectObject('mask') : undefined}
+      >
+        {editable && selectedObject === 'mask' ? <><span className="deliveryObjectLabel"><Move size={11} />{t.maskObject}</span><DeliveryObjectHandles objectType="mask" onBeginInteraction={onBeginInteraction} t={t} /></> : null}
+      </div>
+      <div
+        className={`deliveryCanvasObject deliveryTextObject ${centered ? 'centered' : ''} ${editable ? 'editable' : ''} ${selectedObject === 'text' ? 'selected' : ''}`}
+        style={{ ...deliveryBoxStyle(geometry.textBox), opacity: geometry.textOpacity, '--delivery-copy-scale': copyScale }}
+        title={editable ? t.dragObject : undefined}
+        onPointerDown={editable ? (event) => onBeginInteraction(event, 'text', 'drag') : undefined}
+        onClick={editable ? () => onSelectObject('text') : undefined}
+      >
+        <div className="deliveryTextContent">
+          {content.badge ? <em>{content.badge}</em> : null}
+          {content.headline ? <strong>{content.headline}</strong> : null}
+          {content.subtitle ? <span>{content.subtitle}</span> : null}
+          {content.bullets?.length ? <ul>{content.bullets.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul> : null}
+          {content.price ? <b>{content.price}</b> : null}
+        </div>
+        {editable && selectedObject === 'text' ? <><span className="deliveryObjectLabel"><Type size={11} />{t.textObject}</span><DeliveryObjectHandles objectType="text" onBeginInteraction={onBeginInteraction} t={t} /></> : null}
+      </div>
+    </>
   );
 }
 
-function DeliveryPreviewOverlay({ document, logoUrl, t }) {
+function DeliveryPreviewOverlay({ document, logoUrl, t, editable = false, selectedObject = 'text', onSelectObject, onBeginInteraction }) {
   const content = document.content || {};
   return (
-    <div className={`deliveryPreviewOverlay type-${document.documentType}`}>
+    <div className={`deliveryPreviewOverlay type-${document.documentType} ${editable ? 'editable' : ''}`}>
       {document.advanced?.showSafeArea ? <div className="deliverySafeArea"><span>{t.safeAreaLabel}</span></div> : null}
       {logoUrl ? <img className="deliveryPreviewLogo" src={logoUrl} alt="Logo" /> : null}
-      {document.documentType !== 'comparison' ? <GeneralPreviewPanel document={document} /> : null}
+      {document.documentType !== 'comparison' ? <GeneralPreviewPanel document={document} editable={editable} selectedObject={selectedObject} onSelectObject={onSelectObject} onBeginInteraction={onBeginInteraction} t={t} /> : null}
       {document.documentType === 'dimensions' ? (
         <div className="deliveryDimensionPreview">
           {content.dimensions?.width || content.dimensions?.depth ? <span className="horizontal">{content.dimensions.width || content.dimensions.depth}</span> : null}
@@ -342,6 +437,66 @@ function DeliveryPreviewOverlay({ document, logoUrl, t }) {
       {['storyboard', 'how-to'].includes(document.documentType) ? (
         <div className="deliveryStepsPreview">{content.steps?.slice(0, 6).map((item, index) => <span key={`${index}-${item}`}><b>{index + 1}</b>{item}</span>)}</div>
       ) : null}
+    </div>
+  );
+}
+
+function DeliveryArtboard({ document, generation, slotName, logoUrl, t, editable = false, selectedObject, onSelectObject, onBeginInteraction, onOpenLarge }) {
+  const theme = getDeliveryTheme(document.themeId);
+  return (
+    <div
+      className={`deliveryArtboard theme-${document.themeId} ${editable ? 'editable' : ''}`}
+      style={{
+        aspectRatio: `${document.targetWidth} / ${document.targetHeight}`,
+        '--delivery-aspect': document.targetWidth / document.targetHeight,
+        '--delivery-foreground': theme.foreground,
+        '--delivery-muted': theme.muted,
+        '--delivery-accent': theme.accent,
+        '--delivery-panel': theme.panel
+      }}
+      title={onOpenLarge ? t.doubleClickPreview : undefined}
+      onDoubleClick={onOpenLarge}
+    >
+      {generation?.imageUrl ? <img className={document.advanced?.imageFit === 'contain' ? 'contain' : 'cover'} src={generation.imageUrl} alt={slotName} /> : <div className="deliveryMissingArt"><FileImage size={34} /><span>{t.missingSource}</span></div>}
+      <DeliveryPreviewOverlay
+        document={document}
+        logoUrl={logoUrl}
+        t={t}
+        editable={editable}
+        selectedObject={selectedObject}
+        onSelectObject={onSelectObject}
+        onBeginInteraction={onBeginInteraction}
+      />
+    </div>
+  );
+}
+
+function DeliveryArtboardLightbox({ document, generation, slotName, logoUrl, t, selectedObject, onSelectObject, onBeginInteraction, onClose }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    globalThis.addEventListener?.('keydown', handleKeyDown);
+    return () => globalThis.removeEventListener?.('keydown', handleKeyDown);
+  }, [onClose]);
+  return (
+    <div className="deliveryArtboardLightbox" role="dialog" aria-modal="true" aria-label={t.largePreview} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="deliveryArtboardLightboxPanel">
+        <header><div><span>{t.largePreview}</span><strong>{slotName}</strong></div><button type="button" aria-label={t.closeLargePreview} title={t.closeLargePreview} onClick={onClose}><X size={18} /></button></header>
+        <div className="deliveryArtboardLightboxCanvas">
+          <DeliveryArtboard
+            document={document}
+            generation={generation}
+            slotName={slotName}
+            logoUrl={logoUrl}
+            t={t}
+            editable
+            selectedObject={selectedObject}
+            onSelectObject={onSelectObject}
+            onBeginInteraction={onBeginInteraction}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -383,8 +538,11 @@ export default function EcommerceDeliveryCenter({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [includeDetailPage, setIncludeDetailPage] = useState(true);
   const [selectionBusy, setSelectionBusy] = useState(false);
+  const [largePreviewOpen, setLargePreviewOpen] = useState(false);
+  const [selectedCanvasObject, setSelectedCanvasObject] = useState('text');
   const [targetPlatformId, setTargetPlatformId] = useState(() => ECOMMERCE_PLATFORMS.find((item) => item.id !== project.platformId)?.id || project.platformId);
   const [templateName, setTemplateName] = useState('');
+  const canvasInteractionRef = useRef(null);
 
   const slotById = useMemo(() => new Map((slots || []).map((slot) => [slot.id, slot])), [slots]);
   const outputBySlot = useMemo(() => new Map((outputs || []).map((output) => [output.slotId, output])), [outputs]);
@@ -399,6 +557,11 @@ export default function EcommerceDeliveryCenter({
   const selectedLogo = selectedDocument?.content?.logoAssetId
     ? assets.find((asset) => asset.id === selectedDocument.content.logoAssetId)
     : null;
+  const selectedOverlayGeometry = selectedDocument ? resolveDeliveryOverlayBoxes(selectedDocument) : null;
+  const selectedObjectOpacity = selectedOverlayGeometry
+    ? selectedCanvasObject === 'mask' ? selectedOverlayGeometry.maskOpacity : selectedOverlayGeometry.textOpacity
+    : 1;
+  const canEditTextObjects = Boolean(selectedDocument && selectedDocument.documentType !== 'comparison' && selectedDocument.advanced?.showText !== false);
   const readyCount = includedDocuments.filter((document) => document.validation?.ready).length;
   const exportCount = includedDocuments.length;
   const hasOutputs = (outputs || []).some((output) => output.selectedGenerationId);
@@ -409,6 +572,43 @@ export default function EcommerceDeliveryCenter({
       : readyCount < includedDocuments.length
         ? 2
         : 3;
+
+  useEffect(() => {
+    function moveCanvasObject(event) {
+      const interaction = canvasInteractionRef.current;
+      if (!interaction || (interaction.pointerId != null && event.pointerId !== interaction.pointerId)) return;
+      event.preventDefault();
+      const nextBox = clampCanvasBox(
+        interaction.startBox,
+        (event.clientX - interaction.startX) / interaction.rect.width,
+        (event.clientY - interaction.startY) / interaction.rect.height,
+        interaction.mode,
+        interaction.handle,
+        interaction.objectType
+      );
+      const field = interaction.objectType === 'mask' ? 'maskBox' : 'textBox';
+      setDocuments((current) => current.map((document) => document.id === interaction.documentId
+        ? { ...document, advanced: { ...document.advanced, [field]: nextBox } }
+        : document));
+      setDirty(true);
+      setMessage('');
+    }
+    function endCanvasObject(event) {
+      const interaction = canvasInteractionRef.current;
+      if (!interaction || (interaction.pointerId != null && event.pointerId !== interaction.pointerId)) return;
+      canvasInteractionRef.current = null;
+      globalThis.document?.body.classList.remove('deliveryObjectDragging');
+    }
+    globalThis.addEventListener?.('pointermove', moveCanvasObject, { passive: false });
+    globalThis.addEventListener?.('pointerup', endCanvasObject);
+    globalThis.addEventListener?.('pointercancel', endCanvasObject);
+    return () => {
+      globalThis.removeEventListener?.('pointermove', moveCanvasObject);
+      globalThis.removeEventListener?.('pointerup', endCanvasObject);
+      globalThis.removeEventListener?.('pointercancel', endCanvasObject);
+      globalThis.document?.body.classList.remove('deliveryObjectDragging');
+    };
+  }, []);
 
   async function loadWorkspace() {
     setStatus('loading');
@@ -445,6 +645,13 @@ export default function EcommerceDeliveryCenter({
     setDirty(false);
     loadWorkspace();
   }, [project.id]);
+
+  useEffect(() => {
+    setLargePreviewOpen(false);
+    setSelectedCanvasObject('text');
+    canvasInteractionRef.current = null;
+    globalThis.document?.body.classList.remove('deliveryObjectDragging');
+  }, [selectedDocumentId]);
 
   async function prepareWorkspace(showMessage = true) {
     setStatus('preparing');
@@ -506,6 +713,52 @@ export default function EcommerceDeliveryCenter({
     updateSelectedDocument({ advanced: { ...selectedDocument.advanced, [field]: value } });
   }
 
+  function updateAdvancedFields(patch) {
+    updateSelectedDocument({ advanced: { ...selectedDocument.advanced, ...patch } });
+  }
+
+  function beginCanvasObjectInteraction(event, objectType, mode, handle = '') {
+    if (!selectedDocument) return;
+    const artboard = event.currentTarget.closest('.deliveryArtboard');
+    if (!artboard) return;
+    const rect = artboard.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const geometry = resolveDeliveryOverlayBoxes(selectedDocument);
+    canvasInteractionRef.current = {
+      pointerId: Number.isFinite(event.pointerId) ? event.pointerId : null,
+      documentId: selectedDocument.id,
+      objectType,
+      mode,
+      handle,
+      rect,
+      startX: event.clientX,
+      startY: event.clientY,
+      startBox: objectType === 'mask' ? geometry.maskBox : geometry.textBox
+    };
+    setSelectedCanvasObject(objectType);
+    globalThis.document?.body.classList.add('deliveryObjectDragging');
+  }
+
+  function resetCanvasObject(objectType) {
+    updateAdvanced(objectType === 'mask' ? 'maskBox' : 'textBox', null);
+  }
+
+  function updateSelectedObjectOpacity(value) {
+    const opacity = Number(value);
+    updateAdvancedFields(selectedCanvasObject === 'mask'
+      ? { maskOpacity: opacity, overlayOpacity: opacity }
+      : { textOpacity: opacity });
+  }
+
+  function changeLayout(layoutId) {
+    updateSelectedDocument({
+      layoutId,
+      advanced: { ...selectedDocument.advanced, maskBox: null, textBox: null }
+    });
+  }
+
   function restoreRecommended() {
     if (!selectedSlot) return;
     const draft = createDeliveryDocumentDraft({
@@ -535,7 +788,7 @@ export default function EcommerceDeliveryCenter({
       documentType,
       themeId: defaults.themeId,
       layoutId: defaults.layoutId,
-      advanced: { ...selectedDocument.advanced, showText: defaults.showText },
+      advanced: { ...selectedDocument.advanced, showText: defaults.showText, maskBox: null, textBox: null },
       validation: {}
     });
   }
@@ -859,20 +1112,42 @@ export default function EcommerceDeliveryCenter({
               <section className="deliveryPreviewStage">
                 <header><span>{t.livePreview}</span><strong>{localized(selectedSlot, language)}</strong><em>{t.selectedSource} · V{selectedGeneration?.versionNumber || selectedDocument.moduleOrder}</em></header>
                 <div className="deliveryArtboardShell">
-                  <div
-                    className={`deliveryArtboard theme-${selectedDocument.themeId}`}
-                    style={{
-                      aspectRatio: `${selectedDocument.targetWidth} / ${selectedDocument.targetHeight}`,
-                      '--delivery-foreground': getDeliveryTheme(selectedDocument.themeId).foreground,
-                      '--delivery-muted': getDeliveryTheme(selectedDocument.themeId).muted,
-                      '--delivery-accent': getDeliveryTheme(selectedDocument.themeId).accent,
-                      '--delivery-panel': getDeliveryTheme(selectedDocument.themeId).panel
-                    }}
-                  >
-                    {selectedGeneration?.imageUrl ? <img className={selectedDocument.advanced?.imageFit === 'contain' ? 'contain' : 'cover'} src={selectedGeneration.imageUrl} alt={localized(selectedSlot, language)} /> : <div className="deliveryMissingArt"><FileImage size={34} /><span>{t.missingSource}</span></div>}
-                    <DeliveryPreviewOverlay document={selectedDocument} logoUrl={selectedLogo?.imageUrl} t={t} />
-                  </div>
+                  <DeliveryArtboard
+                    document={selectedDocument}
+                    generation={selectedGeneration}
+                    slotName={localized(selectedSlot, language)}
+                    logoUrl={selectedLogo?.imageUrl}
+                    t={t}
+                    editable={canEditTextObjects}
+                    selectedObject={selectedCanvasObject}
+                    onSelectObject={setSelectedCanvasObject}
+                    onBeginInteraction={beginCanvasObjectInteraction}
+                    onOpenLarge={() => setLargePreviewOpen(true)}
+                  />
                 </div>
+                <span className="deliveryPreviewHint"><Maximize2 size={12} />{t.doubleClickPreview}</span>
+                {canEditTextObjects ? (
+                  <div className="deliveryObjectToolbar">
+                    <div>
+                      <button className={selectedCanvasObject === 'mask' ? 'active' : ''} type="button" onClick={() => setSelectedCanvasObject('mask')}><Layers3 size={13} />{t.maskObject}</button>
+                      <button className={selectedCanvasObject === 'text' ? 'active' : ''} type="button" onClick={() => setSelectedCanvasObject('text')}><Type size={13} />{t.textObject}</button>
+                    </div>
+                    <label>
+                      <span>{t.objectOpacity}</span>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="1"
+                        step="0.05"
+                        value={selectedObjectOpacity}
+                        onInput={(event) => updateSelectedObjectOpacity(event.currentTarget.value)}
+                        onChange={(event) => updateSelectedObjectOpacity(event.currentTarget.value)}
+                      />
+                      <em>{Math.round(selectedObjectOpacity * 100)}%</em>
+                    </label>
+                    <button className="reset" type="button" onClick={() => resetCanvasObject(selectedCanvasObject)}><RotateCcw size={13} />{t.resetObject}</button>
+                  </div>
+                ) : null}
                 <div className="deliveryPreviewActions">
                   <button type="button" onClick={() => checkDocuments(selectedDocument.id)} disabled={status === 'checking' || !selectedDocument.sourceGenerationId}>
                     {status === 'checking' ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}{status === 'checking' ? t.checking : t.check}
@@ -913,7 +1188,7 @@ export default function EcommerceDeliveryCenter({
                       <span className="deliveryFieldTitle">{t.theme}</span>
                       <div className="deliveryThemeGrid">{DELIVERY_THEMES.map((theme) => <button className={selectedDocument.themeId === theme.id ? 'active' : ''} type="button" onClick={() => updateSelectedDocument({ themeId: theme.id })} style={{ '--theme-a': theme.panel, '--theme-b': theme.accent }} key={theme.id}><i /><span>{localized(theme, language)}</span></button>)}</div>
                       <div className="deliveryFieldGrid">
-                        <label className="deliveryField"><span>{t.layout}</span><select value={selectedDocument.layoutId} onChange={(event) => updateSelectedDocument({ layoutId: event.target.value })}>{DELIVERY_LAYOUTS.map((layout) => <option value={layout.id} key={layout.id}>{localized(layout, language)}</option>)}</select></label>
+                        <label className="deliveryField"><span>{t.layout}</span><select value={selectedDocument.layoutId} onChange={(event) => changeLayout(event.target.value)}>{DELIVERY_LAYOUTS.map((layout) => <option value={layout.id} key={layout.id}>{localized(layout, language)}</option>)}</select></label>
                         <label className="deliveryField"><span>{t.format}</span><select value={selectedDocument.outputFormat} onChange={(event) => updateSelectedDocument({ outputFormat: event.target.value })}>{DELIVERY_FORMATS.map((format) => <option value={format} key={format}>{format.toUpperCase()}</option>)}</select></label>
                         <label className="deliveryField"><span>{t.imageFit}</span><select value={selectedDocument.advanced?.imageFit || 'cover'} onChange={(event) => updateAdvanced('imageFit', event.target.value)}><option value="cover">{t.cover}</option><option value="contain">{t.contain}</option></select></label>
                       </div>
@@ -974,6 +1249,19 @@ export default function EcommerceDeliveryCenter({
       ) : null}
 
       {message ? <p className={status === 'error' ? 'deliveryMessage error' : 'deliveryMessage'}>{message}</p> : null}
+      {largePreviewOpen && selectedDocument && selectedSlot ? (
+        <DeliveryArtboardLightbox
+          document={selectedDocument}
+          generation={selectedGeneration}
+          slotName={localized(selectedSlot, language)}
+          logoUrl={selectedLogo?.imageUrl}
+          t={t}
+          selectedObject={selectedCanvasObject}
+          onSelectObject={setSelectedCanvasObject}
+          onBeginInteraction={beginCanvasObjectInteraction}
+          onClose={() => setLargePreviewOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

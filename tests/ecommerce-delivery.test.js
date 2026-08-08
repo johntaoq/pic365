@@ -4,6 +4,9 @@ import test from 'node:test';
 import {
   buildDeliveryFilename,
   createDeliveryDocumentDraft,
+  getDeliveryTextScale,
+  normalizeDeliveryAdvanced,
+  resolveDeliveryOverlayBoxes,
   validateDeliveryDocument
 } from '../shared/ecommerce-delivery.js';
 import { getEcommercePlatform } from '../shared/ecommerce-catalog.js';
@@ -96,4 +99,25 @@ test('delivery filenames follow product-slot-platform-version convention', () =>
     }),
     'Titanium Bottle-Feature Image-Shopify-V2.webp'
   );
+});
+
+test('editable text mask and text container geometry is normalized and reusable by preview and export', () => {
+  const advanced = normalizeDeliveryAdvanced({
+    maskBox: { x: 0.18, y: 0.2, width: 0.6, height: 0.42 },
+    textBox: { x: 0.24, y: 0.27, width: 0.48, height: 0.24 },
+    maskOpacity: 0.55,
+    textOpacity: 0.72
+  });
+  const geometry = resolveDeliveryOverlayBoxes({
+    targetWidth: 1024,
+    targetHeight: 1024,
+    layoutId: 'bottom-left',
+    advanced
+  });
+  assert.deepEqual(geometry.maskBox, { x: 0.18, y: 0.2, width: 0.6, height: 0.42 });
+  assert.deepEqual(geometry.textBox, { x: 0.24, y: 0.27, width: 0.48, height: 0.24 });
+  assert.equal(geometry.maskOpacity, 0.55);
+  assert.equal(geometry.textOpacity, 0.72);
+  const content = { headline: 'Compact headline', subtitle: 'Supporting copy', bullets: ['One', 'Two', 'Three'] };
+  assert.ok(getDeliveryTextScale(content, { width: 0.3, height: 0.12 }) < getDeliveryTextScale(content, { width: 0.65, height: 0.3 }));
 });

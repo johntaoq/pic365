@@ -62,6 +62,9 @@ const ASSET_PURPOSES = {
 };
 
 export function buildEcommerceSlotPrompt({ project, platform, slot, assets, revisionRequest = '' }) {
+  const coreUser = Object.prototype.hasOwnProperty.call(project, 'coreUser')
+    ? project.coreUser || ''
+    : project.targetAudience || '';
   const sellingPoints = (project.sellingPoints || []).map((item) => `- ${item}`).join('\n') || '- 未填写；不得自行编造';
   const assetGuide = (assets || []).map((asset, index) => {
     const master = asset.id === project.masterAssetId ? '，这是唯一权威商品母版' : '';
@@ -102,7 +105,8 @@ ${assetGuide}
 - 品牌或系列：${project.brandName || '无；不要自行添加品牌'}
 - 商品种类：${industry.nameZh}
 - 品类视觉重点：${industry.visualFocusZh}
-- 目标用户与场景：${project.targetAudience || '未填写；使用通用且可信的商品场景'}
+- 核心用户：${coreUser || '未填写；使用与商品匹配的普通消费者'}
+- 核心场景：${project.coreScenario || '未填写；使用通用且可信的真实使用场景'}
 - 核心卖点：
 ${sellingPoints}
 - 视觉方向：${visualStyle.nameZh}。${visualStyle.promptZh}

@@ -53,6 +53,8 @@ function migrate(db) {
       product_name TEXT NOT NULL,
       brand_name TEXT NOT NULL DEFAULT '',
       target_audience TEXT NOT NULL DEFAULT '',
+      core_user TEXT NOT NULL DEFAULT '',
+      core_scenario TEXT NOT NULL DEFAULT '',
       selling_points TEXT NOT NULL DEFAULT '[]',
       specifications TEXT NOT NULL DEFAULT '',
       prohibited_content TEXT NOT NULL DEFAULT '',
@@ -275,6 +277,13 @@ function migrate(db) {
   ensureColumn(db, 'generations', 'version_number', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'generations', 'archived_at', 'TEXT');
   ensureColumn(db, 'ecommerce_projects', 'master_asset_id', 'TEXT');
+  ensureColumn(db, 'ecommerce_projects', 'core_user', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_projects', 'core_scenario', "TEXT NOT NULL DEFAULT ''");
+  db.prepare(`
+    UPDATE ecommerce_projects
+    SET core_user = target_audience
+    WHERE core_user = '' AND core_scenario = '' AND target_audience != ''
+  `).run();
   ensureColumn(db, 'ecommerce_projects', 'ai_brief_originals', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'ecommerce_projects', 'identity_spec', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'ecommerce_projects', 'template_id', "TEXT NOT NULL DEFAULT ''");
@@ -678,6 +687,8 @@ function parseJsonObject(value) {
 
 export function normalizeEcommerceProject(row) {
   if (!row) return null;
+  const coreUser = row.core_user || '';
+  const coreScenario = row.core_scenario || '';
   return {
     id: row.id,
     userId: row.user_id,
@@ -686,7 +697,9 @@ export function normalizeEcommerceProject(row) {
     industryId: row.industry_id || '',
     productName: row.product_name || '',
     brandName: row.brand_name || '',
-    targetAudience: row.target_audience || '',
+    coreUser,
+    coreScenario,
+    targetAudience: row.target_audience || [coreUser, coreScenario].filter(Boolean).join('\n'),
     sellingPoints: parseJsonArray(row.selling_points),
     specifications: row.specifications || '',
     prohibitedContent: row.prohibited_content || '',
@@ -699,6 +712,20 @@ export function normalizeEcommerceProject(row) {
     status: row.status || 'draft',
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || ''
+  };
+}
+
+function resolveProjectAudience(values) {
+  const hasCoreUser = Object.prototype.hasOwnProperty.call(values, 'coreUser');
+  const hasCoreScenario = Object.prototype.hasOwnProperty.call(values, 'coreScenario');
+  const coreUser = hasCoreUser ? String(values.coreUser || '') : String(values.targetAudience || '');
+  const coreScenario = hasCoreScenario ? String(values.coreScenario || '') : '';
+  return {
+    coreUser,
+    coreScenario,
+    targetAudience: hasCoreUser || hasCoreScenario
+      ? [coreUser, coreScenario].filter(Boolean).join('\n')
+      : String(values.targetAudience || '')
   };
 }
 
@@ -720,12 +747,13 @@ export function getEcommerceProject(userId, projectId) {
 export function createEcommerceProject(userId, values) {
   const id = randomUUID();
   const createdAt = now();
+  const audience = resolveProjectAudience(values);
   getDb().prepare(`
     INSERT INTO ecommerce_projects (
       id, user_id, project_name, platform_id, industry_id, product_name, brand_name,
-      target_audience, selling_points, specifications, prohibited_content, ai_brief_originals, identity_spec, template_id,
+      target_audience, core_user, core_scenario, selling_points, specifications, prohibited_content, ai_brief_originals, identity_spec, template_id,
       visual_style_id, selected_slots, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
   `).run(
     id,
     userId,
@@ -734,7 +762,9 @@ export function createEcommerceProject(userId, values) {
     values.industryId,
     values.productName,
     values.brandName,
-    values.targetAudience,
+    audience.targetAudience,
+    audience.coreUser,
+    audience.coreScenario,
     JSON.stringify(values.sellingPoints || []),
     values.specifications,
     values.prohibitedContent,
@@ -751,10 +781,11 @@ export function createEcommerceProject(userId, values) {
 
 export function updateEcommerceProject(userId, projectId, values) {
   if (!getEcommerceProject(userId, projectId)) return null;
+  const audience = resolveProjectAudience(values);
   getDb().prepare(`
     UPDATE ecommerce_projects SET
       project_name = ?, platform_id = ?, industry_id = ?, product_name = ?, brand_name = ?,
-      target_audience = ?, selling_points = ?, specifications = ?, prohibited_content = ?,
+      target_audience = ?, core_user = ?, core_scenario = ?, selling_points = ?, specifications = ?, prohibited_content = ?,
       ai_brief_originals = ?, identity_spec = ?, template_id = ?, visual_style_id = ?, selected_slots = ?, updated_at = ?
     WHERE id = ? AND user_id = ?
   `).run(
@@ -763,7 +794,9 @@ export function updateEcommerceProject(userId, projectId, values) {
     values.industryId,
     values.productName,
     values.brandName,
-    values.targetAudience,
+    audience.targetAudience,
+    audience.coreUser,
+    audience.coreScenario,
     JSON.stringify(values.sellingPoints || []),
     values.specifications,
     values.prohibitedContent,

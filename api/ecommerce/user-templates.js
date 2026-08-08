@@ -27,6 +27,8 @@ function projectConfig(project) {
     industryId: project.industryId,
     productName: '新商品',
     brandName: '',
+    coreUser: '',
+    coreScenario: '',
     targetAudience: '',
     sellingPoints: [],
     specifications: '',

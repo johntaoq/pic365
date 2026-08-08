@@ -32,9 +32,10 @@ function cleanSellingPoints(value) {
 
 function cleanAiBriefOriginals(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const legacyAudience = cleanText(value.targetAudience, 1000);
   return Object.fromEntries(
-    ['targetAudience', 'sellingPoints']
-      .map((field) => [field, cleanText(value[field], field === 'targetAudience' ? 1000 : 2000)])
+    ['coreUser', 'coreScenario', 'sellingPoints']
+      .map((field) => [field, cleanText(value[field] || (field === 'coreUser' ? legacyAudience : ''), field === 'sellingPoints' ? 2000 : 1000)])
       .filter(([, content]) => Boolean(content))
   );
 }
@@ -74,6 +75,11 @@ function normalizeProjectInput(body) {
 
   const productName = cleanText(body.productName, 120);
   if (!productName) return { error: 'PRODUCT_NAME_REQUIRED' };
+  const legacyAudience = cleanText(body.targetAudience, 1000);
+  const hasCoreUser = Object.prototype.hasOwnProperty.call(body, 'coreUser');
+  const hasCoreScenario = Object.prototype.hasOwnProperty.call(body, 'coreScenario');
+  const coreUser = cleanText(hasCoreUser ? body.coreUser : legacyAudience, 1000);
+  const coreScenario = cleanText(hasCoreScenario ? body.coreScenario : '', 1000);
 
   const validSlotIds = new Set(platform.slots.map((item) => item.id));
   const selectedSlots = [...new Set(
@@ -89,7 +95,9 @@ function normalizeProjectInput(body) {
       industryId,
       productName,
       brandName: cleanText(body.brandName, 120),
-      targetAudience: cleanText(body.targetAudience, 1000),
+      coreUser,
+      coreScenario,
+      targetAudience: [coreUser, coreScenario].filter(Boolean).join('\n'),
       sellingPoints: cleanSellingPoints(body.sellingPoints),
       specifications: cleanText(body.specifications, 2000),
       prohibitedContent: cleanText(body.prohibitedContent, 2000),

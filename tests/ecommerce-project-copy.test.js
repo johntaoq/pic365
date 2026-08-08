@@ -31,7 +31,8 @@ async function fixture() {
     industryId: 'home-appliances',
     productName: 'Aero bottle',
     brandName: 'Aero',
-    targetAudience: 'Commuters',
+    coreUser: 'Urban commuters',
+    coreScenario: 'Daily subway travel and desk hydration',
     sellingPoints: ['Lightweight', 'Leak resistant'],
     specifications: '500 ml',
     prohibitedContent: 'Unsupported claims',
@@ -91,6 +92,8 @@ test('same-platform duplication physically copies assets and layouts but not gen
 
   assert.equal(duplicate.platformId, project.platformId);
   assert.equal(duplicate.productName, project.productName);
+  assert.equal(duplicate.coreUser, project.coreUser);
+  assert.equal(duplicate.coreScenario, project.coreScenario);
   assert.deepEqual(duplicate.selectedSlots, project.selectedSlots);
   assert.equal(localDb.listEcommerceProjectGenerations(user.id, duplicate.id).length, 0);
   assert.ok(p1Db.listEcommerceProjectOutputs(user.id, duplicate.id).every((output) => !output.selectedGenerationId));
@@ -114,6 +117,8 @@ test('cross-platform adaptation keeps product facts and assets while adopting ta
 
   assert.equal(adapted.platformId, 'taobao-tmall');
   assert.equal(adapted.productName, project.productName);
+  assert.equal(adapted.coreUser, project.coreUser);
+  assert.equal(adapted.coreScenario, project.coreScenario);
   assert.deepEqual(adapted.sellingPoints, project.sellingPoints);
   assert.deepEqual(adapted.selectedSlots, recommended.selectedSlotIds);
   assert.equal(localDb.listEcommerceProjectAssets(user.id, adapted.id).length, 1);

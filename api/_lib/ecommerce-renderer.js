@@ -1,8 +1,10 @@
 import sharp from 'sharp';
 import {
+  getDeliveryTextScale,
   getDeliveryTheme,
   normalizeDeliveryAdvanced,
-  normalizeDeliveryContent
+  normalizeDeliveryContent,
+  resolveDeliveryOverlayBoxes
 } from '../../shared/ecommerce-delivery.js';
 import { readStoredImage } from './storage.js';
 
@@ -47,43 +49,55 @@ function textBlock(lines, { x, y, fontSize, lineHeight, color, weight = 600, anc
   )).join('');
 }
 
-function panelGeometry(document, advanced) {
-  const width = document.targetWidth;
-  const height = document.targetHeight;
-  const padding = Math.round(Math.min(width, height) * advanced.padding);
-  const safeWidth = width - padding * 2;
-  const safeHeight = height - padding * 2;
-  const panelWidth = Math.round(safeWidth * advanced.contentWidth);
-  const panelHeight = Math.round(Math.min(safeHeight * 0.46, Math.max(210, height * 0.31)));
-  switch (document.layoutId) {
-    case 'top-left': return { x: padding, y: padding, width: panelWidth, height: panelHeight, align: 'left' };
-    case 'top-center': return { x: Math.round((width - panelWidth) / 2), y: padding, width: panelWidth, height: panelHeight, align: 'center' };
-    case 'bottom-center': return { x: Math.round((width - panelWidth) / 2), y: height - padding - panelHeight, width: panelWidth, height: panelHeight, align: 'center' };
-    case 'split-left': return { x: padding, y: padding, width: Math.round(safeWidth * 0.42), height: safeHeight, align: 'left' };
-    default: return { x: padding, y: height - padding - panelHeight, width: panelWidth, height: panelHeight, align: 'left' };
-  }
+function pixelBox(box, width, height) {
+  return {
+    x: Math.round(box.x * width),
+    y: Math.round(box.y * height),
+    width: Math.max(1, Math.round(box.width * width)),
+    height: Math.max(1, Math.round(box.height * height))
+  };
 }
 
 function generalPanelSvg(document, content, advanced, theme) {
   if (!advanced.showText) return '';
-  const panel = panelGeometry(document, advanced);
-  const inner = Math.round(Math.min(document.targetWidth, document.targetHeight) * 0.035);
-  const anchor = panel.align === 'center' ? 'middle' : 'start';
-  const textX = panel.align === 'center' ? panel.x + panel.width / 2 : panel.x + inner;
-  const headlineSize = Math.max(28, Math.round(Math.min(document.targetWidth, document.targetHeight) * 0.048));
-  const subtitleSize = Math.max(16, Math.round(headlineSize * 0.47));
-  const bulletSize = Math.max(15, Math.round(headlineSize * 0.43));
-  const maxUnits = panel.align === 'center' ? 22 : 27;
-  const headlineLines = wrapText(content.headline, maxUnits, 2);
-  const subtitleLines = wrapText(content.subtitle, maxUnits * 1.4, 2);
-  const badgeWidth = content.badge ? Math.max(90, content.badge.length * bulletSize * 0.9 + inner) : 0;
-  let cursorY = panel.y + inner + headlineSize;
-  let svg = `<rect x="${panel.x}" y="${panel.y}" width="${panel.width}" height="${panel.height}" rx="${Math.round(inner * 0.72)}" fill="${theme.panel}" fill-opacity="${advanced.overlayOpacity}" stroke="${theme.line}" stroke-width="2"/>`;
+  const geometry = resolveDeliveryOverlayBoxes(document);
+  const panel = pixelBox(geometry.maskBox, document.targetWidth, document.targetHeight);
+  const text = pixelBox(geometry.textBox, document.targetWidth, document.targetHeight);
+  const centered = ['top-center', 'bottom-center'].includes(document.layoutId);
+  const anchor = centered ? 'middle' : 'start';
+  const textX = centered ? text.x + text.width / 2 : text.x;
+  const initialScale = getDeliveryTextScale(content, geometry.textBox);
+  let scale = initialScale;
+  let metrics;
+  for (let attempt = 0; attempt < 9; attempt += 1) {
+    const headlineSize = Math.max(12, Math.round(Math.min(text.width * 0.095, text.height * 0.2) * scale));
+    const subtitleSize = Math.max(9, Math.round(headlineSize * 0.48));
+    const bulletSize = Math.max(8, Math.round(headlineSize * 0.43));
+    const maxUnits = Math.max(7, Math.floor(text.width / Math.max(1, headlineSize) * (centered ? 1.05 : 1.18)));
+    const headlineLines = wrapText(content.headline, maxUnits, 2);
+    const subtitleLines = wrapText(content.subtitle, maxUnits * 1.45, 2);
+    const bullets = content.bullets.slice(0, text.height > document.targetHeight * 0.34 ? 5 : 3);
+    const badgeHeight = content.badge ? bulletSize * 2.05 + subtitleSize * 0.45 : 0;
+    const priceHeight = content.price ? headlineSize * 1.05 : 0;
+    const estimatedHeight = headlineSize + badgeHeight
+      + headlineLines.length * headlineSize * 1.16
+      + (subtitleLines.length ? subtitleSize * 0.65 + subtitleLines.length * subtitleSize * 1.32 : 0)
+      + bullets.length * bulletSize * 1.52
+      + priceHeight;
+    metrics = { headlineSize, subtitleSize, bulletSize, headlineLines, subtitleLines, bullets };
+    if (estimatedHeight <= text.height || scale <= 0.42) break;
+    scale = Math.max(0.42, scale * 0.88);
+  }
+  const { headlineSize, subtitleSize, bulletSize, headlineLines, subtitleLines, bullets } = metrics;
+  const badgeWidth = content.badge ? Math.min(text.width, Math.max(70, content.badge.length * bulletSize * 0.9 + bulletSize * 1.8)) : 0;
+  let cursorY = text.y + headlineSize;
+  let svg = `<rect x="${panel.x}" y="${panel.y}" width="${panel.width}" height="${panel.height}" rx="${Math.round(Math.min(panel.width, panel.height) * 0.08)}" fill="${theme.panel}" fill-opacity="${geometry.maskOpacity}" stroke="${theme.line}" stroke-width="2"/>`;
+  svg += `<defs><clipPath id="delivery-text-box"><rect x="${text.x}" y="${text.y}" width="${text.width}" height="${text.height}"/></clipPath></defs><g opacity="${geometry.textOpacity}" clip-path="url(#delivery-text-box)">`;
   if (content.badge) {
-    const badgeX = panel.align === 'center' ? panel.x + (panel.width - badgeWidth) / 2 : panel.x + inner;
-    svg += `<rect x="${badgeX}" y="${panel.y + inner}" width="${badgeWidth}" height="${bulletSize * 2.05}" rx="${bulletSize}" fill="${theme.accent}"/>`;
-    svg += `<text x="${badgeX + badgeWidth / 2}" y="${panel.y + inner + bulletSize * 1.38}" fill="${theme.foreground}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${bulletSize}" font-weight="800" text-anchor="middle">${escapeXml(content.badge)}</text>`;
-    cursorY += bulletSize * 2.05;
+    const badgeX = centered ? text.x + (text.width - badgeWidth) / 2 : text.x;
+    svg += `<rect x="${badgeX}" y="${text.y}" width="${badgeWidth}" height="${bulletSize * 2.05}" rx="${bulletSize}" fill="${theme.accent}"/>`;
+    svg += `<text x="${badgeX + badgeWidth / 2}" y="${text.y + bulletSize * 1.38}" fill="${theme.foreground}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${bulletSize}" font-weight="800" text-anchor="middle">${escapeXml(content.badge)}</text>`;
+    cursorY += bulletSize * 2.05 + subtitleSize * 0.45;
   }
   svg += textBlock(headlineLines, { x: textX, y: cursorY, fontSize: headlineSize, lineHeight: headlineSize * 1.18, color: theme.foreground, weight: 850, anchor });
   cursorY += headlineLines.length * headlineSize * 1.18 + subtitleSize * 0.7;
@@ -91,21 +105,19 @@ function generalPanelSvg(document, content, advanced, theme) {
     svg += textBlock(subtitleLines, { x: textX, y: cursorY, fontSize: subtitleSize, lineHeight: subtitleSize * 1.35, color: theme.muted, weight: 600, anchor });
     cursorY += subtitleLines.length * subtitleSize * 1.35 + subtitleSize * 0.65;
   }
-  const bullets = content.bullets.slice(0, panel.height > document.targetHeight * 0.6 ? 5 : 3);
   for (const bullet of bullets) {
-    if (cursorY > panel.y + panel.height - inner * 1.2) break;
-    const bulletX = panel.align === 'center' ? textX - panel.width * 0.33 : textX;
+    const bulletX = centered ? textX - text.width * 0.34 : textX;
     svg += `<circle cx="${bulletX}" cy="${cursorY - bulletSize * 0.18}" r="${Math.max(3, bulletSize * 0.18)}" fill="${theme.accent}"/>`;
-    svg += textBlock(wrapText(bullet, 34, 1), { x: bulletX + bulletSize * 0.8, y: cursorY, fontSize: bulletSize, lineHeight: bulletSize * 1.3, color: theme.foreground, weight: 650 });
+    svg += textBlock(wrapText(bullet, Math.max(8, Math.floor(text.width / bulletSize * 0.9)), 1), { x: bulletX + bulletSize * 0.8, y: cursorY, fontSize: bulletSize, lineHeight: bulletSize * 1.3, color: theme.foreground, weight: 650 });
     cursorY += bulletSize * 1.55;
   }
   if (content.price) {
     const priceSize = Math.round(headlineSize * 0.88);
-    const priceX = panel.align === 'center' ? textX : panel.x + panel.width - inner;
-    const priceAnchor = panel.align === 'center' ? 'middle' : 'end';
-    svg += `<text x="${priceX}" y="${panel.y + panel.height - inner}" fill="${theme.accent}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${priceSize}" font-weight="900" text-anchor="${priceAnchor}">${escapeXml(content.price)}</text>`;
+    const priceX = centered ? textX : text.x + text.width;
+    const priceAnchor = centered ? 'middle' : 'end';
+    svg += `<text x="${priceX}" y="${text.y + text.height - 2}" fill="${theme.accent}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${priceSize}" font-weight="900" text-anchor="${priceAnchor}">${escapeXml(content.price)}</text>`;
   }
-  return svg;
+  return `${svg}</g>`;
 }
 
 function dimensionsSvg(document, content, theme) {
@@ -287,4 +299,3 @@ export async function renderDetailPage(renderedItems, targetWidth = 1200) {
   });
   return canvas.composite(composites).png({ compressionLevel: 8 }).toBuffer();
 }
-

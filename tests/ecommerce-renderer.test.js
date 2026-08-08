@@ -44,7 +44,17 @@ const document = {
     steps: [],
     logoAssetId: 'logo'
   },
-  advanced: { showText: true, imageFit: 'cover', overlayOpacity: 0.9, contentWidth: 0.7, padding: 0.055 }
+  advanced: {
+    showText: true,
+    imageFit: 'cover',
+    overlayOpacity: 0.64,
+    maskOpacity: 0.64,
+    textOpacity: 0.82,
+    maskBox: { x: 0.08, y: 0.58, width: 0.7, height: 0.34 },
+    textBox: { x: 0.13, y: 0.63, width: 0.59, height: 0.24 },
+    contentWidth: 0.7,
+    padding: 0.055
+  }
 };
 
 test('renderer creates exact delivery dimensions with structured overlays', async () => {
@@ -70,4 +80,3 @@ test('detail-page renderer joins delivery images vertically', async () => {
   assert.equal(metadata.width, 800);
   assert.equal(metadata.height, 1600);
 });
-

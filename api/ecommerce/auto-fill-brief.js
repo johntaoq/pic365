@@ -16,7 +16,8 @@ const SYSTEM_PROMPT = [
   'Do not invent exact dimensions, weight, materials, ingredients, accessories, certifications, compatibility, efficacy, awards, sales rankings, or legal claims.',
   'When product facts are unknown, write a useful verification checklist instead of guessing.',
   'Selling points must be plausible creative directions that the user can verify, not absolute or unsupported promises.',
-  'Return JSON only with exactly these string keys: targetAudience, sellingPoints.',
+  'Separate the target people from the usage context: coreUser describes who buys or uses the product; coreScenario describes where, when, and for what task it is used.',
+  'Return JSON only with exactly these string keys: coreUser, coreScenario, sellingPoints.',
   'Use newline-separated items inside sellingPoints.',
   'Do not include markdown fences, headings, commentary, or additional keys.'
 ].join(' ');
@@ -71,7 +72,8 @@ function normalizeList(value, maxItems, maxItemLength) {
 function normalizeBrief(value) {
   if (!value || typeof value !== 'object') return null;
   const brief = {
-    targetAudience: cleanText(value.targetAudience, 1000),
+    coreUser: cleanText(value.coreUser || value.targetAudience, 1000),
+    coreScenario: cleanText(value.coreScenario, 1000),
     sellingPoints: normalizeList(value.sellingPoints, 8, 180)
   };
   return Object.values(brief).every(Boolean) ? brief : null;
@@ -81,7 +83,8 @@ function buildFallbackBrief({ language, industryName, productName, brandName }) 
   const identity = brandName ? `${brandName} ${productName}` : productName;
   if (language === 'zh') {
     return {
-      targetAudience: `关注${industryName}产品外观、使用体验和信息透明度的潜在消费者。适用于日常使用、内容种草、礼赠选择及电商购买决策等场景。`,
+      coreUser: `关注${industryName}产品外观、使用体验和信息透明度的潜在消费者。`,
+      coreScenario: '适用于日常使用、内容种草、礼赠选择及电商购买决策等场景。',
       sellingPoints: [
         `清晰呈现${identity}的商品主体与系列识别`,
         '围绕真实可验证的结构、使用方式和产品价值组织画面',
@@ -90,7 +93,8 @@ function buildFallbackBrief({ language, industryName, productName, brandName }) 
     };
   }
   return {
-    targetAudience: `Potential ${industryName} customers who value clear product presentation, practical use, and transparent information. Relevant contexts include everyday use, product discovery, gifting, and online purchase decisions.`,
+    coreUser: `Potential ${industryName} customers who value clear product presentation, practical use, and transparent information.`,
+    coreScenario: 'Relevant contexts include everyday use, product discovery, gifting, and online purchase decisions.',
     sellingPoints: [
       `Present the product identity and ${identity} series clearly`,
       'Build visuals around real, verifiable structure, use, and product value',

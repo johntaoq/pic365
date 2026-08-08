@@ -214,10 +214,31 @@ export function createDeliveryDocumentDraft({ project, slot, output, language = 
       showText: defaults.showText,
       showSafeArea: false,
       overlayOpacity: 0.9,
+      maskOpacity: 0.9,
+      textOpacity: 1,
+      maskBox: null,
+      textBox: null,
       imageFit: 'cover',
       contentWidth: 0.7,
       padding: 0.055
     }
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value);
+  return Math.max(min, Math.min(max, Number.isFinite(parsed) ? parsed : fallback));
+}
+
+function normalizeDeliveryBox(value, minimumWidth, minimumHeight) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const width = clampNumber(value.width, minimumWidth, 1, minimumWidth);
+  const height = clampNumber(value.height, minimumHeight, 1, minimumHeight);
+  return {
+    x: Number(clampNumber(value.x, 0, 1 - width, 0).toFixed(5)),
+    y: Number(clampNumber(value.y, 0, 1 - height, 0).toFixed(5)),
+    width: Number(width.toFixed(5)),
+    height: Number(height.toFixed(5))
   };
 }
 
@@ -255,14 +276,75 @@ export function normalizeDeliveryContent(value) {
 
 export function normalizeDeliveryAdvanced(value) {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const maskOpacity = clampNumber(input.maskOpacity ?? input.overlayOpacity, 0.05, 1, 0.9);
   return {
     showText: input.showText !== false,
     showSafeArea: Boolean(input.showSafeArea),
-    overlayOpacity: Math.max(0.45, Math.min(1, Number(input.overlayOpacity) || 0.9)),
+    overlayOpacity: maskOpacity,
+    maskOpacity,
+    textOpacity: clampNumber(input.textOpacity, 0.1, 1, 1),
+    maskBox: normalizeDeliveryBox(input.maskBox, 0.18, 0.1),
+    textBox: normalizeDeliveryBox(input.textBox, 0.12, 0.07),
     imageFit: input.imageFit === 'contain' ? 'contain' : 'cover',
     contentWidth: Math.max(0.42, Math.min(0.9, Number(input.contentWidth) || 0.7)),
     padding: Math.max(0.03, Math.min(0.12, Number(input.padding) || 0.055))
   };
+}
+
+export function resolveDeliveryOverlayBoxes(document) {
+  const advanced = normalizeDeliveryAdvanced(document?.advanced);
+  const targetWidth = Math.max(1, Number(document?.targetWidth) || 1024);
+  const targetHeight = Math.max(1, Number(document?.targetHeight) || 1024);
+  const padding = advanced.padding;
+  const safeWidth = 1 - padding * 2;
+  const safeHeight = 1 - padding * 2;
+  const panelWidth = Math.min(safeWidth, advanced.contentWidth);
+  const panelHeight = Math.min(safeHeight * 0.58, Math.max(210 / targetHeight, 0.31));
+  let maskBox;
+  switch (document?.layoutId) {
+    case 'top-left':
+      maskBox = { x: padding, y: padding, width: panelWidth, height: panelHeight };
+      break;
+    case 'top-center':
+      maskBox = { x: (1 - panelWidth) / 2, y: padding, width: panelWidth, height: panelHeight };
+      break;
+    case 'bottom-center':
+      maskBox = { x: (1 - panelWidth) / 2, y: 1 - padding - panelHeight, width: panelWidth, height: panelHeight };
+      break;
+    case 'split-left':
+      maskBox = { x: padding, y: padding, width: safeWidth * 0.42, height: safeHeight };
+      break;
+    default:
+      maskBox = { x: padding, y: 1 - padding - panelHeight, width: panelWidth, height: panelHeight };
+      break;
+  }
+  maskBox = normalizeDeliveryBox(maskBox, 0.18, 0.1);
+  const insetPixels = Math.min(targetWidth, targetHeight) * 0.035;
+  const insetX = Math.min(maskBox.width * 0.16, insetPixels / targetWidth);
+  const insetY = Math.min(maskBox.height * 0.2, insetPixels / targetHeight);
+  const textBox = normalizeDeliveryBox({
+    x: maskBox.x + insetX,
+    y: maskBox.y + insetY,
+    width: Math.max(0.12, maskBox.width - insetX * 2),
+    height: Math.max(0.07, maskBox.height - insetY * 2)
+  }, 0.12, 0.07);
+  return {
+    maskBox: advanced.maskBox || maskBox,
+    textBox: advanced.textBox || textBox,
+    maskOpacity: advanced.maskOpacity,
+    textOpacity: advanced.textOpacity
+  };
+}
+
+export function getDeliveryTextScale(content, box) {
+  const normalized = normalizeDeliveryContent(content);
+  const units = [normalized.headline, normalized.subtitle, normalized.price, normalized.badge]
+    .join('')
+    .length + normalized.bullets.join('').length * 0.85 + normalized.bullets.length * 8;
+  const area = Math.max(0.01, Number(box?.width || 0.5) * Number(box?.height || 0.2));
+  const areaScale = Math.sqrt(area / 0.15);
+  const densityScale = Math.sqrt(92 / Math.max(48, units || 48));
+  return Math.max(0.42, Math.min(1.18, areaScale * densityScale));
 }
 
 function rule(id, severity, status, titleEn, titleZh, detailEn, detailZh) {

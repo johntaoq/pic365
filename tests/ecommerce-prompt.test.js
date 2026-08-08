@@ -11,7 +11,8 @@ function project(overrides = {}) {
     industryId: 'general',
     productName: 'Travel bottle',
     brandName: 'Example',
-    targetAudience: 'Commuters',
+    coreUser: 'Urban commuters',
+    coreScenario: 'Daily subway travel and desk hydration',
     sellingPoints: ['Lightweight'],
     specifications: '500 ml; bottle ×1; lid ×1',
     prohibitedContent: 'Do not add a straw',
@@ -21,6 +22,32 @@ function project(overrides = {}) {
     ...overrides
   };
 }
+
+test('core users and usage scenarios are represented as separate prompt facts', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'feature');
+  const prompt = buildEcommerceSlotPrompt({ project: project(), platform, slot, assets: [] });
+
+  assert.match(prompt, /核心用户：Urban commuters/);
+  assert.match(prompt, /核心场景：Daily subway travel and desk hydration/);
+  assert.equal((prompt.match(/Urban commuters/g) || []).length, 1);
+  assert.equal((prompt.match(/Daily subway travel and desk hydration/g) || []).length, 1);
+});
+
+test('an intentionally empty core user does not reuse the scenario as legacy audience data', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'feature');
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({ coreUser: '', coreScenario: 'Home office use', targetAudience: 'Home office use' }),
+    platform,
+    slot,
+    assets: []
+  });
+
+  assert.match(prompt, /核心用户：未填写；使用与商品匹配的普通消费者/);
+  assert.match(prompt, /核心场景：Home office use/);
+  assert.equal((prompt.match(/Home office use/g) || []).length, 1);
+});
 
 test('legacy specification and avoidance data is represented once inside identity constraints', () => {
   const platform = getEcommercePlatform('amazon');

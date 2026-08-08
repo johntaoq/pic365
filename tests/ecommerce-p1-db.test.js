@@ -29,7 +29,8 @@ function createProjectFixture() {
     industryId: 'general',
     productName: 'Test product',
     brandName: '',
-    targetAudience: '',
+    coreUser: 'Marketplace operators',
+    coreScenario: 'Preparing a new product listing',
     sellingPoints: ['Stable identity'],
     specifications: 'One product',
     prohibitedContent: '',
@@ -42,6 +43,30 @@ function createProjectFixture() {
   p1Db.syncEcommerceProjectOutputs(user.id, project.id, project.selectedSlots);
   return { user, project };
 }
+
+test('project briefs persist core users and core scenarios independently', () => {
+  const { user, project } = createProjectFixture();
+  assert.equal(project.coreUser, 'Marketplace operators');
+  assert.equal(project.coreScenario, 'Preparing a new product listing');
+
+  const updated = localDb.updateEcommerceProject(user.id, project.id, {
+    ...project,
+    coreUser: 'First-time online shoppers',
+    coreScenario: 'Comparing product details before checkout'
+  });
+  assert.equal(updated.coreUser, 'First-time online shoppers');
+  assert.equal(updated.coreScenario, 'Comparing product details before checkout');
+  assert.equal(updated.targetAudience, 'First-time online shoppers\nComparing product details before checkout');
+
+  const clearedUser = localDb.updateEcommerceProject(user.id, project.id, {
+    ...updated,
+    coreUser: '',
+    coreScenario: 'Using the product at home'
+  });
+  assert.equal(clearedUser.coreUser, '');
+  assert.equal(clearedUser.coreScenario, 'Using the product at home');
+  assert.equal(clearedUser.targetAudience, 'Using the product at home');
+});
 
 function createSucceededGeneration(userId, projectId, slotId, prompt) {
   const reservation = localDb.reserveCredit(userId, { prompt });

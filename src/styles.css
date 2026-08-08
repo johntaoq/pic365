@@ -2937,28 +2937,35 @@ button {
   border: 1px solid rgba(149, 167, 220, 0.16);
   border-radius: 17px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
+  grid-template-columns: repeat(7, minmax(118px, 1fr));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
-.ecommerceWorkflow > div {
+.ecommerceWorkflow > button {
   align-items: center;
+  background: transparent;
+  border: 0;
   border-right: 1px solid rgba(149, 167, 220, 0.12);
   color: var(--muted);
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: 2px 9px;
   grid-template-columns: 28px 1fr;
   min-height: 62px;
   padding: 10px 14px;
   position: relative;
+  text-align: left;
   transition: background 180ms ease, box-shadow 180ms ease, color 180ms ease;
 }
 
-.ecommerceWorkflow > div:last-child {
+.ecommerceWorkflow > button:last-child {
   border-right: 0;
 }
 
-.ecommerceWorkflow > div > span {
+.ecommerceWorkflow > button > span {
   align-items: center;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2985,32 +2992,47 @@ button {
   opacity: 0.88;
 }
 
-.ecommerceWorkflow > div.active {
+.ecommerceWorkflow > button.active {
   background: linear-gradient(135deg, rgba(255, 209, 92, 0.3), rgba(178, 126, 27, 0.19));
   box-shadow: inset 0 -3px 0 #ffd66b, inset 0 0 0 1px rgba(255, 224, 139, 0.24);
   color: #fff5d5;
 }
 
-.ecommerceWorkflow > div.active > span {
+.ecommerceWorkflow > button.active > span {
   background: #ffd66b;
   border-color: #ffe49c;
   box-shadow: 0 0 0 4px rgba(255, 214, 107, 0.12);
   color: #2b2107;
 }
 
-.ecommerceWorkflow > div.active em {
+.ecommerceWorkflow > button.active em {
   color: #ffe8a6;
   opacity: 1;
 }
 
-.ecommerceWorkflow > div.completed {
+.ecommerceWorkflow > button.completed {
   color: #b8d8cd;
 }
 
-.ecommerceWorkflow > div.completed > span {
+.ecommerceWorkflow > button.completed > span {
   background: rgba(141, 244, 204, 0.16);
   border-color: rgba(141, 244, 204, 0.34);
   color: #a8f6d8;
+}
+
+.ecommerceWorkflow > button.locked {
+  cursor: not-allowed;
+  opacity: 0.43;
+}
+
+.ecommerceWorkflow > button.locked > span {
+  background: rgba(149, 167, 220, 0.035);
+  border-color: rgba(149, 167, 220, 0.08);
+}
+
+.ecommerceWorkflow > button:focus-visible {
+  outline: 2px solid rgba(157, 246, 210, 0.72);
+  outline-offset: -3px;
 }
 
 .ecommerceGate {
@@ -3494,6 +3516,22 @@ button {
 .ecommerceField textarea {
   min-height: 92px;
   resize: vertical;
+}
+
+.ecommerceBriefDimensionField,
+.ecommerceSellingPointsField {
+  background: linear-gradient(145deg, rgba(103, 232, 249, 0.035), rgba(141, 244, 204, 0.018));
+  border: 1px solid rgba(149, 167, 220, 0.1);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.ecommerceBriefDimensionField textarea {
+  min-height: 112px;
+}
+
+.ecommerceSellingPointsField textarea {
+  min-height: 110px;
 }
 
 .ecommerceProductBriefSection {
@@ -4391,8 +4429,13 @@ button {
 .ecommerceProductionSection {
   background: rgba(141, 244, 204, 0.025);
   border: 1px solid rgba(141, 244, 204, 0.1);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 16px;
+  padding: 0;
+}
+
+.ecommerceProductionContent {
+  gap: 13px;
+  padding: 2px 14px 14px;
 }
 
 .ecommerceBatchToolbar {
@@ -6549,6 +6592,15 @@ button {
   width: min(100%, 560px);
 }
 
+.deliveryArtboard.editable {
+  touch-action: none;
+  user-select: none;
+}
+
+.deliveryArtboard[title] {
+  cursor: zoom-in;
+}
+
 .deliveryArtboard > img {
   display: block;
   height: 100%;
@@ -6581,6 +6633,173 @@ button {
   inset: 0;
   pointer-events: none;
   position: absolute;
+}
+
+.deliveryPreviewOverlay.editable {
+  pointer-events: auto;
+}
+
+.deliveryCanvasObject {
+  box-sizing: border-box;
+  position: absolute;
+}
+
+.deliveryCanvasObject.editable {
+  cursor: move;
+  pointer-events: auto;
+}
+
+.deliveryCanvasObject.selected {
+  box-shadow: 0 0 0 2px rgba(255, 211, 92, 0.98), 0 0 0 5px rgba(255, 211, 92, 0.16);
+  z-index: 8;
+}
+
+.deliveryMaskObject {
+  backdrop-filter: blur(13px) saturate(1.1);
+  background: var(--delivery-panel);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: clamp(10px, 1.5vw, 28px);
+  z-index: 3;
+}
+
+.deliveryTextObject {
+  color: var(--delivery-foreground);
+  container-type: size;
+  overflow: hidden;
+  z-index: 4;
+}
+
+.deliveryTextContent {
+  align-content: start;
+  display: grid;
+  gap: max(2px, calc(3cqmin * var(--delivery-copy-scale, 1)));
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.deliveryTextObject.centered .deliveryTextContent {
+  justify-items: center;
+  text-align: center;
+}
+
+.deliveryTextContent > em {
+  background: var(--delivery-accent);
+  border-radius: 999px;
+  color: var(--delivery-foreground);
+  font-size: clamp(7px, calc(7cqmin * var(--delivery-copy-scale, 1)), 22px);
+  font-style: normal;
+  font-weight: 850;
+  justify-self: start;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.35em 0.75em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deliveryTextObject.centered .deliveryTextContent > em {
+  justify-self: center;
+}
+
+.deliveryTextContent > strong {
+  font-size: clamp(9px, calc(18cqmin * var(--delivery-copy-scale, 1)), 72px);
+  line-height: 1.12;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.deliveryTextContent > span {
+  color: var(--delivery-muted);
+  font-size: clamp(7px, calc(8cqmin * var(--delivery-copy-scale, 1)), 34px);
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.deliveryTextContent ul {
+  display: grid;
+  gap: 0.2em;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+
+.deliveryTextContent li {
+  font-size: clamp(7px, calc(7cqmin * var(--delivery-copy-scale, 1)), 28px);
+  line-height: 1.3;
+  overflow: hidden;
+  padding-left: 1em;
+  position: relative;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deliveryTextContent li::before {
+  background: var(--delivery-accent);
+  border-radius: 50%;
+  content: '';
+  height: 0.42em;
+  left: 0;
+  position: absolute;
+  top: 0.48em;
+  width: 0.42em;
+}
+
+.deliveryTextContent > b {
+  align-self: end;
+  color: var(--delivery-accent);
+  font-size: clamp(10px, calc(16cqmin * var(--delivery-copy-scale, 1)), 62px);
+  justify-self: end;
+  line-height: 1;
+  margin-top: auto;
+}
+
+.deliveryObjectLabel {
+  align-items: center;
+  background: rgba(8, 13, 25, 0.88);
+  border: 1px solid rgba(255, 220, 127, 0.5);
+  border-radius: 999px;
+  color: #ffe6a3;
+  display: inline-flex;
+  font-size: clamp(7px, 1vw, 10px);
+  font-weight: 850;
+  gap: 4px;
+  left: 5px;
+  line-height: 1;
+  padding: 5px 7px;
+  pointer-events: none;
+  position: absolute;
+  top: 5px;
+  z-index: 12;
+}
+
+.deliveryObjectResizeHandle {
+  background: #ffd45f;
+  border: 2px solid #342709;
+  border-radius: 3px;
+  height: 13px;
+  padding: 0;
+  position: absolute;
+  width: 13px;
+  z-index: 14;
+}
+
+.deliveryObjectResizeHandle.nw { cursor: nwse-resize; left: 2px; top: 2px; }
+.deliveryObjectResizeHandle.ne { cursor: nesw-resize; right: 2px; top: 2px; }
+.deliveryObjectResizeHandle.sw { bottom: 2px; cursor: nesw-resize; left: 2px; }
+.deliveryObjectResizeHandle.se { bottom: 2px; cursor: nwse-resize; right: 2px; }
+
+body.deliveryObjectDragging,
+body.deliveryObjectDragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
 }
 
 .deliverySafeArea {
@@ -6845,6 +7064,158 @@ button {
   display: grid;
   gap: 7px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.deliveryPreviewHint {
+  align-items: center;
+  color: #7f91ad;
+  display: inline-flex;
+  font-size: 8px;
+  gap: 5px;
+  justify-self: center;
+}
+
+.deliveryObjectToolbar {
+  align-items: center;
+  background: rgba(5, 9, 20, 0.72);
+  border: 1px solid rgba(149, 167, 220, 0.14);
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: auto minmax(130px, 1fr) auto;
+  padding: 7px;
+}
+
+.deliveryObjectToolbar > div {
+  display: flex;
+  gap: 5px;
+}
+
+.deliveryObjectToolbar button {
+  align-items: center;
+  background: rgba(149, 167, 220, 0.07);
+  border: 1px solid rgba(149, 167, 220, 0.15);
+  border-radius: 7px;
+  color: #a9b8d0;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 800;
+  gap: 4px;
+  justify-content: center;
+  min-height: 29px;
+  padding: 0 7px;
+}
+
+.deliveryObjectToolbar button.active {
+  background: rgba(255, 211, 92, 0.14);
+  border-color: rgba(255, 211, 92, 0.42);
+  color: #ffe39a;
+}
+
+.deliveryObjectToolbar button.reset {
+  color: #b9c8dd;
+}
+
+.deliveryObjectToolbar > label {
+  align-items: center;
+  color: #91a3bd;
+  display: grid;
+  font-size: 8px;
+  gap: 6px;
+  grid-template-columns: auto minmax(70px, 1fr) 34px;
+}
+
+.deliveryObjectToolbar input[type='range'] {
+  accent-color: #ffd45f;
+  min-width: 0;
+  width: 100%;
+}
+
+.deliveryObjectToolbar em {
+  color: #d8e2f1;
+  font-size: 8px;
+  font-style: normal;
+  text-align: right;
+}
+
+.deliveryArtboardLightbox {
+  align-items: center;
+  backdrop-filter: blur(18px);
+  background: rgba(2, 5, 12, 0.88);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 320;
+}
+
+.deliveryArtboardLightboxPanel {
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 48px);
+  max-width: calc(100vw - 48px);
+}
+
+.deliveryArtboardLightboxPanel > header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.deliveryArtboardLightboxPanel > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.deliveryArtboardLightboxPanel > header span {
+  color: #9df6d2;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.deliveryArtboardLightboxPanel > header strong {
+  font-size: 14px;
+}
+
+.deliveryArtboardLightboxPanel > header button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  color: #dce7f6;
+  cursor: pointer;
+  display: flex;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+  width: 36px;
+}
+
+.deliveryArtboardLightboxCanvas {
+  align-items: center;
+  background:
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+    rgba(7, 11, 21, 0.88);
+  background-size: 28px 28px, 28px 28px, auto;
+  border: 1px solid rgba(149, 167, 220, 0.18);
+  border-radius: 15px;
+  display: flex;
+  justify-content: center;
+  max-height: 84vh;
+  max-width: 92vw;
+  overflow: auto;
+  padding: 18px;
+}
+
+.deliveryArtboardLightboxCanvas .deliveryArtboard {
+  height: auto;
+  max-height: none;
+  max-width: none;
+  width: min(88vw, calc(78vh * var(--delivery-aspect, 1)));
 }
 
 .deliveryPreviewActions button:last-child {
@@ -7554,12 +7925,12 @@ button {
   }
 
   .ecommerceWorkflow {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(112px, 1fr));
   }
 
-  .ecommerceWorkflow > div:nth-child(2),
-  .ecommerceWorkflow > div:nth-child(4) {
-    border-right: 0;
+  .ecommerceWorkflow > button {
+    min-height: 58px;
+    padding: 9px 11px;
   }
 
   .deliveryCenterHeader {
@@ -7639,18 +8010,19 @@ button {
     justify-content: center;
   }
 
-  .ecommerceWorkflow,
   .ecommerceFieldsGrid,
   .ecommerceSlotGrid,
   .ecommerceProjectCards {
     grid-template-columns: 1fr;
   }
 
-  .ecommerceWorkflow > div,
-  .ecommerceWorkflow > div:nth-child(2),
-  .ecommerceWorkflow > div:nth-child(4) {
-    border-bottom: 1px solid rgba(149, 167, 220, 0.12);
-    border-right: 0;
+  .ecommerceWorkflow {
+    grid-template-columns: repeat(7, minmax(106px, 1fr));
+  }
+
+  .ecommerceWorkflow > button {
+    border-bottom: 0;
+    border-right: 1px solid rgba(149, 167, 220, 0.12);
   }
 
   .ecommercePlatformGrid {
@@ -7749,6 +8121,32 @@ button {
 
   .deliverySlotItems {
     grid-template-columns: 1fr;
+  }
+
+  .deliveryObjectToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .deliveryObjectToolbar > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deliveryObjectToolbar > label {
+    grid-template-columns: auto minmax(90px, 1fr) 36px;
+  }
+
+  .deliveryArtboardLightbox {
+    padding: 10px;
+  }
+
+  .deliveryArtboardLightboxPanel {
+    max-height: calc(100vh - 20px);
+    max-width: calc(100vw - 20px);
+  }
+
+  .deliveryArtboardLightboxCanvas {
+    padding: 8px;
   }
 
   .deliverySlotRemove {

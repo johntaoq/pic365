@@ -57,10 +57,21 @@ test('delivery documents persist editing, validation and order', () => {
   const updated = deliveryDb.updateEcommerceDeliveryDocument(user.id, second.id, {
     ...second,
     content: { ...second.content, dimensions: { width: '70 mm', height: '240 mm', depth: '', weight: '180 g' } },
+    advanced: {
+      ...second.advanced,
+      maskBox: { x: 0.12, y: 0.18, width: 0.66, height: 0.4 },
+      textBox: { x: 0.18, y: 0.25, width: 0.52, height: 0.22 },
+      maskOpacity: 0.58,
+      textOpacity: 0.76
+    },
     outputFormat: 'webp'
   });
   assert.equal(updated.outputFormat, 'webp');
   assert.equal(updated.content.dimensions.height, '240 mm');
+  assert.deepEqual(updated.advanced.maskBox, { x: 0.12, y: 0.18, width: 0.66, height: 0.4 });
+  assert.deepEqual(updated.advanced.textBox, { x: 0.18, y: 0.25, width: 0.52, height: 0.22 });
+  assert.equal(updated.advanced.maskOpacity, 0.58);
+  assert.equal(updated.advanced.textOpacity, 0.76);
 
   const checked = deliveryDb.updateEcommerceDeliveryValidation(user.id, second.id, { ready: true, score: 100, checkedAt: new Date().toISOString() });
   assert.equal(checked.validation.ready, true);

@@ -113,8 +113,10 @@ const copy = {
     productNamePlaceholder: 'For example: 30 oz insulated travel tumbler',
     brandName: 'Brand or series',
     brandNamePlaceholder: 'Optional; use a brand you own or are authorized to use',
-    audience: 'Target customer and use context',
-    audiencePlaceholder: 'Who will buy it? Where and why will they use it?',
+    coreUser: 'Core customer',
+    coreUserPlaceholder: 'Who is most likely to buy or use it? Describe relevant needs, preferences, or expertise.',
+    coreScenario: 'Core use scenario',
+    coreScenarioPlaceholder: 'Where, when, and for what task will the product be used?',
     sellingPoints: 'Core selling points',
     sellingPointsPlaceholder: 'One verifiable selling point per line',
     sourceAssets: '3. Source materials',
@@ -165,8 +167,9 @@ const copy = {
     assetSummary: (count, hasMaster) => `${count} materials${hasMaster ? ' · master selected' : ''}`,
     required: 'Core',
     selectedCount: (count) => `${count} images selected`,
-    production: 'Generate image set',
-    professionalDelivery: '6. Professional delivery',
+    production: '6. Generate image set',
+    productionSummary: (ready, total) => `${ready}/${total} adopted`,
+    professionalDelivery: '7. Professional delivery',
     deliverySummary: (count) => `${count} adopted images · finishing, checks, and export`,
     selectAll: 'Select all',
     clearSelection: 'Clear selection',
@@ -242,8 +245,9 @@ const copy = {
     creditsTitle: 'Credits are required for the complete workspace',
     creditsText: 'Add credits before saving projects and generating production images.',
     recharge: 'Add credits',
-    workflow: ['Project brief', 'Source materials', 'Master image', 'Image-set production', 'Professional delivery'],
+    workflow: ['Sales platform', 'Product brief', 'Source materials', 'Visual direction', 'Images to produce', 'Generate image set', 'Professional delivery'],
     currentStage: 'Current',
+    lockedStage: 'Complete previous steps',
     draft: 'Draft',
     updated: 'Updated'
   },
@@ -261,8 +265,10 @@ const copy = {
     productNamePlaceholder: '例如：30oz 大容量吸管保温杯',
     brandName: '品牌或系列',
     brandNamePlaceholder: '选填；只能使用自有或已获授权的品牌',
-    audience: '目标用户与使用场景',
-    audiencePlaceholder: '谁会购买？在什么场景使用？为什么需要它？',
+    coreUser: '核心用户',
+    coreUserPlaceholder: '谁最可能购买或使用？填写相关需求、偏好、年龄层或专业程度，避免把场景混在这里。',
+    coreScenario: '核心场景',
+    coreScenarioPlaceholder: '商品在什么地点、时间和任务中使用？填写具体、可信且适合展示的场景。',
     sellingPoints: '核心卖点',
     sellingPointsPlaceholder: '每行填写一个可验证的卖点',
     sourceAssets: '3. 商品素材',
@@ -313,8 +319,9 @@ const copy = {
     assetSummary: (count, hasMaster) => `${count} 张素材${hasMaster ? ' · 已设母版' : ''}`,
     required: '核心',
     selectedCount: (count) => `已选择 ${count} 张 / 组`,
-    production: '套图生成',
-    professionalDelivery: '6. 专业交付',
+    production: '6. 套图生成',
+    productionSummary: (ready, total) => `已采用 ${ready}/${total} 张`,
+    professionalDelivery: '7. 专业交付',
     deliverySummary: (count) => `${count} 张采用图 · 精修、检查与导出`,
     selectAll: '全部选中',
     clearSelection: '取消全选',
@@ -390,29 +397,22 @@ const copy = {
     creditsTitle: '完整工作台需要积分',
     creditsText: '请先充值积分，再保存项目并生成正式图片。',
     recharge: '充值积分',
-    workflow: ['商品资料', '商品素材', '母版确认', '整套生成', '专业交付'],
+    workflow: ['销售平台', '商品资料', '商品素材', '视觉方向', '图片清单', '套图生成', '专业交付'],
     currentStage: '当前阶段',
+    lockedStage: '请先完成前置步骤',
     draft: '草稿',
     updated: '更新于'
   }
 };
 
-const SECTION_KEYS = ['platform', 'brief', 'assets', 'visual', 'outputs', 'delivery'];
+const SECTION_KEYS = ['platform', 'brief', 'assets', 'visual', 'outputs', 'production', 'delivery'];
 const IDENTITY_SPEC_FIELDS = [
   'structure', 'colorsMaterials', 'brandMarks', 'packaging', 'includedItems', 'mustKeep', 'mustAvoid'
 ];
 
 function getCollapsedSectionsForStage(stage) {
-  if (stage === 1 || stage === 2) {
-    return { platform: true, brief: true, assets: false, visual: true, outputs: true, delivery: true };
-  }
-  if (stage === 3) {
-    return { platform: true, brief: true, assets: true, visual: false, outputs: true, delivery: true };
-  }
-  if (stage === 4) {
-    return { platform: true, brief: true, assets: true, visual: true, outputs: true, delivery: false };
-  }
-  return { platform: true, brief: false, assets: true, visual: true, outputs: true, delivery: true };
+  const activeKey = SECTION_KEYS[Math.max(0, Math.min(SECTION_KEYS.length - 1, Number(stage) || 0))];
+  return Object.fromEntries(SECTION_KEYS.map((key) => [key, key !== activeKey]));
 }
 
 function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
@@ -424,6 +424,8 @@ function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
     industryId,
     productName: '',
     brandName: '',
+    coreUser: '',
+    coreScenario: '',
     targetAudience: '',
     sellingPoints: '',
     specifications: '',
@@ -438,6 +440,10 @@ function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
 function projectToForm(project) {
   const industryId = project.industryId || ECOMMERCE_INDUSTRIES[0].id;
   const identitySpec = { ...(project.identitySpec || {}) };
+  const coreUser = Object.prototype.hasOwnProperty.call(project, 'coreUser')
+    ? project.coreUser || ''
+    : project.targetAudience || '';
+  const coreScenario = project.coreScenario || '';
   if (!String(identitySpec.mustKeep || '').trim() && String(project.specifications || '').trim()) {
     identitySpec.mustKeep = project.specifications;
   }
@@ -448,12 +454,24 @@ function projectToForm(project) {
     ...createEmptyForm(project.platformId),
     ...project,
     industryId,
+    coreUser,
+    coreScenario,
+    targetAudience: [coreUser, coreScenario].filter(Boolean).join('\n'),
     identitySpec,
     templateId: project.templateId || '',
     visualStyleId: project.visualStyleId || getVisualStylesForIndustry(industryId)[0]?.id || 'clean-commercial',
     sellingPoints: (project.sellingPoints || []).join('\n'),
     selectedSlots: project.selectedSlots?.length ? project.selectedSlots : getDefaultSlotIds(project.platformId)
   };
+}
+
+function normalizeAiBriefOriginals(value) {
+  const originals = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+  if (!String(originals.coreUser || '').trim() && String(originals.targetAudience || '').trim()) {
+    originals.coreUser = originals.targetAudience;
+  }
+  delete originals.targetAudience;
+  return originals;
 }
 
 function hasSession(session) {
@@ -1040,12 +1058,14 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [openFieldHelp, setOpenFieldHelp] = useState('');
   const [aiBriefOriginals, setAiBriefOriginals] = useState({});
   const [aiBriefStatus, setAiBriefStatus] = useState('idle');
-  const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(0));
+  const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(1));
+  const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [versionCenterSlotId, setVersionCenterSlotId] = useState('');
   const [versionActionState, setVersionActionState] = useState('');
   const fileInputRef = useRef(null);
   const generationTasksRef = useRef(new Map());
+  const sectionRefs = useRef({});
   const platform = useMemo(() => getEcommercePlatform(form.platformId), [form.platformId]);
   const industry = useMemo(
     () => ECOMMERCE_INDUSTRIES.find((item) => item.id === form.industryId) || ECOMMERCE_INDUSTRIES[0],
@@ -1063,8 +1083,19 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       : [...recommendedVisualStyles, selectedStyle];
   }, [form.visualStyleId, recommendedVisualStyles]);
   const hasAdoptedOutput = outputs.some((output) => Boolean(output.selectedGenerationId));
-  const currentStage = !form.id ? 0 : hasAdoptedOutput ? 4 : form.masterAssetId ? 3 : assets.length ? 2 : 1;
-  const saveAttention = hasAccess && status !== 'saving' && (!form.id || status === 'dirty' || status === 'error');
+  const projectHasUnsavedChanges = !form.id || status === 'dirty' || status === 'error';
+  const saveAttention = hasAccess && status !== 'saving' && projectHasUnsavedChanges;
+  const currentStage = !form.id ? 1 : !form.masterAssetId ? 2 : hasAdoptedOutput ? 6 : 5;
+  const maxUnlockedStage = !form.id
+    ? 1
+    : !form.masterAssetId
+      ? 2
+      : projectHasUnsavedChanges
+        ? 4
+        : hasAdoptedOutput ? 6 : 5;
+  const activeWorkflowStep = hoveredWorkflowStep != null && hoveredWorkflowStep <= maxUnlockedStage
+    ? hoveredWorkflowStep
+    : Math.min(currentStage, maxUnlockedStage);
   const previousStageRef = useRef(currentStage);
 
   useEffect(() => {
@@ -1072,6 +1103,17 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     previousStageRef.current = currentStage;
     setCollapsedSections(getCollapsedSectionsForStage(currentStage));
   }, [currentStage]);
+
+  useEffect(() => {
+    if (hoveredWorkflowStep != null && hoveredWorkflowStep > maxUnlockedStage) setHoveredWorkflowStep(null);
+  }, [hoveredWorkflowStep, maxUnlockedStage]);
+
+  useEffect(() => {
+    setCollapsedSections((current) => Object.fromEntries(SECTION_KEYS.map((key, index) => [
+      key,
+      index > maxUnlockedStage ? true : current[key]
+    ])));
+  }, [maxUnlockedStage]);
 
   useEffect(() => {
     let active = true;
@@ -1282,7 +1324,48 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
 
   function toggleSection(sectionKey) {
     if (!SECTION_KEYS.includes(sectionKey)) return;
+    const step = SECTION_KEYS.indexOf(sectionKey);
+    if (step > maxUnlockedStage) {
+      setMessage(t.lockedStage);
+      return;
+    }
     setCollapsedSections((current) => ({ ...current, [sectionKey]: !current[sectionKey] }));
+  }
+
+  function sectionInteractionProps(sectionKey) {
+    const step = SECTION_KEYS.indexOf(sectionKey);
+    const available = step <= maxUnlockedStage;
+    return {
+      ref: (node) => {
+        if (node) sectionRefs.current[sectionKey] = node;
+        else delete sectionRefs.current[sectionKey];
+      },
+      onMouseEnter: () => {
+        if (available) setHoveredWorkflowStep(step);
+      },
+      onMouseLeave: () => setHoveredWorkflowStep((current) => current === step ? null : current),
+      onFocusCapture: () => {
+        if (available) setHoveredWorkflowStep(step);
+      },
+      onBlurCapture: (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setHoveredWorkflowStep((current) => current === step ? null : current);
+        }
+      },
+      'data-workflow-step': step + 1,
+      'data-workflow-locked': available ? undefined : 'true'
+    };
+  }
+
+  function navigateToWorkflowStep(step) {
+    if (step > maxUnlockedStage) {
+      setMessage(t.lockedStage);
+      return;
+    }
+    const sectionKey = SECTION_KEYS[step];
+    setCollapsedSections((current) => ({ ...current, [sectionKey]: false }));
+    setHoveredWorkflowStep(step);
+    globalThis.requestAnimationFrame?.(() => sectionRefs.current[sectionKey]?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
   function startNewProject() {
@@ -1292,7 +1375,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setAssets([]);
     setAiBriefOriginals({});
     setAiBriefStatus('idle');
-    setCollapsedSections(getCollapsedSectionsForStage(0));
+    setCollapsedSections(getCollapsedSectionsForStage(1));
     setPreviewImage(null);
   }
 
@@ -1300,9 +1383,10 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setForm(projectToForm(project));
     setMessage('');
     setStatus('saved');
-    setAiBriefOriginals(project.aiBriefOriginals || {});
-    setAiBriefStatus(Object.keys(project.aiBriefOriginals || {}).length ? 'success' : 'idle');
-    setCollapsedSections(getCollapsedSectionsForStage(project.masterAssetId ? 3 : 1));
+    const originals = normalizeAiBriefOriginals(project.aiBriefOriginals);
+    setAiBriefOriginals(originals);
+    setAiBriefStatus(Object.keys(originals).length ? 'success' : 'idle');
+    setCollapsedSections(getCollapsedSectionsForStage(project.masterAssetId ? 5 : 2));
     setPreviewImage(null);
   }
 
@@ -1339,7 +1423,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const savedProject = payload.project;
       setProjects((current) => [savedProject, ...current.filter((item) => item.id !== savedProject.id)]);
       setForm(projectToForm(savedProject));
-      setAiBriefOriginals(savedProject.aiBriefOriginals || aiBriefOriginals);
+      setAiBriefOriginals(normalizeAiBriefOriginals(savedProject.aiBriefOriginals || aiBriefOriginals));
       setStatus('saved');
       setMessage(isNewProject ? t.saved : t.changesSaved);
     } catch {
@@ -1385,7 +1469,8 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'AI_BRIEF_FAILED');
       const originalBrief = {
-        targetAudience: String(payload.brief.targetAudience || ''),
+        coreUser: String(payload.brief.coreUser || payload.brief.targetAudience || ''),
+        coreScenario: String(payload.brief.coreScenario || ''),
         sellingPoints: String(payload.brief.sellingPoints || '')
       };
       if (Object.values(originalBrief).some((value) => !value.trim())) throw new Error('AI_BRIEF_INCOMPLETE');
@@ -1888,13 +1973,29 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       </div>
 
       <div className="ecommerceWorkflow" aria-label={language === 'zh' ? '项目流程' : 'Project workflow'}>
-        {t.workflow.map((label, index) => (
-          <div className={index === currentStage ? 'active' : index < currentStage ? 'completed' : ''} key={label}>
-            <span>{index < currentStage ? <Check size={14} /> : index + 1}</span>
+        {t.workflow.map((label, index) => {
+          const locked = index > maxUnlockedStage;
+          const active = index === activeWorkflowStep;
+          const completed = index < currentStage && !active;
+          return (
+          <button
+            className={`${active ? 'active' : ''} ${completed ? 'completed' : ''} ${locked ? 'locked' : ''}`}
+            type="button"
+            aria-disabled={locked}
+            title={locked ? t.lockedStage : label}
+            onMouseEnter={() => { if (!locked) setHoveredWorkflowStep(index); }}
+            onMouseLeave={() => setHoveredWorkflowStep((current) => current === index ? null : current)}
+            onFocus={() => { if (!locked) setHoveredWorkflowStep(index); }}
+            onBlur={() => setHoveredWorkflowStep((current) => current === index ? null : current)}
+            onClick={() => navigateToWorkflowStep(index)}
+            key={label}
+          >
+            <span>{index + 1}</span>
             <strong>{label}</strong>
-            {index === currentStage ? <em>{t.currentStage}</em> : null}
-          </div>
-        ))}
+            {active ? <em>{t.currentStage}</em> : locked ? <em>{t.lockedStage}</em> : null}
+          </button>
+          );
+        })}
       </div>
 
       {!signedIn ? (
@@ -1940,7 +2041,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         </aside>
 
         <form id="ecommerce-product-project-form" className="ecommerceProjectForm" onSubmit={handleSave}>
-          <div className={`ecommerceStagePanel ecommerceProductBriefStage ${currentStage === 0 ? 'stageActive' : ''}`}>
+          <div className="ecommerceStagePanel ecommerceProductBriefStage">
           <div className="ecommerceField ecommerceProjectNameField">
             <FieldHelpLabel
               fieldId="ecommerce-project-name"
@@ -1956,7 +2057,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             <input id="ecommerce-project-name" value={form.projectName} onChange={(event) => updateField('projectName', event.target.value)} placeholder={t.projectNamePlaceholder} />
           </div>
 
-          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.platform ? 'collapsed' : ''}`}>
+          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.platform ? 'collapsed' : ''} ${activeWorkflowStep === 0 ? 'stageActive' : ''}`} {...sectionInteractionProps('platform')}>
             <CollapsibleSectionLegend
               label={t.platform}
               summary={localName(platform)}
@@ -1979,7 +2080,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             </div>
           </fieldset>
 
-          <fieldset className={`ecommerceSection ecommerceProductBriefSection ecommerceCollapsibleSection ${collapsedSections.brief ? 'collapsed' : ''}`}>
+          <fieldset className={`ecommerceSection ecommerceProductBriefSection ecommerceCollapsibleSection ${collapsedSections.brief ? 'collapsed' : ''} ${activeWorkflowStep === 1 ? 'stageActive' : ''}`} {...sectionInteractionProps('brief')}>
             <CollapsibleSectionLegend
               label={t.productBrief}
               summary={form.productName.trim() || localName(industry)}
@@ -2040,21 +2141,35 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   <span>{aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}</span>
                 </button>
               </div>
-              <div className="ecommerceField ecommerceFieldWide">
+              <div className="ecommerceField ecommerceBriefDimensionField">
                 <FieldHelpLabel
-                  fieldId="ecommerce-target-audience"
-                  label={t.audience}
-                  help={t.audiencePlaceholder}
+                  fieldId="ecommerce-core-user"
+                  label={t.coreUser}
+                  help={t.coreUserPlaceholder}
                   helpLabel={t.fieldHelp}
-                  open={openFieldHelp === 'targetAudience'}
-                  onToggle={() => setOpenFieldHelp((current) => current === 'targetAudience' ? '' : 'targetAudience')}
-                  resetLabel={resetLabelFor('targetAudience')}
-                  hasAiOriginal={hasAiOriginal('targetAudience')}
-                  onReset={() => resetBriefField('targetAudience')}
+                  open={openFieldHelp === 'coreUser'}
+                  onToggle={() => setOpenFieldHelp((current) => current === 'coreUser' ? '' : 'coreUser')}
+                  resetLabel={resetLabelFor('coreUser')}
+                  hasAiOriginal={hasAiOriginal('coreUser')}
+                  onReset={() => resetBriefField('coreUser')}
                 />
-                <textarea id="ecommerce-target-audience" value={form.targetAudience} onChange={(event) => updateField('targetAudience', event.target.value)} placeholder={t.audiencePlaceholder} />
+                <textarea id="ecommerce-core-user" value={form.coreUser} onChange={(event) => updateField('coreUser', event.target.value)} placeholder={t.coreUserPlaceholder} />
               </div>
-              <div className="ecommerceField">
+              <div className="ecommerceField ecommerceBriefDimensionField">
+                <FieldHelpLabel
+                  fieldId="ecommerce-core-scenario"
+                  label={t.coreScenario}
+                  help={t.coreScenarioPlaceholder}
+                  helpLabel={t.fieldHelp}
+                  open={openFieldHelp === 'coreScenario'}
+                  onToggle={() => setOpenFieldHelp((current) => current === 'coreScenario' ? '' : 'coreScenario')}
+                  resetLabel={resetLabelFor('coreScenario')}
+                  hasAiOriginal={hasAiOriginal('coreScenario')}
+                  onReset={() => resetBriefField('coreScenario')}
+                />
+                <textarea id="ecommerce-core-scenario" value={form.coreScenario} onChange={(event) => updateField('coreScenario', event.target.value)} placeholder={t.coreScenarioPlaceholder} />
+              </div>
+              <div className="ecommerceField ecommerceFieldWide ecommerceSellingPointsField">
                 <FieldHelpLabel
                   fieldId="ecommerce-selling-points"
                   label={t.sellingPoints}
@@ -2073,7 +2188,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           </fieldset>
           </div>
 
-          <fieldset className={`ecommerceSection ecommerceAssetSection ecommerceCollapsibleSection ${collapsedSections.assets ? 'collapsed' : ''} ${currentStage === 1 || currentStage === 2 ? 'stageActive' : ''} ${currentStage === 1 ? 'stageUpload' : currentStage === 2 ? 'stageMaster' : ''}`}>
+          <fieldset className={`ecommerceSection ecommerceAssetSection ecommerceCollapsibleSection ${collapsedSections.assets ? 'collapsed' : ''} ${activeWorkflowStep === 2 ? 'stageActive' : ''}`} {...sectionInteractionProps('assets')}>
             <CollapsibleSectionLegend
               label={t.sourceAssets}
               summary={t.assetSummary(assets.length, Boolean(form.masterAssetId))}
@@ -2191,7 +2306,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             </div>
           </fieldset>
 
-          <fieldset className={`ecommerceSection ecommerceVisualSection ecommerceCollapsibleSection ${collapsedSections.visual ? 'collapsed' : ''}`}>
+          <fieldset className={`ecommerceSection ecommerceVisualSection ecommerceCollapsibleSection ${collapsedSections.visual ? 'collapsed' : ''} ${activeWorkflowStep === 3 ? 'stageActive' : ''}`} {...sectionInteractionProps('visual')}>
             <CollapsibleSectionLegend
               label={t.visualDirection}
               summary={localName(getEcommerceVisualStyle(form.visualStyleId))}
@@ -2259,7 +2374,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             </div>
           </fieldset>
 
-          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.outputs ? 'collapsed' : ''}`}>
+          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.outputs ? 'collapsed' : ''} ${activeWorkflowStep === 4 ? 'stageActive' : ''}`} {...sectionInteractionProps('outputs')}>
             <CollapsibleSectionLegend
               label={t.outputSlots}
               summary={t.selectedCount(form.selectedSlots.length)}
@@ -2294,8 +2409,17 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           </fieldset>
 
           {form.id ? (
-            <fieldset className={`ecommerceSection ecommerceProductionSection ${currentStage === 3 ? 'stageActive' : ''}`}>
-              <legend>{t.production}</legend>
+            <fieldset className={`ecommerceSection ecommerceProductionSection ecommerceCollapsibleSection ${collapsedSections.production ? 'collapsed' : ''} ${activeWorkflowStep === 5 ? 'stageActive' : ''}`} {...sectionInteractionProps('production')}>
+              <CollapsibleSectionLegend
+                label={t.production}
+                summary={t.productionSummary(outputs.filter((output) => output.selectedGenerationId).length, productionSlots.length)}
+                collapsed={collapsedSections.production}
+                contentId="ecommerce-production-section"
+                expandLabel={t.expandSection}
+                collapseLabel={t.collapseSection}
+                onToggle={() => toggleSection('production')}
+              />
+              <div className="ecommerceCollapsibleContent ecommerceProductionContent" id="ecommerce-production-section" hidden={collapsedSections.production}>
               <div className="ecommerceBatchToolbar">
                 <button
                   type="button"
@@ -2432,11 +2556,12 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   );
                 })}
               </div>
+              </div>
             </fieldset>
           ) : null}
 
           {form.id ? (
-            <fieldset className={`ecommerceSection ecommerceCollapsibleSection ecommerceDeliverySection ${collapsedSections.delivery ? 'collapsed' : ''} ${currentStage === 4 ? 'stageActive' : ''}`}>
+            <fieldset className={`ecommerceSection ecommerceCollapsibleSection ecommerceDeliverySection ${collapsedSections.delivery ? 'collapsed' : ''} ${activeWorkflowStep === 6 ? 'stageActive' : ''}`} {...sectionInteractionProps('delivery')}>
               <CollapsibleSectionLegend
                 label={t.professionalDelivery}
                 summary={t.deliverySummary(outputs.filter((output) => output.selectedGenerationId).length)}
