@@ -2,6 +2,14 @@ import { getEcommercePlatform } from './ecommerce-catalog.js';
 
 export const DELIVERY_FORMATS = ['png', 'jpeg', 'webp'];
 
+export function getDeliveryWorkflowStep(documents, { dirty = false } = {}) {
+  const included = (Array.isArray(documents) ? documents : []).filter((document) => document.includeInExport);
+  if (!included.length) return 0;
+  if (included.some((document) => !document.validation?.checkedAt)) return 1;
+  if (dirty || included.some((document) => !document.validation?.ready)) return 2;
+  return 3;
+}
+
 export const DELIVERY_THEMES = [
   {
     id: 'minimal-light',

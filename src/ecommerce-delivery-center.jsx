@@ -42,6 +42,7 @@ import {
   getDeliveryDefaultsForType,
   getDeliveryTextScale,
   getDeliveryTheme,
+  getDeliveryWorkflowStep,
   resolveDeliveryOverlayBoxes
 } from '../shared/ecommerce-delivery.js';
 import { ECOMMERCE_PLATFORMS } from '../shared/ecommerce-catalog.js';
@@ -49,13 +50,13 @@ import { ECOMMERCE_PLATFORMS } from '../shared/ecommerce-catalog.js';
 const copy = {
   zh: {
     title: '专业交付',
-    summaryEmpty: '等待准备',
+    summaryEmpty: '等待加载',
     summaryReady: (ready, total) => `${ready}/${total} 可交付`,
-    prepare: '一键准备交付',
-    preparing: '正在准备……',
-    sync: '同步采用版本',
-    tabs: { editor: '单图精修', sequence: '详情页编排', reuse: '项目复用' },
-    steps: ['准备交付', '编辑内容', '平台检查', '批量导出'],
+    prepare: '加载生成结果',
+    preparing: '正在加载……',
+    sync: '重新加载结果',
+    tabs: { editor: '单图精修', sequence: '详情页编排' },
+    steps: ['加载生成结果', '一键检查', '精修', '导出'],
     noOutputTitle: '先完成至少一张套图',
     noOutputText: '交付中心会使用每个槽位的“当前采用版本”，失败尝试不会覆盖正式成果。',
     selectedSource: '当前采用版本',
@@ -129,6 +130,9 @@ const copy = {
     moveUp: '前移',
     moveDown: '后移',
     reuseTitle: '把成熟流程复用到下一个商品',
+    reuse: '项目复用',
+    openReuse: '展开项目复用',
+    closeReuse: '收起项目复用',
     duplicate: '复制当前项目',
     duplicateText: '复制商品资料、素材、身份规范和交付版式，不复制旧生成结果。',
     adapting: '正在创建……',
@@ -146,7 +150,7 @@ const copy = {
     noTemplates: '还没有个人模板。',
     saveSuccess: '本图设置已保存。',
     checkSuccess: '平台检查已完成。',
-    prepareSuccess: '交付工作台已准备完成。',
+    prepareSuccess: '生成结果已加载。',
     exportBlocked: '仍有必须修正的交付问题，请先查看检查结果。',
     actionFailed: '操作未完成，请稍后重试。',
     templateSaved: '已保存为个人模板。',
@@ -169,13 +173,13 @@ const copy = {
   },
   en: {
     title: 'Professional delivery',
-    summaryEmpty: 'Not prepared',
+    summaryEmpty: 'Not loaded',
     summaryReady: (ready, total) => `${ready}/${total} ready`,
-    prepare: 'Prepare delivery',
-    preparing: 'Preparing...',
-    sync: 'Sync adopted versions',
-    tabs: { editor: 'Image finishing', sequence: 'Detail-page order', reuse: 'Reuse' },
-    steps: ['Prepare', 'Edit', 'Check', 'Export'],
+    prepare: 'Load generated results',
+    preparing: 'Loading...',
+    sync: 'Reload results',
+    tabs: { editor: 'Image finishing', sequence: 'Detail-page order' },
+    steps: ['Load results', 'Check all', 'Finish', 'Export'],
     noOutputTitle: 'Finish at least one project image first',
     noOutputText: 'Delivery uses each slot’s adopted version. A failed attempt never replaces the approved result.',
     selectedSource: 'Adopted version',
@@ -249,6 +253,9 @@ const copy = {
     moveUp: 'Move earlier',
     moveDown: 'Move later',
     reuseTitle: 'Reuse a proven workflow for the next product',
+    reuse: 'Project reuse',
+    openReuse: 'Open project reuse',
+    closeReuse: 'Close project reuse',
     duplicate: 'Duplicate project',
     duplicateText: 'Copies facts, assets, identity rules, and delivery layouts without old generated results.',
     adapting: 'Creating...',
@@ -266,7 +273,7 @@ const copy = {
     noTemplates: 'No personal templates yet.',
     saveSuccess: 'Image settings saved.',
     checkSuccess: 'Platform checks completed.',
-    prepareSuccess: 'Delivery workspace is ready.',
+    prepareSuccess: 'Generated results loaded.',
     exportBlocked: 'Fix the required delivery issues before export.',
     actionFailed: 'The action could not be completed.',
     templateSaved: 'Saved as a personal template.',
@@ -525,6 +532,7 @@ export default function EcommerceDeliveryCenter({
   outputs,
   generations,
   assets,
+  reuseEnabled = false,
   onProjectCreated
 }) {
   const t = copy[language] || copy.zh;
@@ -542,6 +550,7 @@ export default function EcommerceDeliveryCenter({
   const [selectedCanvasObject, setSelectedCanvasObject] = useState('text');
   const [targetPlatformId, setTargetPlatformId] = useState(() => ECOMMERCE_PLATFORMS.find((item) => item.id !== project.platformId)?.id || project.platformId);
   const [templateName, setTemplateName] = useState('');
+  const [reuseOpen, setReuseOpen] = useState(false);
   const canvasInteractionRef = useRef(null);
 
   const slotById = useMemo(() => new Map((slots || []).map((slot) => [slot.id, slot])), [slots]);
@@ -565,13 +574,7 @@ export default function EcommerceDeliveryCenter({
   const readyCount = includedDocuments.filter((document) => document.validation?.ready).length;
   const exportCount = includedDocuments.length;
   const hasOutputs = (outputs || []).some((output) => output.selectedGenerationId);
-  const workflowStep = !includedDocuments.length
-    ? 0
-    : includedDocuments.some((document) => !document.validation?.checkedAt)
-      ? 1
-      : readyCount < includedDocuments.length
-        ? 2
-        : 3;
+  const workflowStep = getDeliveryWorkflowStep(documents, { dirty });
 
   useEffect(() => {
     function moveCanvasObject(event) {
@@ -642,6 +645,7 @@ export default function EcommerceDeliveryCenter({
     setSelectedDocumentId('');
     setTargetPlatformId(ECOMMERCE_PLATFORMS.find((item) => item.id !== project.platformId)?.id || project.platformId);
     setTemplateName('');
+    setReuseOpen(false);
     setDirty(false);
     loadWorkspace();
   }, [project.id]);
@@ -817,7 +821,7 @@ export default function EcommerceDeliveryCenter({
   }
 
   async function checkDocuments(documentId = '') {
-    if (dirty && documentId) {
+    if (dirty) {
       const saved = await saveDocument({ silent: true });
       if (!saved) return;
     }
@@ -1051,16 +1055,22 @@ export default function EcommerceDeliveryCenter({
             </span>
           ))}
         </div>
-        <button type="button" onClick={() => prepareWorkspace(true)} disabled={status === 'preparing'}>
-          {status === 'preparing' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-          {documents.length ? t.sync : t.prepare}
-        </button>
+        <div className="deliveryHeaderActions">
+          <button type="button" onClick={() => prepareWorkspace(true)} disabled={status === 'preparing' || status === 'loading'}>
+            {status === 'preparing' || status === 'loading' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+            {documents.length ? t.sync : t.prepare}
+          </button>
+          <button className="primary" type="button" onClick={() => checkDocuments()} disabled={status === 'checking' || !includedDocuments.length}>
+            {status === 'checking' ? <LoaderCircle className="spin" size={15} /> : <FileCheck2 size={15} />}
+            {status === 'checking' ? t.checking : t.checkAll}
+          </button>
+        </div>
       </header>
 
       <nav className="deliveryTabs" aria-label={t.title}>
         {Object.entries(t.tabs).map(([id, label]) => (
           <button className={activeTab === id ? 'active' : ''} type="button" onClick={() => setActiveTab(id)} key={id}>
-            {id === 'editor' ? <Layers3 size={15} /> : id === 'sequence' ? <LayoutTemplate size={15} /> : <Copy size={15} />}{label}
+            {id === 'editor' ? <Layers3 size={15} /> : <LayoutTemplate size={15} />}{label}
           </button>
         ))}
       </nav>
@@ -1214,7 +1224,7 @@ export default function EcommerceDeliveryCenter({
 
       {activeTab === 'sequence' ? (
         <div className="deliverySequenceWorkspace">
-          <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div><div><button type="button" onClick={() => checkDocuments()} disabled={status === 'checking' || !exportCount}>{status === 'checking' ? <LoaderCircle className="spin" size={14} /> : <FileCheck2 size={14} />}{t.checkAll}</button><button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button></div></header>
+          <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div><div><button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button></div></header>
           <div className="deliverySequenceStats"><span><BadgeCheck size={15} /> {t.checkSummary(readyCount, includedDocuments.length)}</span><span><Layers3 size={15} /> {t.selectedCount(exportCount)}</span><label><input type="checkbox" checked={includeDetailPage} onChange={(event) => setIncludeDetailPage(event.target.checked)} />{t.includeDetailPage}</label></div>
           <div className="deliverySequenceGrid">
             <div className="deliverySequenceList">
@@ -1236,8 +1246,21 @@ export default function EcommerceDeliveryCenter({
         </div>
       ) : null}
 
-      {activeTab === 'reuse' ? (
-        <div className="deliveryReuseWorkspace">
+      {message ? <p className={status === 'error' ? 'deliveryMessage error' : 'deliveryMessage'}>{message}</p> : null}
+
+      {reuseEnabled && documents.length ? (
+        <section className={`deliveryReuseFooter ${reuseOpen ? 'open' : ''}`}>
+          <button
+            className="deliveryReuseToggle"
+            type="button"
+            aria-expanded={reuseOpen}
+            aria-label={reuseOpen ? t.closeReuse : t.openReuse}
+            onClick={() => setReuseOpen((current) => !current)}
+          >
+            <span><Copy size={18} /><span><strong>{t.reuse}</strong><small>{t.reuseTitle}</small></span></span>
+            <ChevronDown size={18} />
+          </button>
+          {reuseOpen ? <div className="deliveryReuseWorkspace">
           <header><strong>{t.reuseTitle}</strong></header>
           <div className="deliveryReuseGrid">
             <article><span><Copy size={21} /></span><div><strong>{t.duplicate}</strong><p>{t.duplicateText}</p></div><button type="button" onClick={() => createProjectAction('duplicate')} disabled={status === 'creating'}>{status === 'creating' ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />}{t.duplicate}</button></article>
@@ -1245,10 +1268,9 @@ export default function EcommerceDeliveryCenter({
             <article><span><LayoutTemplate size={21} /></span><div><strong>{t.saveTemplate}</strong><p>{t.saveTemplateText}</p><label className="deliveryField"><span>{t.templateName}</span><input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder={t.templatePlaceholder} /></label></div><button type="button" onClick={saveTemplate} disabled={!templateName.trim() || status === 'saving-template'}>{status === 'saving-template' ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}{t.saveTemplate}</button></article>
           </div>
           <section className="deliveryMyTemplates"><header><strong>{t.myTemplates}</strong><span>{t.itemCount(templates.length)}</span></header>{templates.length ? <div>{templates.map((template) => <article key={template.id}><span><LayoutTemplate size={18} /></span><div><strong>{template.name}</strong><small>{localized(ECOMMERCE_PLATFORMS.find((item) => item.id === template.platformId), language)} · {template.deliveryConfig?.length || 0} {language === 'zh' ? '张交付设置' : 'delivery layouts'}</small></div><button type="button" onClick={() => createFromTemplate(template.id)}>{t.createFromTemplate}</button><button className="danger" type="button" aria-label={t.deleteTemplate} onClick={() => deleteTemplate(template.id)}><Trash2 size={14} /></button></article>)}</div> : <p>{t.noTemplates}</p>}</section>
-        </div>
+          </div> : null}
+        </section>
       ) : null}
-
-      {message ? <p className={status === 'error' ? 'deliveryMessage error' : 'deliveryMessage'}>{message}</p> : null}
       {largePreviewOpen && selectedDocument && selectedSlot ? (
         <DeliveryArtboardLightbox
           document={selectedDocument}

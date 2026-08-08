@@ -5,6 +5,8 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   Download,
   Eraser,
@@ -102,6 +104,8 @@ const copy = {
   en: {
     title: 'Create product image sets',
     projects: 'Product projects',
+    collapseProjects: 'Collapse project list',
+    expandProjects: 'Expand project list',
     newProject: 'New project',
     noProjects: 'Your saved product projects will appear here.',
     projectName: 'Project name',
@@ -142,7 +146,7 @@ const copy = {
     },
     moveAssetUp: 'Move earlier',
     moveAssetDown: 'Move later',
-    identitySpec: 'Product identity lock',
+    identitySpec: 'Lock product composition rules',
     identitySpecHint: 'These facts are hard constraints for every generated image.',
     buildIdentitySpec: 'Build lock specification',
     identityStructure: 'Structure and proportions',
@@ -170,7 +174,7 @@ const copy = {
     production: '6. Generate image set',
     productionSummary: (ready, total) => `${ready}/${total} adopted`,
     professionalDelivery: '7. Professional delivery',
-    deliverySummary: (count) => `${count} adopted images · finishing, checks, and export`,
+    deliverySummary: (count) => `${count} adopted images · load, check, finish, and export`,
     selectAll: 'Select all',
     clearSelection: 'Clear selection',
     batchSelection: (count) => `${count} selected · ${count} credits`,
@@ -254,6 +258,8 @@ const copy = {
   zh: {
     title: '创建商品套图',
     projects: '商品项目',
+    collapseProjects: '收起项目列表',
+    expandProjects: '展开项目列表',
     newProject: '新建项目',
     noProjects: '保存后的商品项目会显示在这里。',
     projectName: '项目名称',
@@ -294,7 +300,7 @@ const copy = {
     },
     moveAssetUp: '向前移动',
     moveAssetDown: '向后移动',
-    identitySpec: '商品身份锁定',
+    identitySpec: '锁定商品构图规则',
     identitySpecHint: '以下内容是整套图片必须遵守的硬约束。',
     buildIdentitySpec: '建立锁定规范',
     identityStructure: '结构与比例',
@@ -322,7 +328,7 @@ const copy = {
     production: '6. 套图生成',
     productionSummary: (ready, total) => `已采用 ${ready}/${total} 张`,
     professionalDelivery: '7. 专业交付',
-    deliverySummary: (count) => `${count} 张采用图 · 精修、检查与导出`,
+    deliverySummary: (count) => `${count} 张采用图 · 加载、检查、精修与导出`,
     selectAll: '全部选中',
     clearSelection: '取消全选',
     batchSelection: (count) => `已选 ${count} · 预计 ${count}积分`,
@@ -1058,6 +1064,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [openFieldHelp, setOpenFieldHelp] = useState('');
   const [aiBriefOriginals, setAiBriefOriginals] = useState({});
   const [aiBriefStatus, setAiBriefStatus] = useState('idle');
+  const [projectListCollapsed, setProjectListCollapsed] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(1));
   const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
@@ -1101,7 +1108,11 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   useEffect(() => {
     if (previousStageRef.current === currentStage) return;
     previousStageRef.current = currentStage;
-    setCollapsedSections(getCollapsedSectionsForStage(currentStage));
+    setCollapsedSections((current) => {
+      const next = getCollapsedSectionsForStage(currentStage);
+      if (current.assets === false && currentStage > 2) next.assets = false;
+      return next;
+    });
   }, [currentStage]);
 
   useEffect(() => {
@@ -2012,32 +2023,43 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         </div>
       ) : null}
 
-      <div className="ecommerceLayout">
-        <aside className="ecommerceProjectList">
-          <div className="ecommerceProjectListHeader">
-            <h3>{t.projects}</h3>
-            <button type="button" onClick={startNewProject}><Plus size={15} /> {t.newProject}</button>
-          </div>
-          {status === 'loading' ? <LoaderCircle className="spin ecommerceListLoader" size={21} /> : null}
-          {projects.length ? (
-            <div className="ecommerceProjectCards">
-              {projects.map((project) => {
-                const itemPlatform = getEcommercePlatform(project.platformId);
-                return (
-                  <button
-                    className={project.id === form.id ? 'active' : ''}
-                    type="button"
-                    onClick={() => openProject(project)}
-                    key={project.id}
-                  >
-                    <span><Box size={15} /> {localName(itemPlatform)}</span>
-                    <strong>{project.projectName || project.productName}</strong>
-                    <em>{project.selectedSlots?.length || 0} · {t.draft}</em>
-                  </button>
-                );
-              })}
-            </div>
-          ) : status !== 'loading' ? <p>{t.noProjects}</p> : null}
+      <div className={`ecommerceLayout ${projectListCollapsed ? 'projectListCollapsed' : ''}`}>
+        <aside className={`ecommerceProjectList ${projectListCollapsed ? 'collapsed' : ''}`}>
+          {projectListCollapsed ? (
+            <button className="ecommerceProjectListExpand" type="button" onClick={() => setProjectListCollapsed(false)} aria-label={t.expandProjects} title={t.expandProjects}>
+              <ChevronRight size={18} /><Box size={17} /><span>{t.projects}</span>
+            </button>
+          ) : (
+            <>
+              <div className="ecommerceProjectListHeader">
+                <h3>{t.projects}</h3>
+                <div>
+                  <button type="button" onClick={startNewProject}><Plus size={15} /> {t.newProject}</button>
+                  <button className="ecommerceProjectListCollapse" type="button" onClick={() => setProjectListCollapsed(true)} aria-label={t.collapseProjects} title={t.collapseProjects}><ChevronLeft size={17} /></button>
+                </div>
+              </div>
+              {status === 'loading' ? <LoaderCircle className="spin ecommerceListLoader" size={21} /> : null}
+              {projects.length ? (
+                <div className="ecommerceProjectCards">
+                  {projects.map((project) => {
+                    const itemPlatform = getEcommercePlatform(project.platformId);
+                    return (
+                      <button
+                        className={project.id === form.id ? 'active' : ''}
+                        type="button"
+                        onClick={() => openProject(project)}
+                        key={project.id}
+                      >
+                        <span><Box size={15} /> {localName(itemPlatform)}</span>
+                        <strong>{project.projectName || project.productName}</strong>
+                        <em>{project.selectedSlots?.length || 0} · {t.draft}</em>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : status !== 'loading' ? <p>{t.noProjects}</p> : null}
+            </>
+          )}
         </aside>
 
         <form id="ecommerce-product-project-form" className="ecommerceProjectForm" onSubmit={handleSave}>
@@ -2583,6 +2605,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                     outputs={outputs}
                     generations={generations}
                     assets={assets}
+                    reuseEnabled={maxUnlockedStage >= 6}
                     onProjectCreated={handleDeliveryProjectCreated}
                   />
                 )}

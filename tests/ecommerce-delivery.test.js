@@ -5,6 +5,7 @@ import {
   buildDeliveryFilename,
   createDeliveryDocumentDraft,
   getDeliveryTextScale,
+  getDeliveryWorkflowStep,
   normalizeDeliveryAdvanced,
   resolveDeliveryOverlayBoxes,
   validateDeliveryDocument
@@ -24,6 +25,16 @@ const project = {
   prohibitedContent: '',
   selectedSlots: ['compliant-main', 'dimensions']
 };
+
+test('delivery workflow follows load, check, finish, and export order', () => {
+  const base = { includeInExport: true, validation: {} };
+  assert.equal(getDeliveryWorkflowStep([]), 0);
+  assert.equal(getDeliveryWorkflowStep([base]), 1);
+  assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: false } }]), 2);
+  assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: true } }], { dirty: true }), 2);
+  assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: true } }]), 3);
+  assert.equal(getDeliveryWorkflowStep([{ ...base, includeInExport: false }]), 0);
+});
 
 test('delivery validation enforces Amazon main-image rules', () => {
   const slot = amazon.slots.find((item) => item.id === 'compliant-main');
