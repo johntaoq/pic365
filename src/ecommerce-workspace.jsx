@@ -45,6 +45,7 @@ import {
   getVisualStylesForIndustry
 } from '../shared/ecommerce-catalog.js';
 import { runTaskPool } from '../shared/task-pool.js';
+import { normalizeEcommerceAiBrief } from '../shared/ecommerce-brief.js';
 import EcommerceDeliveryCenter from './ecommerce-delivery-center.jsx';
 
 const BATCH_GENERATION_CONCURRENCY = 3;
@@ -122,7 +123,7 @@ const copy = {
     coreScenario: 'Core use scenario',
     coreScenarioPlaceholder: 'Where, when, and for what task will the product be used?',
     sellingPoints: 'Core selling points',
-    sellingPointsPlaceholder: 'One verifiable selling point per line',
+    sellingPointsPlaceholder: 'Up to 4 concise benefits; no more than 4 words each',
     sourceAssets: '3. Source materials',
     sourceAssetsHint: 'Upload clear, authorized images of the real product. Product photos define structure; packaging and logo files define brand details; reference images define direction only.',
     saveBeforeUpload: 'Save the product project before uploading source materials.',
@@ -276,7 +277,7 @@ const copy = {
     coreScenario: '核心场景',
     coreScenarioPlaceholder: '商品在什么地点、时间和任务中使用？填写具体、可信且适合展示的场景。',
     sellingPoints: '核心卖点',
-    sellingPointsPlaceholder: '每行填写一个可验证的卖点',
+    sellingPointsPlaceholder: '最多4条短卖点；每条不超过4个词',
     sourceAssets: '3. 商品素材',
     sourceAssetsHint: '上传清晰且已获授权的真实商品图。商品图决定结构，包装和 Logo 决定品牌细节，参考图只用于表达视觉方向。',
     saveBeforeUpload: '请先保存商品项目，再上传商品素材。',
@@ -1479,14 +1480,20 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'AI_BRIEF_FAILED');
+      const normalizedBrief = normalizeEcommerceAiBrief(payload.brief, { language });
+      if (!normalizedBrief) throw new Error('AI_BRIEF_INCOMPLETE');
       const originalBrief = {
-        coreUser: String(payload.brief.coreUser || payload.brief.targetAudience || ''),
-        coreScenario: String(payload.brief.coreScenario || ''),
-        sellingPoints: String(payload.brief.sellingPoints || '')
+        coreUser: normalizedBrief.coreUser,
+        coreScenario: normalizedBrief.coreScenario,
+        sellingPoints: normalizedBrief.sellingPoints
       };
       if (Object.values(originalBrief).some((value) => !value.trim())) throw new Error('AI_BRIEF_INCOMPLETE');
       setAiBriefOriginals(originalBrief);
-      setForm((current) => ({ ...current, ...originalBrief }));
+      setForm((current) => ({
+        ...current,
+        ...originalBrief,
+        identitySpec: { ...(current.identitySpec || {}), ...(normalizedBrief.identitySpec || {}) }
+      }));
       if (form.id) setStatus('dirty');
       setAiBriefStatus('success');
     } catch {
@@ -2156,11 +2163,11 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   type="button"
                   disabled={aiBriefStatus === 'loading'}
                   onClick={handleAiFillBrief}
+                  aria-label={aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}
+                  aria-busy={aiBriefStatus === 'loading'}
+                  title={aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}
                 >
-                  <span className="ecommerceAiBriefIcon">
-                    {aiBriefStatus === 'loading' ? <LoaderCircle size={20} className="spin" /> : <WandSparkles size={21} />}
-                  </span>
-                  <span>{aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}</span>
+                  {aiBriefStatus === 'loading' ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
                 </button>
               </div>
               <div className="ecommerceField ecommerceBriefDimensionField">

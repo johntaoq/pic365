@@ -85,7 +85,7 @@ export function buildEcommerceSlotPrompt({ project, platform, slot, assets, revi
     ['必须避免', identitySpec.mustAvoid || project.prohibitedContent]
   ].filter(([, value]) => String(value || '').trim()).map(([label, value]) => `- ${label}：${value}`).join('\n');
   const revisionSection = String(revisionRequest || '').trim()
-    ? `\n本次修改要求\n- 在保持商品身份锁定不变的前提下，只执行以下调整：${String(revisionRequest).trim()}\n`
+    ? `\n本次修改要求\n- 在保持商品构图规则不变的前提下，只执行以下调整：${String(revisionRequest).trim()}\n`
     : '';
 
   return `请基于输入图片制作一张可交付的电商商品图片。
@@ -111,7 +111,7 @@ ${assetGuide}
 ${sellingPoints}
 - 视觉方向：${visualStyle.nameZh}。${visualStyle.promptZh}
 
-商品身份锁定规范
+锁定商品构图规则
 ${identityLines || '- 未单独填写；严格以商品母版、商品事实和包装素材为准'}
 ${revisionSection}
 
