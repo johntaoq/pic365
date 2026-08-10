@@ -87,6 +87,32 @@ test('professional components require their structured data', () => {
   assert.equal(complete.ready, true);
 });
 
+test('delivery defaults use verified included items and never treat selling points as comparison facts', () => {
+  const slot = amazon.slots.find((item) => item.id === 'package-contents');
+  const document = createDeliveryDocumentDraft({
+    project: {
+      ...project,
+      specifications: '',
+      identitySpec: { includedItems: 'Bottle ×1; lid ×1; cleaning brush ×1' }
+    },
+    slot,
+    output: { selectedGenerationId: 'generation-package' }
+  });
+  assert.deepEqual(document.content.packageItems, ['Bottle ×1', 'lid ×1', 'cleaning brush ×1']);
+  assert.deepEqual(document.content.comparison.leftItems, []);
+});
+
+test('catalog delivery sizes preserve the declared aspect ratio', () => {
+  const ratios = { '1:1': 1, '3:4': 3 / 4, '4:3': 4 / 3, '9:16': 9 / 16, '16:9': 16 / 9 };
+  for (const platform of ['taobao-tmall', 'douyin', 'amazon', 'shopify'].map(getEcommercePlatform)) {
+    for (const slot of platform.slots) {
+      if (!ratios[slot.aspectRatio]) continue;
+      const [width, height] = slot.recommendedSize.split('x').map(Number);
+      assert.ok(Math.abs(width / height - ratios[slot.aspectRatio]) < 0.001, `${platform.id}:${slot.id}`);
+    }
+  }
+});
+
 test('delivery filenames follow product-slot-platform-version convention', () => {
   assert.equal(
     buildDeliveryFilename({

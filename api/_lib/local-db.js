@@ -886,7 +886,7 @@ export function deleteEcommerceProjectAsset(userId, assetId) {
 export function setEcommerceProjectMasterAsset(userId, projectId, assetId) {
   const project = getEcommerceProject(userId, projectId);
   const asset = getEcommerceProjectAsset(userId, assetId);
-  if (!project || !asset || asset.projectId !== projectId || !['product', 'packaging'].includes(asset.assetType)) return null;
+  if (!project || !asset || asset.projectId !== projectId || asset.assetType !== 'product') return null;
   getDb().prepare(`
     UPDATE ecommerce_projects SET master_asset_id = ?, updated_at = ? WHERE id = ? AND user_id = ?
   `).run(assetId, now(), projectId, userId);

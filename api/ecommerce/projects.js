@@ -33,11 +33,13 @@ function cleanSellingPoints(value) {
 function cleanAiBriefOriginals(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const legacyAudience = cleanText(value.targetAudience, 1000);
-  return Object.fromEntries(
+  const fields = Object.fromEntries(
     ['coreUser', 'coreScenario', 'sellingPoints']
       .map((field) => [field, cleanText(value[field] || (field === 'coreUser' ? legacyAudience : ''), field === 'sellingPoints' ? 2000 : 1000)])
       .filter(([, content]) => Boolean(content))
   );
+  const identitySpec = cleanIdentitySpec(value.identitySpec);
+  return Object.keys(identitySpec).length ? { ...fields, identitySpec } : fields;
 }
 
 function cleanIdentitySpec(value) {

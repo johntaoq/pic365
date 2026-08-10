@@ -93,6 +93,13 @@ export default async function handler(req, res) {
           return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
         }
       } else {
+        const masterAsset = getEcommerceProjectAsset(auth.user.id, assetId);
+        if (!masterAsset || masterAsset.projectId !== projectId) {
+          return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
+        }
+        if (masterAsset.assetType !== 'product') {
+          return json(res, 400, { ok: false, error: 'PRODUCT_MASTER_REQUIRED' });
+        }
         project = setEcommerceProjectMasterAsset(auth.user.id, projectId, assetId);
         if (!project) return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
       }

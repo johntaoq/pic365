@@ -196,6 +196,7 @@ const copy = {
     saveRequiredHint: 'Save the project to continue',
     masterRequired: 'Select a product master before generating.',
     generationFailed: 'This image could not be generated. Your reserved credit was returned.',
+    projectChanged: 'The project changed after this task was queued. Start generation again to use the latest saved version.',
     moderationBlocked: 'This slot needs safer product wording. Update the project facts or restricted-content field, save, and try again.',
     downloadOutput: 'Download',
     versions: 'Versions',
@@ -350,6 +351,7 @@ const copy = {
     saveRequiredHint: '请先保存，才能继续下一步',
     masterRequired: '请先选择商品母版。',
     generationFailed: '本张图片生成失败，预留积分已经退回。',
+    projectChanged: '任务排队后项目内容发生了变化。请重新生成，以使用最新保存版本。',
     moderationBlocked: '当前商品表述需要调整。请修改商品资料或禁止内容，保存后再试。',
     downloadOutput: '下载图片',
     versions: '版本',
@@ -478,7 +480,27 @@ function normalizeAiBriefOriginals(value) {
     originals.coreUser = originals.targetAudience;
   }
   delete originals.targetAudience;
+  originals.identitySpec = originals.identitySpec && typeof originals.identitySpec === 'object' && !Array.isArray(originals.identitySpec)
+    ? Object.fromEntries(IDENTITY_SPEC_FIELDS
+      .map((field) => [field, String(originals.identitySpec[field] || '').trim()])
+      .filter(([, content]) => Boolean(content)))
+    : {};
+  if (!Object.keys(originals.identitySpec).length) delete originals.identitySpec;
   return originals;
+}
+
+function clearUneditedAiBrief(form, originals) {
+  const normalized = normalizeAiBriefOriginals(originals);
+  const next = { ...form, identitySpec: { ...(form.identitySpec || {}) } };
+  for (const field of ['coreUser', 'coreScenario', 'sellingPoints']) {
+    const original = String(normalized[field] || '').trim();
+    if (original && String(next[field] || '').trim() === original) next[field] = '';
+  }
+  for (const field of IDENTITY_SPEC_FIELDS) {
+    const original = String(normalized.identitySpec?.[field] || '').trim();
+    if (original && String(next.identitySpec[field] || '').trim() === original) delete next.identitySpec[field];
+  }
+  return next;
 }
 
 function hasSession(session) {
@@ -1071,6 +1093,10 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [previewImage, setPreviewImage] = useState(null);
   const [versionCenterSlotId, setVersionCenterSlotId] = useState('');
   const [versionActionState, setVersionActionState] = useState('');
+  const formRef = useRef(form);
+  const aiBriefOriginalsRef = useRef(aiBriefOriginals);
+  formRef.current = form;
+  aiBriefOriginalsRef.current = aiBriefOriginals;
   const fileInputRef = useRef(null);
   const generationTasksRef = useRef(new Map());
   const sectionRefs = useRef({});
@@ -1238,12 +1264,16 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
 
   function updateField(field, value) {
     setMessage('');
-    if (['industryId', 'productName', 'brandName'].includes(field)) {
+    const resetsAiContext = ['industryId', 'productName', 'brandName'].includes(field);
+    if (resetsAiContext) {
       setAiBriefOriginals({});
       setAiBriefStatus('idle');
     }
     if (form.id) setStatus('dirty');
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => ({
+      ...(resetsAiContext ? clearUneditedAiBrief(current, aiBriefOriginals) : current),
+      [field]: value
+    }));
   }
 
   function updateIdentitySpec(field, value) {
@@ -1282,7 +1312,13 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       mustKeep: 'Keep product geometry, color, material, brand placement, included-item count, and relative scale consistent across every slot.',
       mustAvoid: 'Do not add, remove, or replace parts. Avoid fake logos, garbled text, incorrect packaging, invented specifications, and unsupported efficacy claims.'
     };
-    setForm((current) => ({ ...current, identitySpec: spec }));
+    setForm((current) => ({
+      ...current,
+      identitySpec: Object.fromEntries(IDENTITY_SPEC_FIELDS.map((field) => [
+        field,
+        String(current.identitySpec?.[field] || '').trim() || spec[field]
+      ]))
+    }));
     if (form.id) setStatus('dirty');
   }
 
@@ -1317,7 +1353,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setAiBriefStatus('idle');
     if (form.id) setStatus('dirty');
     setForm((current) => ({
-      ...current,
+      ...clearUneditedAiBrief(current, aiBriefOriginals),
       industryId,
       templateId: '',
       visualStyleId: firstStyle?.id || 'clean-commercial'
@@ -1464,6 +1500,12 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       globalThis.document?.getElementById('ecommerce-product-name')?.focus();
       return;
     }
+    const hasBlankAiField = ['coreUser', 'coreScenario', 'sellingPoints'].some((field) => !String(form[field] || '').trim())
+      || IDENTITY_SPEC_FIELDS.some((field) => !String(form.identitySpec?.[field] || '').trim());
+    if (!hasBlankAiField) {
+      setAiBriefStatus('success');
+      return;
+    }
 
     setAiBriefStatus('loading');
     setMessage('');
@@ -1473,27 +1515,51 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           language,
+          projectId: form.id,
           industryId: form.industryId,
           productName: form.productName,
-          brandName: form.brandName
+          brandName: form.brandName,
+          currentBrief: {
+            coreUser: form.coreUser,
+            coreScenario: form.coreScenario,
+            sellingPoints: form.sellingPoints,
+            identitySpec: form.identitySpec
+          }
         })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'AI_BRIEF_FAILED');
       const normalizedBrief = normalizeEcommerceAiBrief(payload.brief, { language });
       if (!normalizedBrief) throw new Error('AI_BRIEF_INCOMPLETE');
-      const originalBrief = {
+      const generatedBrief = {
         coreUser: normalizedBrief.coreUser,
         coreScenario: normalizedBrief.coreScenario,
-        sellingPoints: normalizedBrief.sellingPoints
+        sellingPoints: normalizedBrief.sellingPoints,
+        identitySpec: normalizedBrief.identitySpec || {}
       };
-      if (Object.values(originalBrief).some((value) => !value.trim())) throw new Error('AI_BRIEF_INCOMPLETE');
-      setAiBriefOriginals(originalBrief);
-      setForm((current) => ({
-        ...current,
-        ...originalBrief,
-        identitySpec: { ...(current.identitySpec || {}), ...(normalizedBrief.identitySpec || {}) }
-      }));
+      if ([generatedBrief.coreUser, generatedBrief.coreScenario, generatedBrief.sellingPoints].some((value) => !String(value || '').trim())) {
+        throw new Error('AI_BRIEF_INCOMPLETE');
+      }
+      const currentForm = formRef.current;
+      const nextForm = { ...currentForm, identitySpec: { ...(currentForm.identitySpec || {}) } };
+      const nextOriginals = normalizeAiBriefOriginals(aiBriefOriginalsRef.current);
+      for (const field of ['coreUser', 'coreScenario', 'sellingPoints']) {
+        if (!String(currentForm[field] || '').trim() && String(generatedBrief[field] || '').trim()) {
+          nextForm[field] = generatedBrief[field];
+          nextOriginals[field] = generatedBrief[field];
+        }
+      }
+      nextOriginals.identitySpec = { ...(nextOriginals.identitySpec || {}) };
+      for (const field of IDENTITY_SPEC_FIELDS) {
+        const generated = String(generatedBrief.identitySpec?.[field] || '').trim();
+        if (!String(currentForm.identitySpec?.[field] || '').trim() && generated) {
+          nextForm.identitySpec[field] = generated;
+          nextOriginals.identitySpec[field] = generated;
+        }
+      }
+      if (!Object.keys(nextOriginals.identitySpec).length) delete nextOriginals.identitySpec;
+      setAiBriefOriginals(nextOriginals);
+      setForm(nextForm);
       if (form.id) setStatus('dirty');
       setAiBriefStatus('success');
     } catch {
@@ -1735,9 +1801,11 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         setGenerationMessage(
           payload.error === 'CONTENT_MODERATION_BLOCKED'
             ? t.moderationBlocked
-            : payload.error === 'SLOT_LOCKED'
-              ? t.slotLocked
-              : t.generationFailed
+            : payload.error === 'PROJECT_CHANGED'
+              ? t.projectChanged
+              : payload.error === 'SLOT_LOCKED'
+                ? t.slotLocked
+                : t.generationFailed
         );
         return false;
       }
@@ -2299,7 +2367,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                         <button className="ecommerceAssetDeleteButton" type="button" aria-label={`${t.deleteAsset}: ${asset.fileName}`} onClick={() => handleDeleteAsset(asset.id)}>
                           <Trash2 size={14} />
                         </button>
-                        {!asset.isMaster && ['product', 'packaging'].includes(asset.assetType) ? (
+                        {!asset.isMaster && asset.assetType === 'product' ? (
                           <button className="ecommerceSetMasterButton" type="button" onClick={() => handleSetMaster(asset.id)}>
                             {t.setMaster}
                           </button>

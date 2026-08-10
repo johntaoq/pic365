@@ -115,8 +115,8 @@ test('P1 outputs support adoption, locking, consistency and archiving', () => {
 test('P1 tasks survive state transitions and can be retried or cancelled', () => {
   const { user, project } = createProjectFixture();
   const [first, second] = p1Db.createEcommerceGenerationTasks(user.id, project.id, [
-    { slotId: 'main-square', quality: 'medium' },
-    { slotId: 'white-background', quality: 'low' }
+    { slotId: 'main-square', quality: 'medium', projectUpdatedAt: project.updatedAt },
+    { slotId: 'white-background', quality: 'low', projectUpdatedAt: project.updatedAt }
   ]);
 
   assert.equal(first.status, 'queued');
@@ -126,7 +126,10 @@ test('P1 tasks survive state transitions and can be retried or cancelled', () =>
   );
   assert.equal(p1Db.claimEcommerceGenerationTask(user.id, first.id)?.status, 'running');
   assert.equal(p1Db.completeEcommerceGenerationTask(user.id, first.id, { status: 'failed', errorCode: 'TEST_FAILURE' })?.status, 'failed');
-  assert.equal(p1Db.retryEcommerceGenerationTask(user.id, first.id)?.status, 'queued');
+  const updatedProject = localDb.updateEcommerceProject(user.id, project.id, { ...project, projectName: 'Updated while queued' });
+  const retried = p1Db.retryEcommerceGenerationTask(user.id, first.id);
+  assert.equal(retried?.status, 'queued');
+  assert.equal(retried?.request.projectUpdatedAt, updatedProject.updatedAt);
   assert.equal(p1Db.claimEcommerceGenerationTask(user.id, first.id)?.attempts, 2);
   assert.equal(p1Db.requestEcommerceGenerationTaskCancellation(user.id, first.id)?.cancelRequested, true);
   assert.equal(p1Db.completeEcommerceGenerationTask(user.id, first.id, { status: 'cancelled', errorCode: 'GENERATION_CANCELLED' })?.status, 'cancelled');
@@ -156,10 +159,21 @@ test('P1 asset purpose and ordering are persisted', () => {
     storagePath: 'assets/light.png',
     sortOrder: 2
   });
+  const packaging = localDb.createEcommerceProjectAsset(user.id, {
+    projectId: project.id,
+    assetType: 'packaging',
+    fileName: 'box.png',
+    mimeType: 'image/png',
+    fileSize: 10,
+    storagePath: 'assets/box.png',
+    sortOrder: 3
+  });
 
   assert.equal(p1Db.updateEcommerceAssetPurpose(user.id, project.id, second.id, 'lighting'), true);
-  assert.equal(p1Db.reorderEcommerceProjectAssets(user.id, project.id, [second.id, first.id]), true);
+  assert.equal(p1Db.reorderEcommerceProjectAssets(user.id, project.id, [second.id, first.id, packaging.id]), true);
   const assets = localDb.listEcommerceProjectAssets(user.id, project.id);
-  assert.deepEqual(assets.map((asset) => asset.id), [second.id, first.id]);
+  assert.deepEqual(assets.map((asset) => asset.id), [second.id, first.id, packaging.id]);
   assert.equal(assets[0].purpose, 'lighting');
+  assert.equal(localDb.setEcommerceProjectMasterAsset(user.id, project.id, packaging.id), null);
+  assert.equal(localDb.setEcommerceProjectMasterAsset(user.id, project.id, first.id)?.masterAssetId, first.id);
 });

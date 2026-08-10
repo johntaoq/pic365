@@ -22,7 +22,7 @@ test('AI selling points are limited to four concise phrases', () => {
   assert.equal(normalizeAiSellingPoints(['Premium materials', 'Compact dimensions'], 'en'), 'Premium materials\nCompact dimensions');
 });
 
-test('prompt constraints are removed from selling points and routed to composition rules', () => {
+test('only explicit prompt constraints are routed from selling points into composition rules', () => {
   const brief = normalizeEcommerceAiBrief({
     coreUser: '注重桌面整洁的手机用户',
     coreScenario: '居家办公与视频观看',
@@ -31,6 +31,7 @@ test('prompt constraints are removed from selling points and routed to compositi
       '横竖双用',
       '多角度调节',
       '解放双手',
+      '这是一句过长但没有事实约束的普通营销文案，只应丢弃而不应变成商品硬规则',
       '展示其帮助整理桌面、释放双手的使用场景，避免宣称适配所有手机',
       '拍摄前核验材质构成、承重能力、适配尺寸、底部防滑设计及包装内配件'
     ],
@@ -41,6 +42,7 @@ test('prompt constraints are removed from selling points and routed to compositi
   assert.match(brief.identitySpec.mustAvoid, /避免宣称适配所有手机/);
   assert.match(brief.identitySpec.mustAvoid, /不要添加不存在的结构/);
   assert.match(brief.identitySpec.mustKeep, /拍摄前核验材质构成/);
+  assert.equal(brief.identitySpec.mustKeep.includes('普通营销文案'), false);
 });
 
 test('local fallback separates benefits from verification rules', () => {

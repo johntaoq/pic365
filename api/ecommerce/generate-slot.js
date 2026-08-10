@@ -12,7 +12,7 @@ import {
   updateGeneration
 } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
-import { buildEcommerceSlotPrompt } from '../_lib/ecommerce-prompt.js';
+import { buildEcommerceSlotPrompt, selectEcommerceAssetsForSlot } from '../_lib/ecommerce-prompt.js';
 import {
   claimEcommerceGenerationTask,
   completeEcommerceGenerationTask,
@@ -58,14 +58,6 @@ function generationPayload(row) {
     createdAt: row.created_at || '',
     completedAt: row.completed_at || ''
   };
-}
-
-function sortAssets(project, assets) {
-  return [...assets].sort((left, right) => {
-    if (left.id === project.masterAssetId) return -1;
-    if (right.id === project.masterAssetId) return 1;
-    return Number(left.sortOrder || 0) - Number(right.sortOrder || 0);
-  }).slice(0, 8);
 }
 
 export default async function handler(req, res) {
@@ -133,6 +125,10 @@ export default async function handler(req, res) {
 
   try {
     const project = projectForTask;
+    if (task.request?.projectUpdatedAt && task.request.projectUpdatedAt !== project.updatedAt) {
+      const changedTask = failTask('PROJECT_CHANGED');
+      return json(res, 409, { ok: false, error: 'PROJECT_CHANGED', taskId, task: changedTask });
+    }
     const platform = getEcommercePlatform(project.platformId);
     const slot = platform.slots.find((item) => item.id === slotId);
     if (!slot || !project.selectedSlots.includes(slotId)) {
@@ -143,12 +139,19 @@ export default async function handler(req, res) {
       failTask('SLOT_LOCKED');
       return json(res, 409, { ok: false, error: 'SLOT_LOCKED', taskId });
     }
-    if (!project.masterAssetId || !getEcommerceProjectAsset(auth.user.id, project.masterAssetId)) {
+    const masterAsset = project.masterAssetId ? getEcommerceProjectAsset(auth.user.id, project.masterAssetId) : null;
+    if (!masterAsset || masterAsset.assetType !== 'product') {
       failTask('MASTER_ASSET_REQUIRED');
       return json(res, 400, { ok: false, error: 'MASTER_ASSET_REQUIRED', taskId });
     }
 
-    const assets = sortAssets(project, listEcommerceProjectAssets(auth.user.id, projectId));
+    const assets = selectEcommerceAssetsForSlot({
+      project,
+      platform,
+      slot,
+      assets: listEcommerceProjectAssets(auth.user.id, projectId),
+      limit: 6
+    });
     const images = [];
     try {
       if (baseGenerationId) {
@@ -181,7 +184,19 @@ export default async function handler(req, res) {
       return json(res, 400, { ok: false, error: 'MASTER_ASSET_REQUIRED', taskId });
     }
 
-    const prompt = buildEcommerceSlotPrompt({ project, platform, slot, assets, revisionRequest });
+    const currentOutput = getEcommerceProjectOutput(auth.user.id, projectId, slotId);
+    const consistencyIssues = baseGenerationId && currentOutput?.selectedGenerationId === baseGenerationId
+      ? currentOutput.consistencyIssues || []
+      : [];
+    const prompt = buildEcommerceSlotPrompt({
+      project,
+      platform,
+      slot,
+      assets,
+      revisionRequest,
+      hasBaseImage: Boolean(baseGenerationId),
+      consistencyIssues
+    });
     const size = ['1024x1024', '1024x1536', '1536x1024'].includes(slot.recommendedSize)
       ? slot.recommendedSize
       : slot.aspectRatio === '1:1'
@@ -231,7 +246,14 @@ export default async function handler(req, res) {
 
     try {
       throwIfGenerationCancelled(taskController.signal);
-      const providerResult = await editImage({ prompt, images, size, quality, signal: taskController.signal });
+      const providerResult = await editImage({
+        prompt,
+        images,
+        size,
+        quality,
+        inputFidelity: 'high',
+        signal: taskController.signal
+      });
       throwIfGenerationCancelled(taskController.signal);
       const storedImage = await persistImage({ userId: auth.user.id, generationId, image: providerResult.image });
       if (taskController.signal.aborted) {

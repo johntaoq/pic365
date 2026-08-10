@@ -88,7 +88,8 @@ export default async function handler(req, res) {
       slotId,
       quality: request.quality === 'low' ? 'low' : 'medium',
       adjustment: cleanText(request.adjustment, 1200),
-      baseGenerationId
+      baseGenerationId,
+      projectUpdatedAt: project.updatedAt
     });
   }
 

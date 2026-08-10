@@ -169,6 +169,7 @@ export function getDefaultDeliveryContent(project, slot, language = 'zh') {
   const type = getDeliveryTypeForSlot(slot.id);
   const sellingPoints = uniqueTextItems(project.sellingPoints, 4);
   const specificationItems = uniqueTextItems(project.specifications, 8);
+  const packageItems = uniqueTextItems(project.identitySpec?.includedItems || project.specifications, 10);
   const isZh = language === 'zh';
   const headline = sellingPoints[0] || project.productName || (isZh ? '商品亮点' : 'Product highlight');
   const subtitle = project.brandName
@@ -182,10 +183,10 @@ export function getDefaultDeliveryContent(project, slot, language = 'zh') {
     bullets: sellingPoints.slice(0, 3),
     specs: specificationItems.slice(0, 5),
     dimensions: { width: '', height: '', depth: '', weight: '' },
-    packageItems: specificationItems.slice(0, 6),
+    packageItems: packageItems.slice(0, 10),
     comparison: {
       leftTitle: isZh ? '本商品' : 'This product',
-      leftItems: sellingPoints.slice(0, 3),
+      leftItems: [],
       rightTitle: isZh ? '普通方案' : 'Typical option',
       rightItems: []
     },

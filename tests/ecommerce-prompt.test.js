@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildEcommerceSlotPrompt } from '../api/_lib/ecommerce-prompt.js';
+import { buildEcommerceSlotPrompt, selectEcommerceAssetsForSlot } from '../api/_lib/ecommerce-prompt.js';
 import { getEcommercePlatform } from '../shared/ecommerce-catalog.js';
 
 function project(overrides = {}) {
@@ -82,4 +82,82 @@ test('packaging and included accessories remain separate identity constraints', 
   assert.match(prompt, /随附配件与数量：Bottle ×1; lid ×1; cleaning brush ×1\./);
   assert.equal((prompt.match(/Matte carton/g) || []).length, 1);
   assert.equal((prompt.match(/cleaning brush/g) || []).length, 1);
+});
+
+test('revision prompts keep actual input numbering and evidence priority aligned', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'feature');
+  const assets = [
+    { id: 'master-1', assetType: 'product', purpose: 'identity', sortOrder: 1 },
+    { id: 'reference-1', assetType: 'reference', purpose: 'lighting', sortOrder: 2 }
+  ];
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({ masterAssetId: 'master-1' }),
+    platform,
+    slot,
+    assets,
+    hasBaseImage: true,
+    revisionRequest: '背景改为暖灰色，商品不变',
+    consistencyIssues: ['恢复瓶盖的真实高度比例']
+  });
+
+  assert.match(prompt, /输入图片 1：本槽位当前待修改版本/);
+  assert.match(prompt, /输入图片 2：真实商品图/);
+  assert.match(prompt, /以输入图片 2 为最高优先级/);
+  assert.match(prompt, /旧图而延续错误结构/);
+  assert.match(prompt, /恢复瓶盖的真实高度比例/);
+});
+
+test('slot-aware asset selection prevents irrelevant reference and packaging contamination', () => {
+  const platform = getEcommercePlatform('amazon');
+  const masterProject = project({ masterAssetId: 'master-1' });
+  const assets = [
+    { id: 'master-1', assetType: 'product', purpose: 'identity', sortOrder: 1 },
+    { id: 'angle-1', assetType: 'product', purpose: 'angle', sortOrder: 2 },
+    { id: 'pack-1', assetType: 'packaging', purpose: 'packaging', sortOrder: 3 },
+    { id: 'scene-1', assetType: 'reference', purpose: 'scene', sortOrder: 4 }
+  ];
+  const cleanAssets = selectEcommerceAssetsForSlot({
+    project: masterProject,
+    slot: platform.slots.find((item) => item.id === 'compliant-main'),
+    assets
+  });
+  assert.deepEqual(cleanAssets.map((item) => item.id), ['master-1', 'angle-1']);
+
+  const packageAssets = selectEcommerceAssetsForSlot({
+    project: masterProject,
+    slot: platform.slots.find((item) => item.id === 'package-contents'),
+    assets
+  });
+  assert.ok(packageAssets.some((item) => item.id === 'pack-1'));
+  assert.equal(packageAssets.some((item) => item.id === 'scene-1'), false);
+
+  const lifestyleAssets = selectEcommerceAssetsForSlot({
+    project: masterProject,
+    slot: platform.slots.find((item) => item.id === 'lifestyle'),
+    assets
+  });
+  assert.ok(lifestyleAssets.some((item) => item.id === 'scene-1'));
+  assert.equal(lifestyleAssets.some((item) => item.id === 'pack-1'), false);
+});
+
+test('angle prompts explicitly forbid inventing unseen product surfaces', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'multi-angle');
+  const prompt = buildEcommerceSlotPrompt({ project: project(), platform, slot, assets: [] });
+  assert.match(prompt, /看不到的背面、接口、内部结构或标签不得自行补全/);
+  assert.match(prompt, /宁可使用单一可信视角/);
+});
+
+test('broad industry guidance is conditional and never treated as a product feature list', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'feature');
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({ industryId: 'consumer-electronics', productName: 'Metal phone stand' }),
+    platform,
+    slot,
+    assets: []
+  });
+  assert.match(prompt, /只适用于输入素材中真实存在的部位/);
+  assert.match(prompt, /不代表本商品一定具备这些结构/);
 });

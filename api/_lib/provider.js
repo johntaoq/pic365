@@ -116,7 +116,16 @@ export async function generateImage({ prompt, model, size = '1024x1024', quality
   };
 }
 
-export async function editImage({ prompt, images, model, size = '1024x1024', quality = 'medium', format = 'png', signal }) {
+export async function editImage({
+  prompt,
+  images,
+  model,
+  size = '1024x1024',
+  quality = 'medium',
+  format = 'png',
+  inputFidelity = '',
+  signal
+}) {
   const config = getProviderConfig();
   const imageInputs = (Array.isArray(images) ? images : [])
     .filter(Boolean)
@@ -124,7 +133,7 @@ export async function editImage({ prompt, images, model, size = '1024x1024', qua
     .map((imageUrl) => ({ image_url: imageUrl }));
   if (!imageInputs.length) throw new Error('IMAGE_INPUT_REQUIRED');
 
-  const { response, payload, requestId } = await requestProvider('images/edits', {
+  const requestBody = {
     model: model || config.imageModel,
     prompt,
     images: imageInputs,
@@ -133,7 +142,9 @@ export async function editImage({ prompt, images, model, size = '1024x1024', qua
     quality,
     output_format: format,
     background: 'auto'
-  }, { signal });
+  };
+  if (inputFidelity === 'high' || inputFidelity === 'low') requestBody.input_fidelity = inputFidelity;
+  const { response, payload, requestId } = await requestProvider('images/edits', requestBody, { signal });
   const result = parseImageResult(payload);
 
   if (!response.ok || !result?.image) {

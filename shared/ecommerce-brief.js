@@ -63,7 +63,9 @@ export function normalizeAiIdentitySpec(value) {
 }
 
 function rejectedSellingPointRules(value, language) {
-  const rejected = listEntries(value).filter((item) => !isConciseSellingPoint(item, language));
+  const rejected = listEntries(value)
+    .filter((item) => !isConciseSellingPoint(item, language))
+    .filter((item) => CONSTRAINT_PATTERN.test(item));
   const mustKeep = rejected.filter((item) => !NEGATIVE_CONSTRAINT_PATTERN.test(item));
   const mustAvoid = rejected.filter((item) => NEGATIVE_CONSTRAINT_PATTERN.test(item));
   return {

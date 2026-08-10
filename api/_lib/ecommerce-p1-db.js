@@ -239,7 +239,8 @@ export function createEcommerceGenerationTasks(userId, projectId, requests) {
       }
       const requestJson = {
         adjustment: String(request.adjustment || '').slice(0, 1200),
-        baseGenerationId: String(request.baseGenerationId || '').slice(0, 80)
+        baseGenerationId: String(request.baseGenerationId || '').slice(0, 80),
+        projectUpdatedAt: String(request.projectUpdatedAt || '').slice(0, 80)
       };
       insert.run(
         id,
@@ -325,11 +326,13 @@ export function retryEcommerceGenerationTask(userId, taskId) {
   const active = getActiveEcommerceGenerationTask(userId, task.projectId, task.slotId);
   if (active && active.id !== taskId) return null;
   const timestamp = now();
+  const project = getDb().prepare('SELECT updated_at FROM ecommerce_projects WHERE id = ? AND user_id = ?').get(task.projectId, userId);
+  const requestJson = JSON.stringify({ ...task.request, projectUpdatedAt: project?.updated_at || task.request.projectUpdatedAt || '' });
   const result = getDb().prepare(`
     UPDATE ecommerce_generation_tasks
     SET status = 'queued', generation_id = NULL, cancel_requested = 0, error_code = NULL,
-        started_at = NULL, completed_at = NULL, updated_at = ?
+        request_json = ?, started_at = NULL, completed_at = NULL, updated_at = ?
     WHERE id = ? AND user_id = ? AND status IN ('failed', 'cancelled', 'interrupted')
-  `).run(timestamp, taskId, userId);
+  `).run(requestJson, timestamp, taskId, userId);
   return result.changes ? getEcommerceGenerationTask(userId, taskId) : null;
 }

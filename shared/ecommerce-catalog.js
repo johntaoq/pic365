@@ -7,15 +7,15 @@ export const ECOMMERCE_PLATFORMS = [
     descriptionZh: '适合货架主图、卖点图、SKU 图和模块化详情页。',
     slots: [
       slot('main-square', 'Square main image', '商品首图', '1:1', '1024x1024', true, 'Make the product instantly recognizable in a marketplace feed.', '在货架流中快速看清商品主体。'),
-      slot('main-portrait', 'Portrait main image', '3:4 商品首图', '3:4', '1024x1536', true, 'Adapt the same product identity to a mobile portrait placement.', '保持商品一致性的移动端竖版主图。'),
+      slot('main-portrait', 'Portrait main image', '3:4 商品首图', '3:4', '1200x1600', true, 'Adapt the same product identity to a mobile portrait placement.', '保持商品一致性的移动端竖版主图。'),
       slot('white-background', 'White-background product', '白底商品图', '1:1', '1024x1024', true, 'Show the complete product clearly with clean edges.', '完整、清晰地呈现商品和轮廓。'),
       slot('key-benefit', 'Key benefit image', '核心卖点图', '1:1', '1024x1024', true, 'Communicate one primary purchase reason.', '一张图只传达一个核心购买理由。'),
       slot('detail-material', 'Material or ingredient detail', '材质 / 成分 / 细节图', '1:1', '1024x1024', false, 'Explain material, texture, ingredients, or construction.', '说明材质、质地、成分或工艺。'),
-      slot('usage-scene', 'Usage scene', '使用场景图', '3:4', '1024x1536', false, 'Place the product in a believable target-customer scenario.', '将商品放入可信的目标用户场景。'),
+      slot('usage-scene', 'Usage scene', '使用场景图', '3:4', '1200x1600', false, 'Place the product in a believable target-customer scenario.', '将商品放入可信的目标用户场景。'),
       slot('spec-bundle', 'Specification or bundle', '规格 / 套装图', '1:1', '1024x1024', false, 'Clarify quantities, included items, sizes, or bundles.', '清晰说明数量、包含物、尺寸或组合。'),
       slot('sku-variant', 'SKU variant image', 'SKU 颜色 / 款式图', '1:1', '1024x1024', false, 'Keep framing consistent across color and style variants.', '让颜色和款式变体保持统一构图。'),
       slot('campaign', 'Campaign atmosphere', '活动氛围图', '1:1', '1024x1024', false, 'Reserve safe areas for editable campaign copy and price.', '为可编辑活动文案和价格预留安全区。'),
-      slot('detail-page', 'Detail-page modules', '详情页模块', '3:4', '1024x1536', false, 'Build a sequence covering pain point, benefit, detail, parameter, scene, and trust.', '形成痛点、卖点、细节、参数、场景与信任信息的详情页序列。')
+      slot('detail-page', 'Detail-page modules', '详情页模块', '3:4', '1200x1600', false, 'Build a sequence covering pain point, benefit, detail, parameter, scene, and trust.', '形成痛点、卖点、细节、参数、场景与信任信息的详情页序列。')
     ]
   },
   {
@@ -26,14 +26,14 @@ export const ECOMMERCE_PLATFORMS = [
     descriptionZh: '强调移动端快速识别、三秒卖点和短视频承接。',
     slots: [
       slot('cover-square', 'Square product cover', '1:1 商品封面', '1:1', '1024x1024', true, 'Identify the product immediately in the feed.', '在推荐流中立即识别商品。'),
-      slot('material-portrait', 'Portrait product material', '3:4 商品素材图', '3:4', '1024x1536', true, 'Provide a mobile portrait visual with a clear subject.', '提供主体清晰的移动端竖版素材。'),
-      slot('three-second-benefit', 'Three-second benefit', '三秒卖点视觉', '3:4', '1024x1536', true, 'Communicate one benefit before the viewer scrolls away.', '在用户划走前表达一个核心利益点。'),
-      slot('person-scene', 'Person or usage scene', '真人 / 使用场景图', '3:4', '1024x1536', false, 'Demonstrate fit, scale, or use in a credible scene.', '在可信场景中展示上身、比例或使用方式。'),
+      slot('material-portrait', 'Portrait product material', '3:4 商品素材图', '3:4', '1200x1600', true, 'Provide a mobile portrait visual with a clear subject.', '提供主体清晰的移动端竖版素材。'),
+      slot('three-second-benefit', 'Three-second benefit', '三秒卖点视觉', '3:4', '1200x1600', true, 'Communicate one benefit before the viewer scrolls away.', '在用户划走前表达一个核心利益点。'),
+      slot('person-scene', 'Person or usage scene', '真人 / 使用场景图', '3:4', '1200x1600', false, 'Demonstrate fit, scale, or use in a credible scene.', '在可信场景中展示上身、比例或使用方式。'),
       slot('detail-closeup', 'Detail close-up', '细节特写', '1:1', '1024x1024', false, 'Show texture, craftsmanship, controls, or key components.', '展示质感、工艺、操作部件或关键结构。'),
-      slot('comparison', 'Comparison or effect', '对比 / 效果图', '3:4', '1024x1536', false, 'Explain a verifiable difference without misleading claims.', '用可验证信息说明差异，避免误导性表达。'),
+      slot('comparison', 'Comparison or effect', '对比 / 效果图', '3:4', '1200x1600', false, 'Explain a verifiable difference without misleading claims.', '用可验证信息说明差异，避免误导性表达。'),
       slot('promotion-label', 'Promotion label version', '活动打标版本', '1:1', '1024x1024', false, 'Reserve editable layers for price, benefit, and campaign labels.', '为价格、利益点和活动标签保留可编辑图层。'),
-      slot('video-cover', 'Short-video cover', '短视频封面', '9:16', '1024x1536', true, 'Create a strong opening frame for a product video.', '形成可承接商品短视频的强开场画面。'),
-      slot('video-storyboard', 'Six-shot storyboard', '6 镜头脚本', '9:16', '1024x1536', false, 'Outline hook, product, benefit, evidence, usage, and call to action.', '规划钩子、商品、卖点、证据、使用与行动引导。')
+      slot('video-cover', 'Short-video cover', '短视频封面', '9:16', '1080x1920', true, 'Create a strong opening frame for a product video.', '形成可承接商品短视频的强开场画面。'),
+      slot('video-storyboard', 'Six-shot storyboard', '6 镜头脚本', '9:16', '1080x1920', false, 'Outline hook, product, benefit, evidence, usage, and call to action.', '规划钩子、商品、卖点、证据、使用与行动引导。')
     ]
   },
   {
@@ -51,7 +51,7 @@ export const ECOMMERCE_PLATFORMS = [
       slot('material-detail', 'Material and detail', '材质和细节图', '1:1', '1024x1024', false, 'Provide close evidence of material and construction quality.', '近距离呈现材质和结构品质。'),
       slot('package-contents', 'Package contents', '包装清单图', '1:1', '1024x1024', false, 'Make every included item and quantity unambiguous.', '明确展示全部包含物和数量。'),
       slot('variant', 'Color or size variant', '颜色 / 规格变体图', '1:1', '1024x1024', false, 'Keep the product geometry and framing consistent across variants.', '让不同颜色和规格保持几何与构图一致。'),
-      slot('video-cover', 'Listing video cover', '视频封面', '16:9', '1536x1024', false, 'Provide a clear cover for a product demonstration video.', '提供清晰的商品演示视频封面。')
+      slot('video-cover', 'Listing video cover', '视频封面', '16:9', '1920x1080', false, 'Provide a clear cover for a product demonstration video.', '提供清晰的商品演示视频封面。')
     ]
   },
   {
@@ -61,16 +61,16 @@ export const ECOMMERCE_PLATFORMS = [
     descriptionEn: 'Brand-led storefront media covering product, collection, social, and storytelling.',
     descriptionZh: '覆盖品牌首页、商品页、集合页、社交传播和内容叙事。',
     slots: [
-      slot('product-hero', 'Product-page hero', '商品页 Hero', '4:3', '1536x1024', true, 'Lead with a distinctive brand and product composition.', '用明确品牌气质和商品构图建立第一印象。'),
+      slot('product-hero', 'Product-page hero', '商品页 Hero', '4:3', '1600x1200', true, 'Lead with a distinctive brand and product composition.', '用明确品牌气质和商品构图建立第一印象。'),
       slot('collection-card', 'Collection thumbnail', '集合页缩略图', '1:1', '1024x1024', true, 'Remain legible at small storefront-card sizes.', '在较小的集合卡片尺寸下仍清晰可读。'),
       slot('gallery-angle', 'Gallery angle', '产品画廊多角度图', '1:1', '1024x1024', true, 'Build a coherent product gallery with consistent lighting.', '用一致光线形成连贯的多角度商品图库。'),
-      slot('lifestyle', 'Lifestyle story', '生活方式图', '4:3', '1536x1024', true, 'Connect the product to an aspirational but believable customer life.', '把商品连接到向往且可信的用户生活。'),
+      slot('lifestyle', 'Lifestyle story', '生活方式图', '4:3', '1600x1200', true, 'Connect the product to an aspirational but believable customer life.', '把商品连接到向往且可信的用户生活。'),
       slot('material-detail', 'Material detail', '材质细节图', '1:1', '1024x1024', false, 'Show texture, finish, and craftsmanship.', '展示纹理、表面处理和工艺。'),
-      slot('how-to', 'How-to sequence', '使用步骤图', '3:4', '1024x1536', false, 'Explain setup or use in a simple visual sequence.', '用简单视觉序列说明安装或使用。'),
-      slot('bundle-cross-sell', 'Bundle or cross-sell', '组合装 / 交叉销售图', '4:3', '1536x1024', false, 'Show compatible products and bundle value clearly.', '清楚展示兼容商品和组合价值。'),
+      slot('how-to', 'How-to sequence', '使用步骤图', '3:4', '1200x1600', false, 'Explain setup or use in a simple visual sequence.', '用简单视觉序列说明安装或使用。'),
+      slot('bundle-cross-sell', 'Bundle or cross-sell', '组合装 / 交叉销售图', '4:3', '1600x1200', false, 'Show compatible products and bundle value clearly.', '清楚展示兼容商品和组合价值。'),
       slot('variant', 'Color and SKU variants', '颜色与 SKU 变体图', '1:1', '1024x1024', false, 'Keep every variant visually comparable.', '让所有变体可以直接进行视觉比较。'),
       slot('social-share', 'Social share image', '社交分享图', '1:1', '1024x1024', false, 'Create a branded image suitable for social sharing.', '形成适合社交分享的品牌化图片。'),
-      slot('video-cover', 'Video cover', '视频封面', '16:9', '1536x1024', false, 'Introduce a product story or demonstration video.', '承接商品故事或演示视频。'),
+      slot('video-cover', 'Video cover', '视频封面', '16:9', '1920x1080', false, 'Introduce a product story or demonstration video.', '承接商品故事或演示视频。'),
       slot('model-brief', '3D model brief', '3D 模型制作说明', 'Document', '1024x1024', false, 'Define views, materials, dimensions, and interaction requirements for 3D production.', '定义3D制作所需视角、材质、尺寸和交互要求。')
     ]
   }
