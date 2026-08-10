@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildFallbackEcommerceBrief,
   countSellingPointWords,
+  mergeRefreshedAiIdentitySpec,
   normalizeAiSellingPoints,
   normalizeEcommerceAiBrief
 } from '../shared/ecommerce-brief.js';
@@ -67,4 +68,24 @@ test('instructions are not accepted inside customer or scenario descriptions', (
     identitySpec: { mustKeep: '核验承重能力' }
   }, { language: 'zh' });
   assert.equal(brief, null);
+});
+
+test('identity refresh replaces stale AI drafts while preserving manual product rules', () => {
+  const refreshed = mergeRefreshedAiIdentitySpec({
+    structure: '当前无产品证据图，具体结构需依据后续上传的产品资料核验，不作猜测',
+    colorsMaterials: '用户确认：哑光银色铝合金，黑色硅胶接触面',
+    packaging: '旧 AI 包装规则'
+  }, {
+    structure: '保持圆形底座、双转轴支臂和夹持面比例一致',
+    colorsMaterials: '银色金属主体与黑色接触面保持一致',
+    packaging: '白色抽屉盒，正面居中品牌字样'
+  }, {
+    packaging: '旧 AI 包装规则'
+  });
+
+  assert.equal(refreshed.identitySpec.structure, '保持圆形底座、双转轴支臂和夹持面比例一致');
+  assert.equal(refreshed.identitySpec.colorsMaterials, '用户确认：哑光银色铝合金，黑色硅胶接触面');
+  assert.equal(refreshed.identitySpec.packaging, '白色抽屉盒，正面居中品牌字样');
+  assert.deepEqual(refreshed.replacedFields, ['structure', 'packaging']);
+  assert.equal(refreshed.aiOriginals.structure, refreshed.identitySpec.structure);
 });

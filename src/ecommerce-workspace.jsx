@@ -45,10 +45,10 @@ import {
   getVisualStylesForIndustry
 } from '../shared/ecommerce-catalog.js';
 import { runTaskPool } from '../shared/task-pool.js';
-import { normalizeEcommerceAiBrief } from '../shared/ecommerce-brief.js';
+import { mergeRefreshedAiIdentitySpec, normalizeEcommerceAiBrief } from '../shared/ecommerce-brief.js';
 import EcommerceDeliveryCenter from './ecommerce-delivery-center.jsx';
 
-const BATCH_GENERATION_CONCURRENCY = 3;
+const BATCH_GENERATION_CONCURRENCY = 15;
 
 const VISUAL_STYLE_PREVIEW_KIND = {
   'clean-commercial': 'catalog',
@@ -149,7 +149,12 @@ const copy = {
     moveAssetDown: 'Move later',
     identitySpec: 'Lock product composition rules',
     identitySpecHint: 'These facts are hard constraints for every generated image.',
-    buildIdentitySpec: 'Build lock specification',
+    buildIdentitySpec: 'AI inspect product rules',
+    buildingIdentitySpec: 'AI is inspecting...',
+    identitySpecUpdated: 'Product rules were refreshed from the current materials.',
+    identitySpecManualPreserved: 'AI analysis finished. Existing manual rules were preserved.',
+    identitySpecAssetsRequired: 'Upload at least one product image before AI inspection.',
+    identitySpecFailed: 'Product-rule analysis could not be completed.',
     identityStructure: 'Structure and proportions',
     identityColorsMaterials: 'Colors and materials',
     identityBrandMarks: 'Brand marks',
@@ -304,7 +309,12 @@ const copy = {
     moveAssetDown: '向后移动',
     identitySpec: '锁定商品构图规则',
     identitySpecHint: '以下内容是整套图片必须遵守的硬约束。',
-    buildIdentitySpec: '建立锁定规范',
+    buildIdentitySpec: 'AI 识别商品规则',
+    buildingIdentitySpec: 'AI 正在识别……',
+    identitySpecUpdated: '已根据当前商品素材更新构图规则。',
+    identitySpecManualPreserved: 'AI 已完成分析，手工修改的规则已保留。',
+    identitySpecAssetsRequired: '请先上传至少一张商品图片，再使用 AI 识别。',
+    identitySpecFailed: '商品规则识别未完成，请稍后重试。',
     identityStructure: '结构与比例',
     identityColorsMaterials: '颜色与材质',
     identityBrandMarks: '品牌与标识',
@@ -1087,6 +1097,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [openFieldHelp, setOpenFieldHelp] = useState('');
   const [aiBriefOriginals, setAiBriefOriginals] = useState({});
   const [aiBriefStatus, setAiBriefStatus] = useState('idle');
+  const [identitySpecStatus, setIdentitySpecStatus] = useState('idle');
   const [projectListCollapsed, setProjectListCollapsed] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(1));
   const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
@@ -1268,6 +1279,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     if (resetsAiContext) {
       setAiBriefOriginals({});
       setAiBriefStatus('idle');
+      setIdentitySpecStatus('idle');
     }
     if (form.id) setStatus('dirty');
     setForm((current) => ({
@@ -1286,40 +1298,68 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     }));
   }
 
-  function buildIdentitySpec() {
-    const isChinese = language === 'zh';
-    const brandText = form.brandName.trim()
-      ? isChinese
-        ? `${form.brandName.trim()} 的现有 Logo、字形、位置和比例必须保持一致，不添加其他品牌。`
-        : `Keep the existing ${form.brandName.trim()} logo, lettering, placement, and proportions unchanged. Do not add another brand.`
-      : isChinese
-        ? '不得自行添加品牌、Logo、认证或第三方商标。'
-        : 'Do not invent a brand, logo, certification, or third-party trademark.';
-    const spec = isChinese ? {
-      structure: `严格以商品母版为准，保持${form.productName || '商品'}的外形、长宽比例、开合结构、接口、按钮、把手和关键轮廓一致。`,
-      colorsMaterials: '保持母版中的主色、金属或非金属材质、表面纹理、透明度、光泽和边缘处理一致。',
-      brandMarks: brandText,
-      packaging: '外包装的形态、材质、标签布局、封口、颜色和原有文字位置必须以真实包装素材为准；不要在此填写盒内配件。',
-      includedItems: '只展示素材明确存在的随附配件和准确数量；没有随附配件时明确写“无”，不得自行增加赠品。',
-      mustKeep: '商品主体几何、颜色、材质、品牌位置、配件数量和相互比例在所有槽位中保持一致。',
-      mustAvoid: '不得增加、删除或替换部件，不得生成伪 Logo、乱码、错误包装、虚构规格或未经证实的功效。'
-    } : {
-      structure: `Use the product master as the authority. Preserve the shape, proportions, opening mechanism, ports, controls, handles, and defining outline of ${form.productName || 'the product'}.`,
-      colorsMaterials: 'Preserve the master image colors, materials, surface texture, transparency, gloss, and edge treatment.',
-      brandMarks: brandText,
-      packaging: 'The form, material, label layout, seals, colors, and existing text placement of the outer packaging must follow the real packaging reference. Do not list box contents here.',
-      includedItems: 'Show only included accessories explicitly supported by the source materials and preserve exact quantities. State “None” when no accessories are included; never invent gifts.',
-      mustKeep: 'Keep product geometry, color, material, brand placement, included-item count, and relative scale consistent across every slot.',
-      mustAvoid: 'Do not add, remove, or replace parts. Avoid fake logos, garbled text, incorrect packaging, invented specifications, and unsupported efficacy claims.'
-    };
-    setForm((current) => ({
-      ...current,
-      identitySpec: Object.fromEntries(IDENTITY_SPEC_FIELDS.map((field) => [
-        field,
-        String(current.identitySpec?.[field] || '').trim() || spec[field]
-      ]))
-    }));
-    if (form.id) setStatus('dirty');
+  async function handleAiBuildIdentitySpec() {
+    if (!signedIn) {
+      onSignIn?.();
+      return;
+    }
+    if (!hasAccess) {
+      onBilling?.();
+      return;
+    }
+    if (!form.id || !assets.some((asset) => asset.assetType === 'product')) {
+      setMessage(t.identitySpecAssetsRequired);
+      return;
+    }
+    if (!form.productName.trim()) {
+      setMessage(t.productRequired);
+      return;
+    }
+
+    setIdentitySpecStatus('loading');
+    setMessage('');
+    try {
+      const response = await fetch('/api/ecommerce/auto-fill-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          focus: 'identitySpec',
+          language,
+          projectId: form.id,
+          industryId: form.industryId,
+          productName: form.productName,
+          brandName: form.brandName,
+          currentBrief: {
+            coreUser: form.coreUser,
+            coreScenario: form.coreScenario,
+            sellingPoints: form.sellingPoints,
+            identitySpec: form.identitySpec
+          }
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'IDENTITY_SPEC_FAILED');
+      const normalizedBrief = normalizeEcommerceAiBrief(payload.brief, { language });
+      if (!normalizedBrief?.identitySpec || !Object.keys(normalizedBrief.identitySpec).length) {
+        throw new Error('IDENTITY_SPEC_INCOMPLETE');
+      }
+
+      const currentForm = formRef.current;
+      const currentOriginals = normalizeAiBriefOriginals(aiBriefOriginalsRef.current);
+      const merged = mergeRefreshedAiIdentitySpec(
+        currentForm.identitySpec,
+        normalizedBrief.identitySpec,
+        currentOriginals.identitySpec
+      );
+      setForm({ ...currentForm, identitySpec: merged.identitySpec });
+      setAiBriefOriginals({ ...currentOriginals, identitySpec: merged.aiOriginals });
+      setStatus('dirty');
+      setIdentitySpecStatus('success');
+      setMessage(merged.replacedFields.length ? t.identitySpecUpdated : t.identitySpecManualPreserved);
+    } catch {
+      setIdentitySpecStatus('error');
+      setMessage(t.identitySpecFailed);
+    }
   }
 
   function applyTemplate(templateId) {
@@ -1351,6 +1391,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setMessage('');
     setAiBriefOriginals({});
     setAiBriefStatus('idle');
+    setIdentitySpecStatus('idle');
     if (form.id) setStatus('dirty');
     setForm((current) => ({
       ...clearUneditedAiBrief(current, aiBriefOriginals),
@@ -1423,6 +1464,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setAssets([]);
     setAiBriefOriginals({});
     setAiBriefStatus('idle');
+    setIdentitySpecStatus('idle');
     setCollapsedSections(getCollapsedSectionsForStage(1));
     setPreviewImage(null);
   }
@@ -1434,6 +1476,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     const originals = normalizeAiBriefOriginals(project.aiBriefOriginals);
     setAiBriefOriginals(originals);
     setAiBriefStatus(Object.keys(originals).length ? 'success' : 'idle');
+    setIdentitySpecStatus('idle');
     setCollapsedSections(getCollapsedSectionsForStage(project.masterAssetId ? 5 : 2));
     setPreviewImage(null);
   }
@@ -1599,7 +1642,10 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         failed = true;
       }
     }
-    if (uploaded.length) setAssets((current) => [...current, ...uploaded].sort((a, b) => a.sortOrder - b.sortOrder));
+    if (uploaded.length) {
+      setAssets((current) => [...current, ...uploaded].sort((a, b) => a.sortOrder - b.sortOrder));
+      setIdentitySpecStatus('idle');
+    }
     setAssetStatus(failed ? 'error' : 'idle');
   }
 
@@ -1611,6 +1657,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'DELETE_FAILED');
       setAssets((current) => current.filter((item) => item.id !== assetId));
+      setIdentitySpecStatus('idle');
       if (form.masterAssetId === assetId) {
         setForm((current) => ({ ...current, masterAssetId: '' }));
         setProjects((current) => current.map((item) => item.id === form.id ? { ...item, masterAssetId: '' } : item));
@@ -1635,6 +1682,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setAssets(payload.assets || []);
       setForm((current) => ({ ...current, masterAssetId: payload.project.masterAssetId || '' }));
       setProjects((current) => current.map((item) => item.id === payload.project.id ? payload.project : item));
+      setIdentitySpecStatus('idle');
       setAssetStatus('idle');
     } catch {
       setAssetStatus('error');
@@ -1653,6 +1701,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'ASSET_UPDATE_FAILED');
       setAssets(payload.assets || []);
+      setIdentitySpecStatus('idle');
       setAssetStatus('idle');
     } catch {
       setAssetStatus('error');
@@ -2383,7 +2432,16 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                       <strong><Lock size={15} /> {t.identitySpec}</strong>
                       <span>{t.identitySpecHint}</span>
                     </div>
-                    <button type="button" onClick={buildIdentitySpec}><WandSparkles size={15} /> {t.buildIdentitySpec}</button>
+                    <button
+                      type="button"
+                      onClick={handleAiBuildIdentitySpec}
+                      disabled={identitySpecStatus === 'loading'}
+                      aria-busy={identitySpecStatus === 'loading'}
+                      title={t.buildIdentitySpec}
+                    >
+                      {identitySpecStatus === 'loading' ? <LoaderCircle className="spin" size={15} /> : <WandSparkles size={15} />}
+                      {identitySpecStatus === 'loading' ? t.buildingIdentitySpec : t.buildIdentitySpec}
+                    </button>
                   </header>
                   <div className="ecommerceIdentityGrid">
                     {IDENTITY_SPEC_FIELDS.map((field) => (

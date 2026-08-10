@@ -23,7 +23,8 @@ const SYSTEM_PROMPT = [
   'Do not invent exact dimensions, weight, materials, ingredients, accessories, certifications, compatibility, efficacy, awards, sales rankings, or legal claims.',
   'Never infer a hidden side, internal structure, package content, included accessory, material composition, or functional capability that is not visible or explicitly supplied.',
   'If evidence images are present, the declared product master is authoritative for product identity; packaging and logo images are supporting evidence only for their named roles.',
-  'Existing non-empty brief fields are user-provided context. Preserve their meaning and do not contradict them.',
+  'Existing non-empty coreUser, coreScenario, and sellingPoints are user-provided context. Preserve their meaning and do not contradict them.',
+  'Existing identitySpec is mixed evidence: preserve concrete user-confirmed facts, but replace generic no-evidence, verify-later, or do-not-guess draft language when the supplied images now provide visible evidence.',
   'Separate the target people from the usage context: coreUser describes who buys or uses the product; coreScenario describes where, when, and for what task it is used.',
   'coreUser and coreScenario must be plain descriptions only; they must not contain verification, prohibition, or image-generation instructions.',
   'sellingPoints must contain 2 to 4 genuine customer benefits, not prompt instructions.',
@@ -33,6 +34,7 @@ const SYSTEM_PROMPT = [
   'identitySpec must use exactly these string keys: structure, colorsMaterials, brandMarks, packaging, includedItems, mustKeep, mustAvoid.',
   'When facts are unknown, identitySpec should instruct the workflow to verify them from uploaded product materials rather than guessing.',
   'Do not transcribe uncertain small text from images. Use the supplied brand or series string as the only authoritative brand wording.',
+  'When taskFocus is identitySpec, keep supplied non-empty customer, scenario, and selling-point fields semantically unchanged and concentrate the visual analysis on replacing stale or generic identity rules.',
   'Return JSON only with exactly these top-level keys: coreUser, coreScenario, sellingPoints, identitySpec.',
   'Return sellingPoints as an array of short strings.',
   'Do not include markdown fences, headings, commentary, or additional keys.'
@@ -131,6 +133,7 @@ async function generateBrief(input) {
         industry: input.industryName,
         productName: input.productName,
         brandOrSeries: input.brandName || 'Not provided',
+        taskFocus: input.focus,
         existingBrief: input.currentBrief,
         evidenceManifest: evidenceManifest || 'No product evidence images are available yet'
       })}`;
@@ -214,6 +217,7 @@ export default async function handler(req, res) {
     industryName: language === 'zh' ? industry.nameZh : industry.nameEn,
     productName,
     brandName,
+    focus: body.focus === 'identitySpec' ? 'identitySpec' : 'brief',
     currentBrief: normalizeCurrentBrief(body.currentBrief),
     evidence
   };

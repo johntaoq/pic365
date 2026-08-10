@@ -4364,6 +4364,23 @@ button {
   padding: 0 11px;
 }
 
+.ecommerceIdentityPanel > header button:hover:not(:disabled),
+.ecommerceIdentityPanel > header button:focus-visible {
+  background: linear-gradient(135deg, rgba(141, 244, 204, 0.24), rgba(86, 179, 255, 0.18));
+  border-color: rgba(141, 244, 204, 0.52);
+  box-shadow: 0 0 0 3px rgba(141, 244, 204, 0.08), 0 8px 24px rgba(86, 179, 255, 0.12);
+  outline: none;
+}
+
+.ecommerceIdentityPanel > header button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ecommerceIdentityPanel > header button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .ecommerceIdentityGrid {
   display: grid;
   gap: 9px;

@@ -11,6 +11,7 @@ export const AI_BRIEF_IDENTITY_FIELDS = [
 const CONSTRAINT_PATTERN = /(?:核验|确认|检查|拍摄前|避免|不得|不要|禁止|必须|确保|仅限|以.+为准|未提供|未确认|宣称|适配所有|verify|confirm|check|before shooting|avoid|must|never|do not|only if|source of truth|claim all)/i;
 const NEGATIVE_CONSTRAINT_PATTERN = /(?:避免|不得|不要|禁止|未提供|未确认|宣称|适配所有|avoid|never|do not|must not|unsupported|claim)/i;
 const BRIEF_INSTRUCTION_PATTERN = /(?:拍摄前|核验|避免|不得|不要|禁止|必须|未确认|before shooting|verify|avoid|must not|do not)/i;
+const STALE_AI_IDENTITY_PATTERN = /(?:当前无.{0,20}(?:证据|素材|参考图)|依据后续上传|需依据.{0,30}核验|不作猜测|未提供.{0,20}(?:证据|素材|参考图)|no .{0,20}(?:evidence|source image|reference image)|verify from (?:later )?uploaded|not provided.{0,20}(?:evidence|source image|reference image)|do not guess)/i;
 
 function cleanText(value, maxLength) {
   return String(value || '').trim().replace(/\r\n/g, '\n').slice(0, maxLength);
@@ -60,6 +61,27 @@ export function normalizeAiIdentitySpec(value) {
       .map((field) => [field, cleanText(value[field], field === 'mustKeep' || field === 'mustAvoid' ? 1600 : 1200)])
       .filter(([, content]) => Boolean(content))
   );
+}
+
+export function mergeRefreshedAiIdentitySpec(currentValue, generatedValue, originalValue) {
+  const current = normalizeAiIdentitySpec(currentValue);
+  const generated = normalizeAiIdentitySpec(generatedValue);
+  const originals = normalizeAiIdentitySpec(originalValue);
+  const identitySpec = { ...current };
+  const aiOriginals = { ...originals };
+  const replacedFields = [];
+  for (const field of AI_BRIEF_IDENTITY_FIELDS) {
+    const next = String(generated[field] || '').trim();
+    if (!next) continue;
+    const existing = String(current[field] || '').trim();
+    const original = String(originals[field] || '').trim();
+    const replaceable = !existing || (original && existing === original) || STALE_AI_IDENTITY_PATTERN.test(existing);
+    if (!replaceable) continue;
+    identitySpec[field] = next;
+    aiOriginals[field] = next;
+    replacedFields.push(field);
+  }
+  return { identitySpec, aiOriginals, replacedFields };
 }
 
 function rejectedSellingPointRules(value, language) {
