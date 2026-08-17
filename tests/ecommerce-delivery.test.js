@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildDeliveryFilename,
   createDeliveryDocumentDraft,
+  getDeliveryExportAvailability,
   getDeliveryTextScale,
   getDeliveryWorkflowStep,
   normalizeDeliveryAdvanced,
@@ -26,14 +27,28 @@ const project = {
   selectedSlots: ['compliant-main', 'dimensions']
 };
 
-test('delivery workflow follows load, check, finish, and export order', () => {
-  const base = { includeInExport: true, validation: {} };
+test('delivery checks are advisory and do not block the export stage', () => {
+  const base = { includeInExport: true, sourceGenerationId: 'generation-1', validation: {} };
   assert.equal(getDeliveryWorkflowStep([]), 0);
   assert.equal(getDeliveryWorkflowStep([base]), 1);
-  assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: false } }]), 2);
+  assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: false } }]), 3);
   assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: true } }], { dirty: true }), 2);
   assert.equal(getDeliveryWorkflowStep([{ ...base, validation: { checkedAt: 'now', ready: true } }]), 3);
   assert.equal(getDeliveryWorkflowStep([{ ...base, includeInExport: false }]), 0);
+});
+
+test('delivery export only requires saved documents with source images', () => {
+  const unchecked = { includeInExport: true, sourceGenerationId: 'generation-1', validation: {} };
+  const checkedWithIssues = { ...unchecked, validation: { checkedAt: 'now', ready: false } };
+  assert.equal(getDeliveryExportAvailability([unchecked]).canExport, true);
+  assert.equal(getDeliveryExportAvailability([checkedWithIssues]).canExport, true);
+  assert.equal(getDeliveryExportAvailability([checkedWithIssues], { dirty: true }).canExport, false);
+  assert.deepEqual(getDeliveryExportAvailability([{ ...unchecked, sourceGenerationId: '' }]), {
+    canExport: false,
+    includedCount: 1,
+    missingSourceCount: 1,
+    dirty: false
+  });
 });
 
 test('delivery validation enforces Amazon main-image rules', () => {
@@ -140,6 +155,7 @@ test('delivery filenames follow product-slot-platform-version convention', () =>
 
 test('editable text mask and text container geometry is normalized and reusable by preview and export', () => {
   const advanced = normalizeDeliveryAdvanced({
+    showMask: false,
     maskBox: { x: 0.18, y: 0.2, width: 0.6, height: 0.42 },
     textBox: { x: 0.24, y: 0.27, width: 0.48, height: 0.24 },
     maskOpacity: 0.55,
@@ -155,6 +171,27 @@ test('editable text mask and text container geometry is normalized and reusable 
   assert.deepEqual(geometry.textBox, { x: 0.24, y: 0.27, width: 0.48, height: 0.24 });
   assert.equal(geometry.maskOpacity, 0.55);
   assert.equal(geometry.textOpacity, 0.72);
+  assert.equal(advanced.showMask, false);
   const content = { headline: 'Compact headline', subtitle: 'Supporting copy', bullets: ['One', 'Two', 'Three'] };
   assert.ok(getDeliveryTextScale(content, { width: 0.3, height: 0.12 }) < getDeliveryTextScale(content, { width: 0.65, height: 0.3 }));
+});
+
+test('default text bounds fit compact copy instead of filling an oversized panel', () => {
+  const slot = amazon.slots.find((item) => item.id === 'feature');
+  const document = createDeliveryDocumentDraft({
+    project: { ...project, productName: 'Noise cancelling earbuds', sellingPoints: ['Clear calls'] },
+    slot,
+    output: { selectedGenerationId: 'generation-fit' }
+  });
+  document.content = { ...document.content, headline: 'Clear calls', subtitle: 'Focused listening', bullets: ['Noise reduction'] };
+  const geometry = resolveDeliveryOverlayBoxes(document);
+  assert.ok(geometry.textBox.height < 0.24);
+  assert.ok(geometry.maskBox.height < 0.3);
+  assert.ok(geometry.maskBox.height > geometry.textBox.height);
+});
+
+test('legacy no-text documents also hide the text panel', () => {
+  const advanced = normalizeDeliveryAdvanced({ showText: false });
+  assert.equal(advanced.showText, false);
+  assert.equal(advanced.showMask, false);
 });

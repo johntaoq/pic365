@@ -115,11 +115,19 @@ test('P1 outputs support adoption, locking, consistency and archiving', () => {
 test('P1 tasks survive state transitions and can be retried or cancelled', () => {
   const { user, project } = createProjectFixture();
   const [first, second] = p1Db.createEcommerceGenerationTasks(user.id, project.id, [
-    { slotId: 'main-square', quality: 'medium', projectUpdatedAt: project.updatedAt },
+    {
+      slotId: 'main-square',
+      quality: 'medium',
+      projectUpdatedAt: project.updatedAt,
+      targetArea: 'bottom-right',
+      referenceInputs: [{ assetId: 'support-1', role: 'detail' }]
+    },
     { slotId: 'white-background', quality: 'low', projectUpdatedAt: project.updatedAt }
   ]);
 
   assert.equal(first.status, 'queued');
+  assert.equal(first.request.targetArea, 'bottom-right');
+  assert.deepEqual(first.request.referenceInputs, [{ assetId: 'support-1', role: 'detail' }]);
   assert.throws(
     () => p1Db.createEcommerceGenerationTasks(user.id, project.id, [{ slotId: 'main-square' }]),
     (error) => error?.code === 'TASK_ALREADY_ACTIVE'
@@ -131,7 +139,10 @@ test('P1 tasks survive state transitions and can be retried or cancelled', () =>
   assert.equal(retried?.status, 'queued');
   assert.equal(retried?.request.projectUpdatedAt, updatedProject.updatedAt);
   assert.equal(p1Db.claimEcommerceGenerationTask(user.id, first.id)?.attempts, 2);
-  assert.equal(p1Db.requestEcommerceGenerationTaskCancellation(user.id, first.id)?.cancelRequested, true);
+  const cancelling = p1Db.requestEcommerceGenerationTaskCancellation(user.id, first.id);
+  assert.equal(cancelling?.cancelRequested, true);
+  assert.equal(cancelling?.status, 'cancelling');
+  assert.equal(p1Db.getActiveEcommerceGenerationTask(user.id, project.id, 'main-square')?.id, first.id);
   assert.equal(p1Db.completeEcommerceGenerationTask(user.id, first.id, { status: 'cancelled', errorCode: 'GENERATION_CANCELLED' })?.status, 'cancelled');
 
   const cancelledQueued = p1Db.requestEcommerceGenerationTaskCancellation(user.id, second.id);
@@ -176,4 +187,32 @@ test('P1 asset purpose and ordering are persisted', () => {
   assert.equal(assets[0].purpose, 'lighting');
   assert.equal(localDb.setEcommerceProjectMasterAsset(user.id, project.id, packaging.id), null);
   assert.equal(localDb.setEcommerceProjectMasterAsset(user.id, project.id, first.id)?.masterAssetId, first.id);
+});
+
+test('product assets automatically repair and advance the project master asset', () => {
+  const { user, project } = createProjectFixture();
+  const first = localDb.createEcommerceProjectAsset(user.id, {
+    projectId: project.id,
+    assetType: 'product',
+    fileName: 'front.png',
+    mimeType: 'image/png',
+    fileSize: 10,
+    storagePath: 'assets/front.png',
+    sortOrder: 1
+  });
+  const second = localDb.createEcommerceProjectAsset(user.id, {
+    projectId: project.id,
+    assetType: 'product',
+    fileName: 'side.png',
+    mimeType: 'image/png',
+    fileSize: 10,
+    storagePath: 'assets/side.png',
+    sortOrder: 2
+  });
+
+  assert.equal(localDb.getEcommerceProject(user.id, project.id).masterAssetId, first.id);
+  localDb.getDb().prepare('UPDATE ecommerce_projects SET master_asset_id = NULL WHERE id = ?').run(project.id);
+  assert.equal(localDb.ensureEcommerceProjectMasterAsset(user.id, project.id)?.masterAssetId, first.id);
+  localDb.deleteEcommerceProjectAsset(user.id, first.id);
+  assert.equal(localDb.getEcommerceProject(user.id, project.id).masterAssetId, second.id);
 });

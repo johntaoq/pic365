@@ -6,8 +6,19 @@ export function getDeliveryWorkflowStep(documents, { dirty = false } = {}) {
   const included = (Array.isArray(documents) ? documents : []).filter((document) => document.includeInExport);
   if (!included.length) return 0;
   if (included.some((document) => !document.validation?.checkedAt)) return 1;
-  if (dirty || included.some((document) => !document.validation?.ready)) return 2;
+  if (dirty) return 2;
   return 3;
+}
+
+export function getDeliveryExportAvailability(documents, { dirty = false } = {}) {
+  const included = (Array.isArray(documents) ? documents : []).filter((document) => document.includeInExport);
+  const missingSourceCount = included.filter((document) => !document.sourceGenerationId).length;
+  return {
+    canExport: included.length > 0 && missingSourceCount === 0 && !dirty,
+    includedCount: included.length,
+    missingSourceCount,
+    dirty: Boolean(dirty)
+  };
 }
 
 export const DELIVERY_THEMES = [
@@ -221,6 +232,7 @@ export function createDeliveryDocumentDraft({ project, slot, output, language = 
     content: getDefaultDeliveryContent(project, slot, language),
     advanced: {
       showText: defaults.showText,
+      showMask: defaults.showText,
       showSafeArea: false,
       overlayOpacity: 0.9,
       maskOpacity: 0.9,
@@ -288,6 +300,7 @@ export function normalizeDeliveryAdvanced(value) {
   const maskOpacity = clampNumber(input.maskOpacity ?? input.overlayOpacity, 0.05, 1, 0.9);
   return {
     showText: input.showText !== false,
+    showMask: input.showMask == null ? input.showText !== false : input.showMask !== false,
     showSafeArea: Boolean(input.showSafeArea),
     overlayOpacity: maskOpacity,
     maskOpacity,
@@ -300,6 +313,31 @@ export function normalizeDeliveryAdvanced(value) {
   };
 }
 
+function estimateDeliveryTextHeight(content, panelWidth, targetWidth, targetHeight) {
+  const normalized = normalizeDeliveryContent(content);
+  const base = Math.min(targetWidth, targetHeight);
+  const widthPixels = Math.max(1, panelWidth * targetWidth);
+  const headlineSize = Math.max(30, base * 0.055);
+  const subtitleSize = Math.max(16, base * 0.027);
+  const bulletSize = Math.max(15, base * 0.025);
+  const lineCount = (value, fontSize, maximum) => {
+    if (!value) return 0;
+    const unitsPerLine = Math.max(6, widthPixels / Math.max(1, fontSize * 0.82));
+    return Math.max(1, Math.min(maximum, Math.ceil(String(value).length / unitsPerLine)));
+  };
+  const headlineLines = lineCount(normalized.headline, headlineSize, 2);
+  const subtitleLines = lineCount(normalized.subtitle, subtitleSize, 2);
+  const bulletLines = normalized.bullets.slice(0, 4).reduce((total, item) => total + lineCount(item, bulletSize, 1), 0);
+  let pixels = 0;
+  if (normalized.badge) pixels += bulletSize * 2.05 + subtitleSize * 0.45;
+  pixels += headlineLines * headlineSize * 1.16;
+  if (subtitleLines) pixels += subtitleSize * 0.65 + subtitleLines * subtitleSize * 1.32;
+  pixels += bulletLines * bulletSize * 1.52;
+  if (normalized.price) pixels += headlineSize * 1.05;
+  if (!pixels) pixels = base * 0.08;
+  return Math.max(0.07, Math.min(0.42, pixels / targetHeight));
+}
+
 export function resolveDeliveryOverlayBoxes(document) {
   const advanced = normalizeDeliveryAdvanced(document?.advanced);
   const targetWidth = Math.max(1, Number(document?.targetWidth) || 1024);
@@ -308,7 +346,9 @@ export function resolveDeliveryOverlayBoxes(document) {
   const safeWidth = 1 - padding * 2;
   const safeHeight = 1 - padding * 2;
   const panelWidth = Math.min(safeWidth, advanced.contentWidth);
-  const panelHeight = Math.min(safeHeight * 0.58, Math.max(210 / targetHeight, 0.31));
+  const insetPixels = Math.min(targetWidth, targetHeight) * 0.027;
+  const defaultTextHeight = estimateDeliveryTextHeight(document?.content, panelWidth, targetWidth, targetHeight);
+  const panelHeight = Math.min(safeHeight * 0.58, Math.max(0.14, defaultTextHeight + insetPixels * 2 / targetHeight));
   let maskBox;
   switch (document?.layoutId) {
     case 'top-left':
@@ -328,7 +368,6 @@ export function resolveDeliveryOverlayBoxes(document) {
       break;
   }
   maskBox = normalizeDeliveryBox(maskBox, 0.18, 0.1);
-  const insetPixels = Math.min(targetWidth, targetHeight) * 0.035;
   const insetX = Math.min(maskBox.width * 0.16, insetPixels / targetWidth);
   const insetY = Math.min(maskBox.height * 0.2, insetPixels / targetHeight);
   const textBox = normalizeDeliveryBox({
@@ -444,7 +483,7 @@ export function validateDeliveryDocument({ document, project, slot, diagnostics 
     ));
   }
   if (project.platformId === 'amazon' && slot.id === 'compliant-main') {
-    const cleanMain = !advanced.showText && !content.logoAssetId && !content.price && !content.badge;
+    const cleanMain = !advanced.showText && !advanced.showMask && !content.logoAssetId && !content.price && !content.badge;
     rules.push(rule(
       'amazon-main-overlays', 'error', cleanMain ? 'passed' : 'failed',
       'Amazon main-image overlays', 'Amazon 主图叠加元素',

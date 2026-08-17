@@ -1,4 +1,5 @@
-import { getAuthContext } from '../_lib/supabase.js';
+import { authenticateRequest } from '../_lib/local-auth.js';
+import { getAdminBusinessMetrics, listAdminBusinessDailyMetrics } from '../_lib/local-db.js';
 import { getGa4Traffic, isGa4Configured } from '../_lib/ga4.js';
 
 function json(res, status, payload) {
@@ -165,7 +166,7 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  const auth = await getAuthContext(req);
+  const auth = authenticateRequest(req);
   if (auth.error) {
     return json(res, auth.status || 401, { ok: false, error: auth.error });
   }
@@ -180,38 +181,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [businessResult, legacyBusinessResult, dailyBusinessResult, trafficResult] = await Promise.allSettled([
-      auth.client.rpc('get_admin_dashboard_metrics_v2', {
-        p_start_at: range.startAt,
-        p_end_at: range.endAt
-      }),
-      auth.client.rpc('get_admin_dashboard_metrics', { p_start_at: range.startAt }),
-      auth.client.rpc('get_admin_dashboard_daily_metrics', {
-        p_start_date: range.startDate,
-        p_end_date: range.endDate
-      }),
-      getGa4Traffic({ startDate: range.startDate, endDate: range.endDate })
-    ]);
-
-    const activeBusinessResult = businessResult.status === 'fulfilled' && !businessResult.value?.error
-      ? businessResult
-      : legacyBusinessResult;
-
-    if (activeBusinessResult.status === 'rejected' || activeBusinessResult.value?.error) {
-      throw activeBusinessResult.reason || activeBusinessResult.value?.error;
-    }
-
-    const businessRow = Array.isArray(activeBusinessResult.value.data)
-      ? activeBusinessResult.value.data[0]
-      : activeBusinessResult.value.data;
-
-    const businessDaily = dailyBusinessResult.status === 'fulfilled' && !dailyBusinessResult.value?.error
-      ? dailyBusinessResult.value.data || []
-      : [];
-
-    const traffic = trafficResult.status === 'fulfilled'
-      ? trafficResult.value
-      : {
+    const businessRow = getAdminBusinessMetrics({ startAt: range.startAt, endAt: range.endAt });
+    const businessDaily = listAdminBusinessDailyMetrics({ startAt: range.startAt, endAt: range.endAt });
+    let traffic;
+    try {
+      traffic = await getGa4Traffic({ startDate: range.startDate, endDate: range.endDate });
+    } catch {
+      traffic = {
           configured: isGa4Configured(),
           error: 'GA4_REPORT_FAILED',
           totals: null,
@@ -220,6 +196,7 @@ export default async function handler(req, res) {
           channels: [],
           countries: []
         };
+    }
 
     return json(res, 200, {
       ok: true,
@@ -236,6 +213,6 @@ export default async function handler(req, res) {
     console.warn('Failed to load admin metrics', {
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-    return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
+    return json(res, 500, { ok: false, error: 'ADMIN_METRICS_LOAD_FAILED' });
   }
 }

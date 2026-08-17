@@ -1,12 +1,14 @@
 import {
   createSession,
   deleteSession,
+  getUserById,
   getUserBySessionToken,
   getUserProfile,
   normalizeEmail
 } from './local-db.js';
 
 export const SESSION_COOKIE = 'member_session';
+export const INTERNAL_AUTH_CONTEXT = Symbol.for('pic365.internal-auth-context');
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 
 function parseCookies(req) {
@@ -49,6 +51,12 @@ export function clearSessionCookie(req, res) {
 }
 
 export function authenticateRequest(req, { allowAnonymous = false } = {}) {
+  const internalUserId = String(req?.[INTERNAL_AUTH_CONTEXT]?.userId || '').trim();
+  if (internalUserId) {
+    const user = getUserById(internalUserId);
+    if (!user) return { error: 'AUTH_REQUIRED', status: 401 };
+    return { user, profile: getUserProfile(user.id), token: null, internal: true };
+  }
   const token = getSessionToken(req);
   const user = getUserBySessionToken(token);
   if (!user) {

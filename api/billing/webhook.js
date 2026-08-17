@@ -1,62 +1,43 @@
-import { getSupabaseAdminClient, isSupabaseServerConfigured } from '../_lib/supabase.js';
-import {
-  completeCreditPackOrder,
-  getStripeClient,
-  isStripeConfigured,
-  readRawBody
-} from '../_lib/billing.js';
+import { createHash } from 'node:crypto';
 
-export const config = {
-  api: {
-    bodyParser: false
-  }
-};
+import { completeLocalPaymentOrder } from '../_lib/local-db.js';
+import { getStripeClient, isStripeConfigured, readRawBody } from '../_lib/billing.js';
+
+export const config = { api: { bodyParser: false } };
 
 function json(res, status, payload) {
   res.status(status).json(payload);
 }
-
-async function handleCheckoutCompleted(client, session) {
-  const productType = session.metadata?.productType;
-  if (productType === 'credit_pack') {
-    await completeCreditPackOrder(client, session);
-  }
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
-
-  if (!isSupabaseServerConfigured() || !isStripeConfigured() || !process.env.STRIPE_WEBHOOK_SECRET) {
-    return json(res, 500, { ok: false, error: 'BILLING_NOT_CONFIGURED' });
+  if (!isStripeConfigured() || !process.env.STRIPE_WEBHOOK_SECRET) {
+    return json(res, 503, { ok: false, error: 'BILLING_NOT_CONFIGURED' });
   }
-
-  const stripe = getStripeClient();
-  const client = getSupabaseAdminClient();
-  const signature = req.headers['stripe-signature'];
+  const rawBody = await readRawBody(req);
   let event;
-
   try {
-    const rawBody = await readRawBody(req);
-    event = stripe.webhooks.constructEvent(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (error) {
-    return json(res, 400, {
-      ok: false,
-      error: 'INVALID_WEBHOOK_SIGNATURE'
-    });
+    event = getStripeClient().webhooks.constructEvent(rawBody, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
+  } catch {
+    return json(res, 400, { ok: false, error: 'INVALID_WEBHOOK_SIGNATURE' });
   }
-
   try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutCompleted(client, event.data.object);
-        break;
-      default:
-        break;
+    if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) {
+      const session = event.data.object;
+      if (session.payment_status === 'paid' || event.type === 'checkout.session.async_payment_succeeded') {
+        completeLocalPaymentOrder({
+          provider: 'stripe',
+          providerOrderId: session.id,
+          eventId: event.id,
+          payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+          amountCents: session.amount_total ?? null,
+          currency: session.currency || '',
+          metadata: { paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : '' }
+        });
+      }
     }
-
     return json(res, 200, { ok: true, received: true });
   } catch (error) {
     console.warn('Failed to process Stripe webhook', {

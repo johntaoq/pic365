@@ -1,4 +1,10 @@
-import { getEcommerceProject, getGeneration } from '../_lib/local-db.js';
+import {
+  getEcommerceProject,
+  getEcommerceProjectAsset,
+  getGeneration,
+  getImageProviderConfig,
+  setEcommerceProjectImageProvider
+} from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
 import {
   createEcommerceGenerationTasks,
@@ -9,6 +15,7 @@ import {
 } from '../_lib/ecommerce-p1-db.js';
 import { applyRateLimitHeaders, checkRateLimit } from '../_lib/rate-limit.js';
 import { readJsonBody } from '../_lib/request.js';
+import { startEcommerceGenerationWorker } from '../../server/ecommerce-generation-worker.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -18,6 +25,9 @@ function cleanText(value, maxLength = 120) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
+const REFINEMENT_AREAS = new Set(['auto', 'subject', 'background', 'top-left', 'top-right', 'bottom-left', 'bottom-right']);
+const REFINEMENT_ROLES = new Set(['detail', 'composition', 'lighting', 'scene']);
+
 export default async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) {
     res.setHeader('Allow', 'GET, POST');
@@ -26,6 +36,7 @@ export default async function handler(req, res) {
 
   const auth = authenticateRequest(req);
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
+  startEcommerceGenerationWorker();
 
   if (req.method === 'GET') {
     const projectId = cleanText(req.query?.projectId, 80);
@@ -53,8 +64,11 @@ export default async function handler(req, res) {
   }
 
   const projectId = cleanText(body.projectId, 80);
-  const project = getEcommerceProject(auth.user.id, projectId);
+  let project = getEcommerceProject(auth.user.id, projectId);
   if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+  const requestedProviderId = cleanText(body.providerId, 80);
+  const providerConfig = getImageProviderConfig(requestedProviderId || project.imageProviderId, { includeSecret: false });
+  if (!providerConfig) return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
   const requests = Array.isArray(body.requests)
     ? body.requests
     : (Array.isArray(body.slotIds) ? body.slotIds.map((slotId) => ({ slotId })) : []);
@@ -83,18 +97,50 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, error: 'INVALID_BASE_VERSION' });
       }
     }
+    if (request.referenceInputs != null && !Array.isArray(request.referenceInputs)) {
+      return json(res, 400, { ok: false, error: 'INVALID_REFINEMENT_ASSETS' });
+    }
+    if ((request.referenceInputs || []).length > 4) {
+      return json(res, 400, { ok: false, error: 'INVALID_REFINEMENT_ASSETS' });
+    }
+    const referenceInputs = [];
+    const seenAssets = new Set();
+    for (const input of request.referenceInputs || []) {
+      const assetId = cleanText(input?.assetId, 80);
+      if (!assetId || seenAssets.has(assetId)) continue;
+      const asset = getEcommerceProjectAsset(auth.user.id, assetId);
+      if (!asset || asset.projectId !== projectId) {
+        return json(res, 400, { ok: false, error: 'INVALID_REFINEMENT_ASSET' });
+      }
+      seenAssets.add(assetId);
+      referenceInputs.push({
+        assetId,
+        role: REFINEMENT_ROLES.has(input?.role) ? input.role : 'detail'
+      });
+    }
+    const targetArea = REFINEMENT_AREAS.has(request.targetArea) ? request.targetArea : 'auto';
     normalized.push({
       id: cleanText(request.id, 120),
       slotId,
       quality: request.quality === 'low' ? 'low' : 'medium',
       adjustment: cleanText(request.adjustment, 1200),
       baseGenerationId,
-      projectUpdatedAt: project.updatedAt
+      targetArea,
+      referenceInputs
     });
   }
 
+  if (project.imageProviderId !== providerConfig.id) {
+    project = setEcommerceProjectImageProvider(auth.user.id, projectId, providerConfig.id);
+    if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+  }
+  const taskRequests = normalized.map((request) => ({
+    ...request,
+    projectUpdatedAt: project.updatedAt
+  }));
+
   try {
-    const tasks = createEcommerceGenerationTasks(auth.user.id, projectId, normalized);
+    const tasks = createEcommerceGenerationTasks(auth.user.id, projectId, taskRequests);
     return json(res, 201, { ok: true, tasks });
   } catch (error) {
     if (error?.code === 'TASK_ALREADY_ACTIVE') {

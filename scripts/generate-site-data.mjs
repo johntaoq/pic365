@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { galleryThumbnailUrl } from '../shared/image-thumbnails.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const docsDir = join(root, 'docs');
 const outFile = join(root, 'data', 'cases.json');
+const indexFile = join(root, 'data', 'cases-index.json');
 const styleLibraryFile = join(root, 'data', 'style-library.json');
 const styleLibrary = JSON.parse(readFileSync(styleLibraryFile, 'utf8'));
 
@@ -153,6 +155,7 @@ function parseCases() {
         id,
         title,
         image,
+        thumbnail: galleryThumbnailUrl(image),
         imageAlt: stripMarkdown(imageMatch?.[1] || title),
         sourceLabel: source.label,
         sourceUrl: source.url,
@@ -186,4 +189,10 @@ const payload = {
 
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, `${JSON.stringify(payload, null, 2)}\n`);
+const indexPayload = {
+  ...payload,
+  cases: cases.map(({ prompt, promptPreview, githubUrl, ...caseIndex }) => caseIndex)
+};
+writeFileSync(indexFile, `${JSON.stringify(indexPayload)}\n`);
 console.log(`Generated ${cases.length} cases at ${outFile}`);
+console.log(`Generated lightweight case index at ${indexFile}`);

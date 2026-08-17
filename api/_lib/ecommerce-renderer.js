@@ -18,34 +18,50 @@ function escapeXml(value) {
 }
 
 function wrapText(value, maxUnits, maxLines = 3) {
-  const text = String(value || '').trim();
+  const text = String(value || '').replace(/\r\n?/g, '\n').trim();
   if (!text) return [];
   const lines = [];
-  let current = '';
-  let units = 0;
   const unitFor = (character) => /[\u0000-\u00ff]/.test(character) ? 0.58 : 1;
-  for (const character of text) {
-    const next = unitFor(character);
-    if (current && units + next > maxUnits) {
-      lines.push(current.trim());
-      current = character;
-      units = next;
-      if (lines.length >= maxLines) break;
-    } else {
-      current += character;
-      units += next;
+  const paragraphs = text.split('\n');
+  let truncated = false;
+  for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex += 1) {
+    const paragraph = paragraphs[paragraphIndex];
+    if (!paragraph.trim()) {
+      if (lines.length < maxLines) lines.push('');
+      else truncated = true;
+      continue;
     }
+    let current = '';
+    let units = 0;
+    for (const character of paragraph) {
+      const next = unitFor(character);
+      if (current && units + next > maxUnits) {
+        lines.push(current.trimEnd());
+        current = character;
+        units = next;
+        if (lines.length >= maxLines) {
+          truncated = true;
+          break;
+        }
+      } else {
+        current += character;
+        units += next;
+      }
+    }
+    if (lines.length >= maxLines) break;
+    if (current) lines.push(current.trimEnd());
+    if (lines.length >= maxLines && paragraphIndex < paragraphs.length - 1) truncated = true;
+    if (lines.length >= maxLines) break;
   }
-  if (lines.length < maxLines && current.trim()) lines.push(current.trim());
-  if (lines.length === maxLines && text.length > lines.join('').length) {
+  if (truncated && lines.length) {
     lines[maxLines - 1] = `${lines[maxLines - 1].replace(/[.…]+$/, '')}…`;
   }
-  return lines;
+  return lines.slice(0, maxLines);
 }
 
 function textBlock(lines, { x, y, fontSize, lineHeight, color, weight = 600, anchor = 'start', maxWidth }) {
   return lines.map((line, index) => (
-    `<text x="${x}" y="${y + index * lineHeight}" fill="${color}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${fontSize}" font-weight="${weight}" text-anchor="${anchor}"${maxWidth ? ` textLength="${Math.min(maxWidth, Math.max(1, line.length) * fontSize)}" lengthAdjust="spacingAndGlyphs"` : ''}>${escapeXml(line)}</text>`
+    `<text x="${x}" y="${y + index * lineHeight}" fill="${color}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${fontSize}" font-weight="${weight}" text-anchor="${anchor}" xml:space="preserve"${maxWidth ? ` textLength="${Math.min(maxWidth, Math.max(1, line.length) * fontSize)}" lengthAdjust="spacingAndGlyphs"` : ''}>${escapeXml(line)}</text>`
   )).join('');
 }
 
@@ -59,7 +75,7 @@ function pixelBox(box, width, height) {
 }
 
 function generalPanelSvg(document, content, advanced, theme) {
-  if (!advanced.showText) return '';
+  if (!advanced.showText && !advanced.showMask) return '';
   const geometry = resolveDeliveryOverlayBoxes(document);
   const panel = pixelBox(geometry.maskBox, document.targetWidth, document.targetHeight);
   const text = pixelBox(geometry.textBox, document.targetWidth, document.targetHeight);
@@ -91,7 +107,10 @@ function generalPanelSvg(document, content, advanced, theme) {
   const { headlineSize, subtitleSize, bulletSize, headlineLines, subtitleLines, bullets } = metrics;
   const badgeWidth = content.badge ? Math.min(text.width, Math.max(70, content.badge.length * bulletSize * 0.9 + bulletSize * 1.8)) : 0;
   let cursorY = text.y + headlineSize;
-  let svg = `<rect x="${panel.x}" y="${panel.y}" width="${panel.width}" height="${panel.height}" rx="${Math.round(Math.min(panel.width, panel.height) * 0.08)}" fill="${theme.panel}" fill-opacity="${geometry.maskOpacity}" stroke="${theme.line}" stroke-width="2"/>`;
+  let svg = advanced.showMask
+    ? `<rect x="${panel.x}" y="${panel.y}" width="${panel.width}" height="${panel.height}" rx="${Math.round(Math.min(panel.width, panel.height) * 0.08)}" fill="${theme.panel}" fill-opacity="${geometry.maskOpacity}" stroke="${theme.line}" stroke-width="2"/>`
+    : '';
+  if (!advanced.showText) return svg;
   svg += `<defs><clipPath id="delivery-text-box"><rect x="${text.x}" y="${text.y}" width="${text.width}" height="${text.height}"/></clipPath></defs><g opacity="${geometry.textOpacity}" clip-path="url(#delivery-text-box)">`;
   if (content.badge) {
     const badgeX = centered ? text.x + (text.width - badgeWidth) / 2 : text.x;
@@ -169,26 +188,30 @@ function comparisonSvg(document, content, theme) {
   const width = document.targetWidth;
   const height = document.targetHeight;
   const margin = Math.round(Math.min(width, height) * 0.055);
-  const gap = Math.round(margin * 0.45);
-  const panelWidth = (width - margin * 2 - gap) / 2;
+  const halfWidth = width / 2;
+  const innerGap = Math.round(margin * 0.28);
+  const panelWidth = halfWidth - margin - innerGap;
   const panelHeight = Math.round(height * 0.31);
   const y = height - margin - panelHeight;
   const titleSize = Math.max(22, Math.round(Math.min(width, height) * 0.032));
   const itemSize = Math.max(14, Math.round(titleSize * 0.55));
   const columns = [
-    { x: margin, title: content.comparison.leftTitle, items: content.comparison.leftItems, accent: theme.accent },
-    { x: margin + panelWidth + gap, title: content.comparison.rightTitle, items: content.comparison.rightItems, accent: theme.muted }
+    { id: 'left', x: margin, title: content.comparison.leftTitle, items: content.comparison.leftItems, accent: theme.accent },
+    { id: 'right', x: halfWidth + innerGap, title: content.comparison.rightTitle, items: content.comparison.rightItems, accent: theme.muted }
   ];
-  return columns.map((column) => {
+  const clips = `<defs><clipPath id="comparison-left-clip"><rect x="0" y="0" width="${halfWidth}" height="${height}"/></clipPath><clipPath id="comparison-right-clip"><rect x="${halfWidth}" y="0" width="${halfWidth}" height="${height}"/></clipPath></defs>`;
+  const divider = `<line x1="${halfWidth}" y1="${margin * 0.45}" x2="${halfWidth}" y2="${height - margin * 0.45}" stroke="${theme.accent}" stroke-opacity="0.72" stroke-width="3"/>`;
+  const panels = columns.map((column) => {
     let svg = `<rect x="${column.x}" y="${y}" width="${panelWidth}" height="${panelHeight}" rx="${margin * 0.4}" fill="${theme.panel}" fill-opacity="0.94" stroke="${column.accent}" stroke-width="3"/>`;
-    svg += `<text x="${column.x + margin * 0.55}" y="${y + margin * 0.65 + titleSize}" fill="${theme.foreground}" font-family="Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif" font-size="${titleSize}" font-weight="850">${escapeXml(column.title)}</text>`;
+    svg += textBlock(wrapText(column.title, 16, 2), { x: column.x + margin * 0.55, y: y + margin * 0.65 + titleSize, fontSize: titleSize, lineHeight: titleSize * 1.15, color: theme.foreground, weight: 850 });
     column.items.slice(0, 4).forEach((item, index) => {
-      const itemY = y + margin * 0.75 + titleSize * 2.1 + index * itemSize * 1.65;
+      const itemY = y + margin * 0.75 + titleSize * 2.75 + index * itemSize * 1.65;
       svg += `<circle cx="${column.x + margin * 0.65}" cy="${itemY - itemSize * 0.2}" r="${itemSize * 0.2}" fill="${column.accent}"/>`;
-      svg += textBlock(wrapText(item, 26, 1), { x: column.x + margin * 0.95, y: itemY, fontSize: itemSize, lineHeight: itemSize * 1.4, color: theme.foreground, weight: 650 });
+      svg += textBlock(wrapText(item, 18, 1), { x: column.x + margin * 0.95, y: itemY, fontSize: itemSize, lineHeight: itemSize * 1.4, color: theme.foreground, weight: 650 });
     });
-    return svg;
+    return `<g clip-path="url(#comparison-${column.id}-clip)">${svg}</g>`;
   }).join('');
+  return `${clips}${divider}${panels}`;
 }
 
 function sequenceSvg(document, items, theme) {

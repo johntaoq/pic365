@@ -1,15 +1,39 @@
+import { createHash } from 'node:crypto';
 import {
   completeCreditReservation,
   createGeneration,
+  getImageProviderConfig,
+  getImagePromotionConfig,
   getUserProfile,
+  hasGuestGenerationUsage,
+  recordGuestGenerationUsage,
+  recordGenerationFailureAlert,
   releaseCreditReservation,
   reserveCredit,
   updateGeneration
 } from './_lib/local-db.js';
 import { authenticateRequest } from './_lib/local-auth.js';
+import { registerFreeGenerationTask, unregisterFreeGenerationTask } from './_lib/free-generation-tasks.js';
 import { readJsonBody } from './_lib/request.js';
-import { generateImage as generateProviderImage, isContentModerationError, isProviderConfigured } from './_lib/provider.js';
-import { persistImage } from './_lib/storage.js';
+import {
+  editImage,
+  classifyImageProviderError,
+  generateImage as generateProviderImage,
+  isProviderConfigured
+} from './_lib/provider.js';
+import {
+  buildReferencePrompt,
+  loadReferenceImageInputs,
+  normalizeReferenceRequests
+} from './_lib/reference-images.js';
+import { deleteStoredFile, persistImage } from './_lib/storage.js';
+import {
+  normalizeImageCount,
+  normalizeImageQuality,
+  resolveProviderImageQuality,
+  validateImageSizeForModel
+} from '../shared/image-generation.js';
+import { applyImagePromotion, getImageGenerationPricing } from '../shared/image-pricing.js';
 
 const MAX_PROMPT_LENGTH = 6000;
 const GUEST_GENERATION_COOKIE = 'gpt_image_guest_generation';
@@ -31,7 +55,20 @@ function readCookies(req) {
 }
 
 function hasUsedGuestGeneration(req) {
-  return readCookies(req)[GUEST_GENERATION_COOKIE] === '1';
+  return readCookies(req)[GUEST_GENERATION_COOKIE] === '1' || hasGuestGenerationUsage(guestFingerprint(req));
+}
+
+function guestFingerprint(req) {
+  const realIp = String(req.headers?.['x-real-ip'] || '').trim();
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .at(-1);
+  const address = realIp || forwarded || req.socket?.remoteAddress || 'unknown';
+  const userAgent = String(req.headers?.['user-agent'] || '').slice(0, 300);
+  const secret = String(process.env.GUEST_USAGE_SECRET || process.env.SESSION_SECRET || 'pic365-guest-usage');
+  return createHash('sha256').update(`${secret}\n${address}\n${userAgent}`).digest('hex');
 }
 
 function markGuestGenerationUsed(req, res) {
@@ -41,10 +78,118 @@ function markGuestGenerationUsed(req, res) {
     'Set-Cookie',
     `${GUEST_GENERATION_COOKIE}=1; Path=/; Max-Age=${GUEST_GENERATION_MAX_AGE}; HttpOnly; SameSite=Lax${secureFlag}`
   );
+  recordGuestGenerationUsage(guestFingerprint(req));
 }
 
 function hasFullWorkspaceAccess(profile) {
   return Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
+}
+
+function generationErrorCode(error) {
+  return classifyImageProviderError(error);
+}
+
+function generationErrorStatus(errorCode) {
+  if (errorCode === 'GENERATION_CANCELLED') return 409;
+  if (errorCode === 'CONTENT_MODERATION_BLOCKED') return 422;
+  if (['UPSTREAM_BUSY', 'IMAGE_PROVIDER_UNAVAILABLE', 'IMAGE_PROVIDER_TIMEOUT'].includes(errorCode)) return 503;
+  if (errorCode === 'IMAGE_PROVIDER_AUTH_FAILED') return 502;
+  if (errorCode === 'IMAGE_PROVIDER_BALANCE_ERROR') return 402;
+  return 502;
+}
+
+function throwIfGenerationCancelled(signal) {
+  if (!signal?.aborted) return;
+  const error = new Error('GENERATION_CANCELLED');
+  error.name = 'AbortError';
+  error.code = 'GENERATION_CANCELLED';
+  throw error;
+}
+
+async function runGenerationJob({
+  job,
+  userId,
+  prompt,
+  providerPrompt,
+  referenceImages,
+  size,
+  quality,
+  providerConfig,
+  signal
+}) {
+  try {
+    throwIfGenerationCancelled(signal);
+    const providerResult = referenceImages.length
+      ? await editImage({
+          prompt: providerPrompt,
+          images: referenceImages,
+          size,
+          quality,
+          providerConfig,
+          signal
+        })
+      : await generateProviderImage({ prompt: providerPrompt, size, quality, providerConfig, signal });
+    throwIfGenerationCancelled(signal);
+    const storedImage = await persistImage({ userId, generationId: job.generationId, image: providerResult.image });
+    if (signal?.aborted) {
+      await deleteStoredFile(storedImage.storagePath).catch(() => undefined);
+      throwIfGenerationCancelled(signal);
+    }
+    updateGeneration(job.generationId, {
+      status: 'succeeded',
+      provider_request_id: providerResult.providerRequestId,
+      storage_path: storedImage.storagePath,
+      output_url: storedImage.url,
+      completed_at: new Date().toISOString()
+    });
+    completeCreditReservation(job.reservationId);
+    return {
+      ok: true,
+      generationId: job.generationId,
+      image: storedImage.url,
+      contentType: storedImage.contentType,
+      size,
+      quality,
+      cloudSaved: storedImage.backend === 'azure-blob',
+      storageBackend: storedImage.backend,
+      downloadAllowed: true,
+      creditsCharged: job.creditAmount,
+      prompt
+    };
+  } catch (error) {
+    const errorCode = signal?.aborted || error?.code === 'GENERATION_CANCELLED'
+      ? 'GENERATION_CANCELLED'
+      : generationErrorCode(error);
+    console.warn('Image generation job failed', {
+      generationId: job.generationId,
+      status: error?.status || null,
+      code: error?.code || null,
+      moderationBlocked: errorCode === 'CONTENT_MODERATION_BLOCKED',
+      message: String(error?.message || 'unknown').slice(0, 240)
+    });
+    updateGeneration(job.generationId, {
+      status: errorCode === 'GENERATION_CANCELLED' ? 'cancelled' : 'failed',
+      provider_request_id: error?.providerRequestId || null,
+      error_code: errorCode,
+      completed_at: new Date().toISOString()
+    });
+    releaseCreditReservation(job.reservationId, errorCode);
+    recordGenerationFailureAlert({
+      userId,
+      generationId: job.generationId,
+      providerName: providerConfig?.name || '',
+      providerModel: providerConfig?.model || '',
+      errorCode
+    });
+    return {
+      ok: false,
+      generationId: job.generationId,
+      error: errorCode,
+      providerName: providerConfig?.name || '',
+      providerModel: providerConfig?.model || '',
+      cause: error
+    };
+  }
 }
 
 export default async function handler(req, res) {
@@ -53,10 +198,15 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  if (!isProviderConfigured()) return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
-
   const auth = authenticateRequest(req, { allowAnonymous: true });
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
+
+  const requestController = new AbortController();
+  const abortRequest = () => requestController.abort();
+  req.once?.('aborted', abortRequest);
+  res.once?.('close', () => {
+    if (!res.writableEnded) abortRequest();
+  });
 
   if (req.method === 'GET') {
     return json(res, 200, {
@@ -71,41 +221,51 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req);
-  } catch {
-    return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
+    body = await readJsonBody(req, { maxBytes: 24 * 1024 * 1024 });
+  } catch (error) {
+    return json(res, error?.status || 400, { ok: false, error: error?.code || 'INVALID_PROMPT' });
   }
 
   const prompt = String(body.prompt || '').trim();
   if (!prompt || prompt.length > MAX_PROMPT_LENGTH) return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
 
   if (!auth.user || !auth.profile) {
+    const guestProviderConfig = getImageProviderConfig();
+    if (!guestProviderConfig || !isProviderConfigured(guestProviderConfig)) {
+      return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
+    }
     if (hasUsedGuestGeneration(req)) {
       return json(res, 402, { ok: false, error: 'GUEST_FREE_LIMIT_REACHED', guest: true, downloadAllowed: false });
     }
     try {
-      const providerResult = await generateProviderImage({ prompt, size: '1024x1024', quality: 'low' });
+      const providerResult = await generateProviderImage({ prompt, size: '1024x1024', quality: 'low', providerConfig: guestProviderConfig, signal: requestController.signal });
       markGuestGenerationUsed(req, res);
-      return json(res, 200, {
-        ok: true,
-        guest: true,
+      const guestImage = {
         generationId: null,
         image: providerResult.image,
         size: '1024x1024',
         quality: 'low',
         cloudSaved: false,
-        downloadAllowed: false
+        downloadAllowed: false,
+        creditsCharged: 0,
+        prompt
+      };
+      return json(res, 200, {
+        ok: true,
+        guest: true,
+        ...guestImage,
+        images: [guestImage]
       });
     } catch (error) {
-      const moderationBlocked = isContentModerationError(error);
+      const errorCode = generationErrorCode(error);
       console.warn('Guest image generation failed', {
         status: error?.status || null,
-        moderationBlocked,
+        moderationBlocked: errorCode === 'CONTENT_MODERATION_BLOCKED',
         message: String(error?.message || 'unknown').slice(0, 240)
       });
-      return json(res, moderationBlocked ? 422 : error?.status === 429 ? 503 : 502, {
+      return json(res, generationErrorStatus(errorCode), {
         ok: false,
-        error: moderationBlocked ? 'CONTENT_MODERATION_BLOCKED' : error?.status === 429 ? 'UPSTREAM_BUSY' : 'GENERATION_FAILED',
+        error: errorCode,
         guest: true,
         downloadAllowed: false
       });
@@ -114,79 +274,176 @@ export default async function handler(req, res) {
 
   if (!hasFullWorkspaceAccess(auth.profile)) return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
 
+  const providerConfig = getImageProviderConfig(String(body.providerId || '').trim());
+  if (!providerConfig || !isProviderConfigured(providerConfig)) {
+    return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
+  }
+  const size = String(body.size || '1024x1024').toLowerCase();
+  const sizeCheck = validateImageSizeForModel(size, providerConfig.model);
+  if (!sizeCheck.valid) return json(res, 400, { ok: false, error: 'INVALID_SIZE', reason: sizeCheck.error });
+  const requestedQuality = normalizeImageQuality(body.quality, 'low');
+  const quality = resolveProviderImageQuality(requestedQuality, 'low');
+  const count = normalizeImageCount(body.count);
+  const clientTaskId = String(body.clientTaskId || '').trim().slice(0, 160);
+  if (clientTaskId) {
+    if (!registerFreeGenerationTask(auth.user.id, clientTaskId, requestController)) {
+      return json(res, 409, { ok: false, error: 'TASK_ALREADY_ACTIVE' });
+    }
+    const unregisterTask = () => unregisterFreeGenerationTask(auth.user.id, clientTaskId, requestController);
+    res.once?.('finish', unregisterTask);
+    res.once?.('close', unregisterTask);
+  }
+  const pricing = applyImagePromotion(
+    getImageGenerationPricing({ size, quality: requestedQuality }, providerConfig.pricingConfig),
+    getImagePromotionConfig()
+  );
+  let references;
+  try {
+    references = normalizeReferenceRequests(body.references);
+  } catch (error) {
+    return json(res, 400, { ok: false, error: error?.code || 'INVALID_REFERENCE_IMAGES' });
+  }
+
+  let referenceImages = [];
+  try {
+    referenceImages = await loadReferenceImageInputs(auth.user.id, references, { model: providerConfig.model });
+  } catch (error) {
+    return json(res, error?.code === 'REFERENCE_IMAGE_NOT_FOUND' ? 404 : 400, {
+      ok: false,
+      error: error?.code || 'INVALID_REFERENCE_IMAGES'
+    });
+  }
+  const providerPrompt = buildReferencePrompt(prompt, references);
   const parsedCaseId = Number(body.caseId);
   const caseId = Number.isFinite(parsedCaseId) ? parsedCaseId : null;
-  const size = ['1024x1024', '1024x1536', '1536x1024'].includes(body.size) ? body.size : '1024x1024';
-  const quality = body.quality === 'medium' ? 'medium' : 'low';
-  let reservation;
-  try {
-    reservation = reserveCredit(auth.user.id, { caseId, prompt });
-  } catch (error) {
-    if (error?.code === 'CREDITS_REQUIRED') return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
-    console.warn('Failed to reserve local credit', { userId: auth.user.id, message: String(error?.message || 'unknown').slice(0, 240) });
-    return json(res, 500, { ok: false, error: 'GENERATION_FAILED' });
-  }
 
-  let generationId;
+  const reservations = [];
   try {
-    generationId = createGeneration({
+    for (let index = 0; index < count; index += 1) {
+      reservations.push(reserveCredit(auth.user.id, {
+        caseId,
+        prompt,
+        amount: pricing.credits,
+        metadata: {
+          size,
+          quality,
+          requestedQuality,
+          pricingBand: pricing.bandId,
+          pricingStrategy: pricing.pricingStrategy,
+          pricingVersion: pricing.pricingVersion,
+          providerId: providerConfig.id,
+          providerName: providerConfig.name,
+          model: providerConfig.model,
+          billedQuality: pricing.billedQuality,
+          estimatedCostRmb: pricing.estimatedCostRmb,
+          estimatedListCostRmb: pricing.estimatedListCostRmb,
+          retailRmb: pricing.retailRmb,
+          originalCredits: pricing.originalCredits,
+          chargedCredits: pricing.credits,
+          promotionName: pricing.promotion?.active ? pricing.promotion.name : '',
+          promotionPayPercent: pricing.promotion?.active ? pricing.promotion.payPercent : 100,
+          promotionUpdatedAt: pricing.promotion?.active ? pricing.promotion.updatedAt : null
+        }
+      }));
+    }
+  } catch (error) {
+    reservations.forEach((reservation) => releaseCreditReservation(reservation.reservationId, 'BATCH_RESERVATION_FAILED'));
+    if (error?.code === 'CREDITS_REQUIRED') {
+      return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED', user: getUserProfile(auth.user.id) });
+    }
+    console.warn('Failed to reserve batch credits', {
       userId: auth.user.id,
-      reservationId: reservation.reservationId,
-      caseId,
-      prompt,
-      model: process.env.AI_IMAGE_MODEL || 'gpt-image-2',
-      size,
-      quality,
-      provider: process.env.AI_PROVIDER || 'unikeyx'
-    });
-  } catch (error) {
-    releaseCreditReservation(reservation.reservationId, 'GENERATION_RECORD_FAILED');
-    console.warn('Failed to create local generation record', { userId: auth.user.id, message: String(error?.message || 'unknown').slice(0, 240) });
-    return json(res, 500, { ok: false, error: 'GENERATION_FAILED' });
-  }
-
-  try {
-    const providerResult = await generateProviderImage({ prompt, size, quality });
-    const storedImage = await persistImage({ userId: auth.user.id, generationId, image: providerResult.image });
-    updateGeneration(generationId, {
-      status: 'succeeded',
-      provider_request_id: providerResult.providerRequestId,
-      storage_path: storedImage.storagePath,
-      output_url: storedImage.url,
-      completed_at: new Date().toISOString()
-    });
-    completeCreditReservation(reservation.reservationId);
-    return json(res, 200, {
-      ok: true,
-      generationId,
-      image: storedImage.url,
-      size,
-      quality,
-      cloudSaved: storedImage.backend === 'azure-blob',
-      storageBackend: storedImage.backend,
-      downloadAllowed: true,
-      user: getUserProfile(auth.user.id)
-    });
-  } catch (error) {
-    const moderationBlocked = isContentModerationError(error);
-    console.warn('Image generation failed', {
-      status: error?.status || null,
-      code: error?.code || null,
-      moderationBlocked,
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-    const errorCode = moderationBlocked ? 'CONTENT_MODERATION_BLOCKED' : error?.status === 429 ? 'UPSTREAM_BUSY' : 'GENERATION_FAILED';
-    updateGeneration(generationId, {
+    return json(res, 500, { ok: false, error: 'GENERATION_FAILED', user: getUserProfile(auth.user.id) });
+  }
+
+  const jobs = [];
+  try {
+    for (const reservation of reservations) {
+      const generationId = createGeneration({
+        userId: auth.user.id,
+        reservationId: reservation.reservationId,
+        caseId,
+        prompt,
+        model: providerConfig.model,
+        size,
+        quality,
+        provider: providerConfig.name
+      });
+      jobs.push({ reservationId: reservation.reservationId, generationId, creditAmount: reservation.creditAmount });
+    }
+  } catch (error) {
+    jobs.forEach((job) => updateGeneration(job.generationId, {
       status: 'failed',
-      provider_request_id: error?.providerRequestId || null,
-      error_code: errorCode,
+      error_code: 'GENERATION_RECORD_FAILED',
       completed_at: new Date().toISOString()
+    }));
+    reservations.forEach((reservation) => releaseCreditReservation(reservation.reservationId, 'GENERATION_RECORD_FAILED'));
+    console.warn('Failed to create batch generation records', {
+      userId: auth.user.id,
+      message: String(error?.message || 'unknown').slice(0, 240)
     });
-    releaseCreditReservation(reservation.reservationId, errorCode);
-    return json(res, moderationBlocked ? 422 : error?.status === 429 ? 503 : 502, {
+    return json(res, 500, { ok: false, error: 'GENERATION_FAILED', user: getUserProfile(auth.user.id) });
+  }
+
+  const results = await Promise.all(jobs.map((job) => runGenerationJob({
+    job,
+    userId: auth.user.id,
+    prompt,
+    providerPrompt,
+    referenceImages,
+    size,
+    quality,
+    providerConfig,
+    signal: requestController.signal
+  })));
+  const images = results.filter((result) => result.ok).map(({ cause, ok, ...result }) => result);
+  const failures = results.filter((result) => !result.ok);
+  const user = getUserProfile(auth.user.id);
+
+  if (!images.length) {
+    const firstFailure = failures[0];
+    const errorCode = firstFailure?.error || 'GENERATION_FAILED';
+    return json(res, generationErrorStatus(errorCode), {
       ok: false,
       error: errorCode,
-      user: getUserProfile(auth.user.id)
+      providerName: firstFailure?.providerName || providerConfig.name,
+      providerModel: firstFailure?.providerModel || providerConfig.model,
+      user
     });
   }
+
+  const first = images[0];
+  const creditsCharged = images.reduce((total, image) => total + Number(image.creditsCharged || 0), 0);
+  return json(res, 200, {
+    ok: true,
+    ...first,
+    images,
+    requestedCount: count,
+    completedCount: images.length,
+    failedCount: failures.length,
+    partial: failures.length > 0,
+    errors: [...new Set(failures.map((failure) => failure.error))],
+    referencesUsed: references.length,
+    unitCredits: pricing.credits,
+    creditsCharged,
+    pricing: {
+      bandId: pricing.bandId,
+      pricingStrategy: pricing.pricingStrategy,
+      pricingVersion: pricing.pricingVersion,
+      providerId: providerConfig.id,
+      providerName: providerConfig.name,
+      model: providerConfig.model,
+      billedQuality: pricing.billedQuality,
+      retailRmb: pricing.retailRmb,
+      estimatedActualCostRmb: pricing.estimatedActualCostRmb,
+      estimatedListCostRmb: pricing.estimatedListCostRmb,
+      originalCredits: pricing.originalCredits,
+      credits: pricing.credits,
+      discountApplied: pricing.discountApplied,
+      promotion: pricing.promotion
+    },
+    user
+  });
 }

@@ -2,12 +2,16 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { startFreeGenerationWorker } from './free-generation-worker.js';
+import { startEcommerceGenerationWorker } from './ecommerce-generation-worker.js';
+import { startMediaProcessingWorker } from './media-processing-worker.js';
 
 const root = process.cwd();
 const distRoot = path.resolve(root, 'dist');
 const apiRoot = path.resolve(root, 'api');
 const host = process.env.HOST || '0.0.0.0';
 const port = Number(process.env.PORT || 5173);
+const apiHandlerCache = new Map();
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -32,7 +36,9 @@ function safeRoute(value) {
 async function readApiHandler(route) {
   const filePath = path.resolve(apiRoot, `${route}.js`);
   if (!filePath.startsWith(`${apiRoot}${path.sep}`) || !fs.existsSync(filePath)) return null;
-  const module = await import(`${pathToFileURL(filePath).href}?server=${Date.now()}`);
+  if (apiHandlerCache.has(filePath)) return apiHandlerCache.get(filePath);
+  const module = await import(pathToFileURL(filePath).href);
+  apiHandlerCache.set(filePath, module.default);
   return module.default;
 }
 
@@ -46,6 +52,9 @@ function createApiResponse(res) {
     setHeader(name, value) {
       res.setHeader(name, value);
       return response;
+    },
+    getHeader(name) {
+      return res.getHeader(name);
     },
     json(payload) {
       if (ended) return response;
@@ -64,6 +73,17 @@ function createApiResponse(res) {
       res.writeHead(statusCode, headers);
       return response;
     },
+    write(chunk) {
+      res.write(chunk);
+      return response;
+    },
+    stream(readable) {
+      if (ended) return response;
+      ended = true;
+      readable.on('error', () => res.destroy());
+      readable.pipe(res);
+      return response;
+    },
     redirect(statusOrUrl, maybeUrl) {
       const statusCode = typeof statusOrUrl === 'number' ? statusOrUrl : 302;
       const location = typeof statusOrUrl === 'number' ? maybeUrl : statusOrUrl;
@@ -71,6 +91,7 @@ function createApiResponse(res) {
       return response.end();
     }
   };
+  response.raw = res;
   return { response, isEnded: () => ended };
 }
 
@@ -106,8 +127,19 @@ function serveStatic(req, res, requestUrl) {
     res.end('Build output is missing. Run npm run build first.');
     return;
   }
+  const relativePath = path.relative(distRoot, resolvedPath).replace(/\\/g, '/');
+  const extension = path.extname(resolvedPath).toLowerCase();
+  const cacheControl = path.basename(resolvedPath) === 'index.html'
+    ? 'no-cache'
+    : relativePath.startsWith('assets/')
+      ? 'public, max-age=31536000, immutable'
+      : relativePath.startsWith('images/')
+        ? 'public, max-age=86400, stale-while-revalidate=604800'
+      : extension === '.json'
+        ? 'no-cache'
+        : 'public, max-age=3600';
   res.setHeader('Content-Type', contentTypes[path.extname(resolvedPath).toLowerCase()] || 'application/octet-stream');
-  res.setHeader('Cache-Control', path.basename(resolvedPath) === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable');
+  res.setHeader('Cache-Control', cacheControl);
   fs.createReadStream(resolvedPath).pipe(res);
 }
 
@@ -121,5 +153,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
+  startFreeGenerationWorker();
+  startEcommerceGenerationWorker();
+  startMediaProcessingWorker();
   console.log(`GPT-Image2 app listening on http://${host}:${port}`);
 });

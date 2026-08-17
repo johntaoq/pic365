@@ -227,7 +227,7 @@ export function createEcommerceGenerationTasks(userId, projectId, requests) {
     `);
     const findActive = db.prepare(`
       SELECT id FROM ecommerce_generation_tasks
-      WHERE user_id = ? AND project_id = ? AND slot_id = ? AND status IN ('queued', 'running')
+      WHERE user_id = ? AND project_id = ? AND slot_id = ? AND status IN ('queued', 'running', 'cancelling')
       LIMIT 1
     `);
     for (const request of requests || []) {
@@ -240,6 +240,11 @@ export function createEcommerceGenerationTasks(userId, projectId, requests) {
       const requestJson = {
         adjustment: String(request.adjustment || '').slice(0, 1200),
         baseGenerationId: String(request.baseGenerationId || '').slice(0, 80),
+        targetArea: String(request.targetArea || 'auto').slice(0, 40),
+        referenceInputs: (Array.isArray(request.referenceInputs) ? request.referenceInputs : []).slice(0, 4).map((input) => ({
+          assetId: String(input?.assetId || '').slice(0, 80),
+          role: String(input?.role || 'detail').slice(0, 40)
+        })).filter((input) => input.assetId),
         projectUpdatedAt: String(request.projectUpdatedAt || '').slice(0, 80)
       };
       insert.run(
@@ -280,7 +285,7 @@ export function getEcommerceGenerationTask(userId, taskId) {
 export function getActiveEcommerceGenerationTask(userId, projectId, slotId) {
   return normalizeTask(getDb().prepare(`
     SELECT * FROM ecommerce_generation_tasks
-    WHERE user_id = ? AND project_id = ? AND slot_id = ? AND status IN ('queued', 'running')
+    WHERE user_id = ? AND project_id = ? AND slot_id = ? AND status IN ('queued', 'running', 'cancelling')
     ORDER BY created_at DESC LIMIT 1
   `).get(userId, projectId, slotId));
 }
@@ -295,6 +300,56 @@ export function claimEcommerceGenerationTask(userId, taskId) {
       AND status IN ('queued', 'interrupted', 'failed')
   `).run(timestamp, timestamp, taskId, userId);
   return result.changes ? getEcommerceGenerationTask(userId, taskId) : null;
+}
+
+export function claimQueuedEcommerceGenerationTasks(limit = 12, perUserLimit = 3) {
+  const db = getDb();
+  const claimed = [];
+  const timestamp = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const candidates = db.prepare(`
+      SELECT * FROM ecommerce_generation_tasks
+      WHERE status = 'queued' AND cancel_requested = 0
+      ORDER BY created_at ASC, id ASC
+      LIMIT 200
+    `).all();
+    const runningByUser = new Map(db.prepare(`
+      SELECT user_id, COUNT(*) AS count FROM ecommerce_generation_tasks
+      WHERE status IN ('running', 'cancelling')
+      GROUP BY user_id
+    `).all().map((row) => [row.user_id, Number(row.count || 0)]));
+    const claim = db.prepare(`
+      UPDATE ecommerce_generation_tasks
+      SET status = 'running', attempts = attempts + 1, error_code = NULL,
+        started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
+      WHERE id = ? AND status = 'queued' AND cancel_requested = 0
+    `);
+    const maximum = Math.max(1, Number(limit) || 1);
+    const maximumPerUser = Math.max(1, Number(perUserLimit) || 1);
+    for (const row of candidates) {
+      if (claimed.length >= maximum) break;
+      const running = runningByUser.get(row.user_id) || 0;
+      if (running >= maximumPerUser) continue;
+      if (!claim.run(timestamp, timestamp, row.id).changes) continue;
+      runningByUser.set(row.user_id, running + 1);
+      claimed.push({
+        ...normalizeTask({
+          ...row,
+          status: 'running',
+          attempts: Number(row.attempts || 0) + 1,
+          started_at: row.started_at || timestamp,
+          updated_at: timestamp
+        }),
+        userId: row.user_id
+      });
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return claimed;
 }
 
 export function completeEcommerceGenerationTask(userId, taskId, { status, generationId = null, errorCode = null } = {}) {
@@ -312,12 +367,19 @@ export function requestEcommerceGenerationTaskCancellation(userId, taskId) {
   const result = getDb().prepare(`
     UPDATE ecommerce_generation_tasks
     SET cancel_requested = 1,
-        status = CASE WHEN status IN ('queued', 'interrupted') THEN 'cancelled' ELSE status END,
+        status = CASE
+          WHEN status IN ('queued', 'interrupted') THEN 'cancelled'
+          WHEN status = 'running' THEN 'cancelling'
+          ELSE status
+        END,
+        error_code = CASE WHEN status IN ('queued', 'interrupted') THEN 'GENERATION_CANCELLED' ELSE error_code END,
         completed_at = CASE WHEN status IN ('queued', 'interrupted') THEN ? ELSE completed_at END,
         updated_at = ?
-    WHERE id = ? AND user_id = ? AND status NOT IN ('succeeded', 'failed', 'cancelled')
+    WHERE id = ? AND user_id = ? AND status NOT IN ('succeeded', 'failed', 'cancelled', 'cancelling')
   `).run(timestamp, timestamp, taskId, userId);
-  return result.changes ? getEcommerceGenerationTask(userId, taskId) : null;
+  if (result.changes) return getEcommerceGenerationTask(userId, taskId);
+  const current = getEcommerceGenerationTask(userId, taskId);
+  return current?.status === 'cancelling' ? current : null;
 }
 
 export function retryEcommerceGenerationTask(userId, taskId) {

@@ -1,0 +1,49 @@
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.36.0
+    container_name: pic365-azurite
+    profiles: ["azurite"]
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - azurite
+      - --silent
+      - --skipApiVersionCheck
+      - --location
+      - /data
+      - --blobHost
+      - 127.0.0.1
+      - --queueHost
+      - 127.0.0.1
+      - --tableHost
+      - 127.0.0.1
+    volumes:
+      - /opt/pic365/shared/data/azurite:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  app:
+    image: ${PIC365_IMAGE}
+    container_name: pic365-app
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - /opt/pic365/shared/.env.production
+      - /opt/pic365/shared/storage.env
+    volumes:
+      - /opt/pic365/shared/data:/app/data
+      - /opt/pic365/shared/gallery/images:/app/dist/images:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/api/health').then(async r=>{const j=await r.json().catch(()=>null);if(!r.ok||j?.ok!==true)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

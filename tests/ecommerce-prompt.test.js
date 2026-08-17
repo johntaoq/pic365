@@ -108,6 +108,31 @@ test('revision prompts keep actual input numbering and evidence priority aligned
   assert.match(prompt, /恢复瓶盖的真实高度比例/);
 });
 
+test('single-image refinement scopes the change and labels supporting image roles', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'feature');
+  const assets = [
+    { id: 'master-1', assetType: 'product', purpose: 'identity', sortOrder: 1 },
+    { id: 'detail-1', assetType: 'reference', purpose: 'detail', sortOrder: 2 }
+  ];
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({ masterAssetId: 'master-1' }),
+    platform,
+    slot,
+    assets,
+    hasBaseImage: true,
+    revisionRequest: '只把右下角托盘换成白瓷碟，其余保持不变',
+    targetArea: 'bottom-right',
+    refinementInputs: [{ assetId: 'detail-1', role: 'detail' }]
+  });
+
+  assert.match(prompt, /修改范围：画面右下区域/);
+  assert.match(prompt, /只改变完成该要求所必需的最小区域/);
+  assert.match(prompt, /本次精修用途：局部内容素材/);
+  assert.match(prompt, /所有未指定区域/);
+  assert.match(prompt, /不得覆盖商品母版/);
+});
+
 test('slot-aware asset selection prevents irrelevant reference and packaging contamination', () => {
   const platform = getEcommercePlatform('amazon');
   const masterProject = project({ masterAssetId: 'master-1' });
@@ -160,4 +185,15 @@ test('broad industry guidance is conditional and never treated as a product feat
   });
   assert.match(prompt, /只适用于输入素材中真实存在的部位/);
   assert.match(prompt, /不代表本商品一定具备这些结构/);
+});
+
+test('comparison prompts enforce strict left and right image regions', () => {
+  const platform = getEcommercePlatform('douyin');
+  const slot = platform.slots.find((item) => item.id === 'comparison');
+  const prompt = buildEcommerceSlotPrompt({ project: project({ platformId: 'douyin' }), platform, slot, assets: [] });
+  assert.match(prompt, /严格的左右 50% 分区/);
+  assert.match(prompt, /左半区只呈现本商品/);
+  assert.match(prompt, /右半区只呈现对比对象或对比状态/);
+  assert.match(prompt, /不得跨越中线/);
+  assert.match(prompt, /不得拼成上下结构/);
 });

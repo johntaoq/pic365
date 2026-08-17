@@ -1,5 +1,6 @@
 import { listCreditProducts, getUserProfile } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
+import { isStripeConfigured } from '../_lib/billing.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -30,7 +31,7 @@ export default async function handler(req, res) {
     }));
     return json(res, 200, {
       ok: true,
-      checkoutAvailable: false,
+      checkoutAvailable: isStripeConfigured(),
       packs,
       user: auth.user ? getUserProfile(auth.user.id) : null
     });

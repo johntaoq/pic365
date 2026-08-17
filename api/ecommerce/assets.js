@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createEcommerceProjectAsset,
   deleteEcommerceProjectAsset,
+  ensureEcommerceProjectMasterAsset,
   getEcommerceProject,
   getEcommerceProjectAsset,
   listEcommerceProjectAssets,
@@ -45,10 +46,19 @@ function publicAsset(asset, masterAssetId = '') {
     fileSize: asset.fileSize,
     purpose: asset.purpose || '',
     sortOrder: Number(asset.sortOrder || 0),
+    mediaAssetId: asset.mediaAssetId || '',
     isMaster: asset.id === masterAssetId,
-    imageUrl: `/api/ecommerce/asset-file?id=${encodeURIComponent(asset.id)}`,
+    available: asset.available !== false,
+    unavailableReason: asset.unavailableReason || '',
+    imageUrl: asset.available === false ? '' : `/api/ecommerce/asset-file?id=${encodeURIComponent(asset.id)}`,
     createdAt: asset.createdAt
   };
+}
+
+function accessibleMasterAssetId(assets, masterAssetId) {
+  return assets.some((asset) => asset.id === masterAssetId && asset.available !== false && asset.assetType === 'product')
+    ? masterAssetId
+    : '';
 }
 
 export default async function handler(req, res) {
@@ -62,12 +72,15 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const projectId = cleanText(req.query?.projectId, 80);
-    const project = projectId ? getEcommerceProject(auth.user.id, projectId) : null;
+    let project = projectId ? getEcommerceProject(auth.user.id, projectId) : null;
     if (!project) {
       return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
     }
-    const assets = listEcommerceProjectAssets(auth.user.id, projectId).map((asset) => publicAsset(asset, project.masterAssetId));
-    return json(res, 200, { ok: true, assets, masterAssetId: project.masterAssetId });
+    project = ensureEcommerceProjectMasterAsset(auth.user.id, projectId);
+    const projectAssets = listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true });
+    const masterAssetId = accessibleMasterAssetId(projectAssets, project.masterAssetId);
+    const assets = projectAssets.map((asset) => publicAsset(asset, masterAssetId));
+    return json(res, 200, { ok: true, assets, masterAssetId });
   }
 
   if (req.method === 'PATCH') {
@@ -104,18 +117,29 @@ export default async function handler(req, res) {
         if (!project) return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
       }
     }
-    const assets = listEcommerceProjectAssets(auth.user.id, projectId).map((asset) => publicAsset(asset, project.masterAssetId));
-    return json(res, 200, { ok: true, project, assets });
+    project = ensureEcommerceProjectMasterAsset(auth.user.id, projectId);
+    const projectAssets = listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true });
+    const masterAssetId = accessibleMasterAssetId(projectAssets, project.masterAssetId);
+    const assets = projectAssets.map((asset) => publicAsset(asset, masterAssetId));
+    return json(res, 200, { ok: true, project: { ...project, masterAssetId }, assets });
   }
 
   if (req.method === 'DELETE') {
     const assetId = cleanText(req.query?.id, 80);
-    const asset = getEcommerceProjectAsset(auth.user.id, assetId);
+    const asset = getEcommerceProjectAsset(auth.user.id, assetId, { includeUnavailable: true });
     if (!asset) return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
     try {
-      await deleteStoredFile(asset.storagePath);
+      if (!asset.mediaAssetId) await deleteStoredFile(asset.storagePath);
       deleteEcommerceProjectAsset(auth.user.id, asset.id);
-      return json(res, 200, { ok: true });
+      const project = ensureEcommerceProjectMasterAsset(auth.user.id, asset.projectId);
+      const projectAssets = listEcommerceProjectAssets(auth.user.id, asset.projectId, { includeUnavailable: true });
+      const masterAssetId = accessibleMasterAssetId(projectAssets, project?.masterAssetId);
+      return json(res, 200, {
+        ok: true,
+        project: project ? { ...project, masterAssetId } : null,
+        assets: projectAssets.map((item) => publicAsset(item, masterAssetId)),
+        masterAssetId
+      });
     } catch {
       return json(res, 500, { ok: false, error: 'ASSET_DELETE_FAILED' });
     }
@@ -133,7 +157,7 @@ export default async function handler(req, res) {
   if (!project) {
     return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
   }
-  if (listEcommerceProjectAssets(auth.user.id, projectId).length >= MAX_PROJECT_ASSETS) {
+  if (listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true }).length >= MAX_PROJECT_ASSETS) {
     return json(res, 400, { ok: false, error: 'ASSET_LIMIT_REACHED' });
   }
 
@@ -170,11 +194,9 @@ export default async function handler(req, res) {
       fileSize: stored.byteLength,
       storagePath: stored.storagePath,
       purpose,
-      sortOrder: listEcommerceProjectAssets(auth.user.id, projectId).length + 1
+      sortOrder: listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true }).length + 1
     });
-    const nextProject = !project.masterAssetId && assetType === 'product'
-      ? setEcommerceProjectMasterAsset(auth.user.id, projectId, asset.id)
-      : getEcommerceProject(auth.user.id, projectId);
+    const nextProject = ensureEcommerceProjectMasterAsset(auth.user.id, projectId);
     return json(res, 201, {
       ok: true,
       asset: publicAsset(asset, nextProject?.masterAssetId),

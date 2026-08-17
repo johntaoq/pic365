@@ -44,11 +44,21 @@ import {
   getEcommerceVisualStyle,
   getVisualStylesForIndustry
 } from '../shared/ecommerce-catalog.js';
-import { runTaskPool } from '../shared/task-pool.js';
 import { mergeRefreshedAiIdentitySpec, normalizeEcommerceAiBrief } from '../shared/ecommerce-brief.js';
+import { resolveEcommerceRefinementSize, resolveEcommerceSlotGenerationSize } from '../shared/image-pricing.js';
+import { getImageModelConstraints, validateImageReferenceInputsForModel } from '../shared/image-generation.js';
+import { resolveImageProviderId } from '../shared/image-provider-selection.js';
 import EcommerceDeliveryCenter from './ecommerce-delivery-center.jsx';
+import EcommerceAssetLibraryPicker from './ecommerce-asset-library-picker.jsx';
+import { clampImagePanOffset } from './image-pan-zoom.js';
+import {
+  ImageCreditPrice,
+  requestImagePricing,
+  requestImagePricingBatch,
+  useServerImagePricing,
+  useServerImagePricingBatch
+} from './image-pricing-client.jsx';
 
-const BATCH_GENERATION_CONCURRENCY = 15;
 
 const VISUAL_STYLE_PREVIEW_KIND = {
   'clean-commercial': 'catalog',
@@ -101,9 +111,30 @@ function visualStylePreview(styleId, language) {
   return { kind, cue: VISUAL_STYLE_PREVIEW_CUE[kind]?.[language === 'en' ? 'en' : 'zh'] || '' };
 }
 
+function ecommerceProviderCompatibility(provider, assets = []) {
+  if (!provider) return { valid: false, error: 'AI_PROVIDER_NOT_CONFIGURED' };
+  const constraints = getImageModelConstraints(provider.model);
+  if (!constraints.isMai) return { valid: true, constraints };
+  const availableAssets = assets.filter((asset) => asset.available !== false);
+  return validateImageReferenceInputsForModel({
+    model: provider.model,
+    count: availableAssets.length,
+    mimeTypes: availableAssets.map((asset) => asset.mimeType)
+  });
+}
+
+function ecommerceProviderCompatibilityText(result, t) {
+  if (result?.valid) return '';
+  if (result?.error === 'REFERENCE_IMAGES_UNSUPPORTED') return t.maiReferenceUnsupported;
+  if (result?.error === 'TOO_MANY_REFERENCE_IMAGES') return t.maiReferenceLimit;
+  if (result?.error === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceFormat;
+  if (result?.error === 'AI_PROVIDER_NOT_CONFIGURED') return t.providerRequired;
+  return t.generationFailed;
+}
+
 const copy = {
   en: {
-    title: 'Create product image sets',
+    title: 'E-commerce image creation',
     projects: 'Product projects',
     collapseProjects: 'Collapse project list',
     expandProjects: 'Expand project list',
@@ -113,7 +144,7 @@ const copy = {
     projectNamePlaceholder: 'For example: Summer launch · Travel tumbler',
     platform: '1. Sales platform',
     productBrief: '2. Product brief',
-    industry: 'Industry',
+    industry: 'Product category',
     productName: 'Product name',
     productNamePlaceholder: 'For example: 30 oz insulated travel tumbler',
     brandName: 'Brand or series',
@@ -133,10 +164,15 @@ const copy = {
     assetLogo: 'Logo',
     assetReference: 'Visual reference',
     chooseImages: 'Choose images',
+    uploadFromDevice: 'Upload from device',
+    chooseFromLibrary: 'Choose from asset library',
+    assetLibraryLinkFailed: 'Some asset-library images could not be added.',
     assetLimit: 'PNG, JPG, or WebP; up to 10 MB each and 30 files per project.',
     uploadingAssets: 'Uploading...',
     uploadFailed: 'One or more files could not be uploaded.',
     deleteAsset: 'Delete material',
+    assetUnavailable: 'Access expired',
+    assetUnavailableHint: 'This shared asset is no longer available. Remove it or ask the owner to share it again.',
     masterAsset: 'Product master',
     setMaster: 'Use as master',
     masterHint: 'The master image locks the product structure, color, packaging, and accessory count for later generation.',
@@ -183,16 +219,20 @@ const copy = {
     deliverySummary: (count) => `${count} adopted images · load, check, finish, and export`,
     selectAll: 'Select all',
     clearSelection: 'Clear selection',
-    batchSelection: (count) => `${count} selected · ${count} credits`,
+    batchSelection: (count, credits) => `${count} selected · ${credits} credits`,
+    batchSelectionLabel: (count) => `${count} selected`,
     generateSelected: 'Generate all selected',
     batchGenerating: 'Generating',
-    generateSlot: 'Generate · 1 credit',
-    regenerateSlot: 'New version · 1 credit',
+    generateSlot: (credits) => `Generate · ${credits} credits`,
+    regenerateSlot: (credits) => `New version · ${credits} credits`,
+    generateSlotLabel: 'Generate',
+    regenerateSlotLabel: 'New version',
     queued: 'Queued',
     running: 'Generating',
     interrupted: 'Interrupted',
     taskAlreadyActive: 'This image already has a task in progress.',
-    retry: 'Retry',
+    retry: (credits) => `Retry · ${credits} credits`,
+    retryLabel: 'Retry',
     cancel: 'Cancel',
     cancelling: 'Cancelling...',
     selectAtLeastOne: 'Select at least one image.',
@@ -201,6 +241,19 @@ const copy = {
     saveRequiredHint: 'Save the project to continue',
     masterRequired: 'Select a product master before generating.',
     generationFailed: 'This image could not be generated. Your reserved credit was returned.',
+    maiReferenceLimit: 'MAI supports at most one uploaded source image for this workflow. Choose another image service or remove extra materials.',
+    maiReferenceUnsupported: 'This MAI model does not support the product-reference workflow used by e-commerce image sets.',
+    maiReferenceFormat: 'MAI product references must be JPEG or PNG.',
+    providerSaving: 'Saving image service...',
+    providerRequired: 'Select an available image service before generating.',
+    providerUnavailableChoice: 'Unavailable',
+    providerUnavailable: (name, model) => `The image service${name ? ` "${name}"` : ''} has no available ${model || 'image'} channel. The reserved credits were refunded.`,
+    providerAuthFailed: 'The image service API key is invalid or unauthorized. The reserved credits were refunded.',
+    providerBalanceError: 'The upstream image service has insufficient balance or quota. The reserved credits were refunded.',
+    providerBusy: 'The image service is busy. The reserved credits were refunded; please try again later.',
+    providerTimeout: 'The image service timed out. The reserved credits were refunded; please try again later.',
+    generationTimeout: 'Generation exceeded the 300-second wait limit. Check the task state before retrying.',
+    serverRestarted: 'The local image service restarted while this task was running. Reserved credits were refunded; retry the task.',
     projectChanged: 'The project changed after this task was queued. Start generation again to use the latest saved version.',
     moderationBlocked: 'This slot needs safer product wording. Update the project facts or restricted-content field, save, and try again.',
     downloadOutput: 'Download',
@@ -217,7 +270,8 @@ const copy = {
     noVersions: 'No versions yet.',
     localRevision: 'Revise from this version',
     localRevisionPlaceholder: 'Describe only what should change; product identity remains locked.',
-    createRevision: 'Create revised version · 1 credit',
+    createRevision: (credits) => `Create revised version · ${credits} credits`,
+    createRevisionLabel: 'Create revised version',
     consistencyCheck: 'Check consistency',
     consistencyChecking: 'Checking...',
     consistencyUnchecked: 'Not checked',
@@ -243,7 +297,7 @@ const copy = {
     fieldHelp: 'Show guidance',
     clearField: 'Clear and show the default guidance',
     restoreAiField: 'Restore the original AI draft',
-    aiFillBrief: 'AI autofill',
+    aiFillBrief: 'AI autofill · 1 credit',
     aiFillingBrief: 'Writing brief...',
     aiBriefFilled: 'AI draft ready',
     aiBriefFailed: 'Could not prepare the product brief.',
@@ -256,14 +310,14 @@ const copy = {
     creditsTitle: 'Credits are required for the complete workspace',
     creditsText: 'Add credits before saving projects and generating production images.',
     recharge: 'Add credits',
-    workflow: ['Sales platform', 'Product brief', 'Source materials', 'Visual direction', 'Images to produce', 'Generate image set', 'Professional delivery'],
+    workflow: ['Start', 'Sales platform', 'Product brief', 'Source materials', 'Visual direction', 'Images to produce', 'Generate image set', 'Professional delivery'],
     currentStage: 'Current',
     lockedStage: 'Complete previous steps',
     draft: 'Draft',
     updated: 'Updated'
   },
   zh: {
-    title: '创建商品套图',
+    title: '电商套图创作',
     projects: '商品项目',
     collapseProjects: '收起项目列表',
     expandProjects: '展开项目列表',
@@ -273,7 +327,7 @@ const copy = {
     projectNamePlaceholder: '例如：夏季上新 · 随行保温杯',
     platform: '1. 销售平台',
     productBrief: '2. 商品资料',
-    industry: '商品行业',
+    industry: '商品分类',
     productName: '商品名称',
     productNamePlaceholder: '例如：30oz 大容量吸管保温杯',
     brandName: '品牌或系列',
@@ -293,10 +347,15 @@ const copy = {
     assetLogo: 'Logo',
     assetReference: '视觉参考图',
     chooseImages: '选择图片',
+    uploadFromDevice: '本地上传',
+    chooseFromLibrary: '从资产库选择',
+    assetLibraryLinkFailed: '部分资产库图片未能加入项目。',
     assetLimit: '支持 PNG、JPG、WebP；单张不超过 10 MB，每个项目最多 30 张。',
     uploadingAssets: '正在上传……',
     uploadFailed: '部分素材上传失败。',
     deleteAsset: '删除素材',
+    assetUnavailable: '共享权限已失效',
+    assetUnavailableHint: '该共享素材已不可读取。请解除关联，或让素材所有者重新共享。',
     masterAsset: '商品母版',
     setMaster: '设为母版',
     masterHint: '商品母版用于锁定后续生成中的商品结构、颜色、包装和配件数量。',
@@ -343,16 +402,20 @@ const copy = {
     deliverySummary: (count) => `${count} 张采用图 · 加载、检查、精修与导出`,
     selectAll: '全部选中',
     clearSelection: '取消全选',
-    batchSelection: (count) => `已选 ${count} · 预计 ${count}积分`,
+    batchSelection: (count, credits) => `已选 ${count} · 预计 ${credits}积分`,
+    batchSelectionLabel: (count) => `已选 ${count} · 预计`,
     generateSelected: '一键生成',
     batchGenerating: '生成中',
-    generateSlot: '生成此图 · 1积分',
-    regenerateSlot: '生成新版本 · 1积分',
+    generateSlot: (credits) => `生成此图 · ${credits}积分`,
+    regenerateSlot: (credits) => `生成新版本 · ${credits}积分`,
+    generateSlotLabel: '生成此图',
+    regenerateSlotLabel: '生成新版本',
     queued: '排队中',
     running: '生成中',
     interrupted: '任务中断',
     taskAlreadyActive: '这张图片已有任务正在执行。',
-    retry: '重试',
+    retry: (credits) => `重试 · ${credits}积分`,
+    retryLabel: '重试',
     cancel: '取消',
     cancelling: '取消中……',
     selectAtLeastOne: '请至少选择一张图片。',
@@ -361,6 +424,19 @@ const copy = {
     saveRequiredHint: '请先保存，才能继续下一步',
     masterRequired: '请先选择商品母版。',
     generationFailed: '本张图片生成失败，预留积分已经退回。',
+    maiReferenceLimit: 'MAI 在此工作流中最多使用 1 张上传素材。请删除多余素材或选择其他生图服务。',
+    maiReferenceUnsupported: '该 MAI 模型不支持电商套图所需的商品参考图工作流。',
+    maiReferenceFormat: 'MAI 商品参考图仅支持 JPEG 或 PNG。',
+    providerSaving: '正在保存生图服务……',
+    providerRequired: '请选择可用的生图服务后再生成。',
+    providerUnavailableChoice: '不可用',
+    providerUnavailable: (name, model) => `当前生图服务${name ? `“${name}”` : ''}没有可用的 ${model || '图像'} 渠道，预留积分已退回，请联系管理员检查配置。`,
+    providerAuthFailed: '生图服务的 API Key 无效或无权限，预留积分已退回，请联系管理员。',
+    providerBalanceError: '生图服务的上游余额或额度不足，预留积分已退回，请联系管理员。',
+    providerBusy: '生图服务当前繁忙，预留积分已退回，请稍后重试。',
+    providerTimeout: '生图服务请求超时，预留积分已退回，请稍后重试。',
+    generationTimeout: '生图等待超过 300 秒，请先检查任务状态再重试。',
+    serverRestarted: '本地生图服务在任务执行期间重启，预留积分已退回，请重试该任务。',
     projectChanged: '任务排队后项目内容发生了变化。请重新生成，以使用最新保存版本。',
     moderationBlocked: '当前商品表述需要调整。请修改商品资料或禁止内容，保存后再试。',
     downloadOutput: '下载图片',
@@ -377,7 +453,8 @@ const copy = {
     noVersions: '还没有生成版本。',
     localRevision: '基于此版本修改',
     localRevisionPlaceholder: '只描述要修改的部分；商品身份仍保持锁定。',
-    createRevision: '生成修改版本 · 1积分',
+    createRevision: (credits) => `生成修改版本 · ${credits}积分`,
+    createRevisionLabel: '生成修改版本',
     consistencyCheck: '一致性检查',
     consistencyChecking: '检查中……',
     consistencyUnchecked: '未检查',
@@ -403,7 +480,7 @@ const copy = {
     fieldHelp: '查看填写提示',
     clearField: '清空并恢复缺省提示',
     restoreAiField: '恢复 AI 原始生成内容',
-    aiFillBrief: 'AI 智能填写',
+    aiFillBrief: 'AI 智能填写 · 1 积分',
     aiFillingBrief: '正在生成商品资料……',
     aiBriefFilled: 'AI 初稿已生成',
     aiBriefFailed: '商品资料暂时无法生成。',
@@ -416,7 +493,7 @@ const copy = {
     creditsTitle: '完整工作台需要积分',
     creditsText: '请先充值积分，再保存项目并生成正式图片。',
     recharge: '充值积分',
-    workflow: ['销售平台', '商品资料', '商品素材', '视觉方向', '图片清单', '套图生成', '专业交付'],
+    workflow: ['开始', '销售平台', '商品资料', '商品素材', '视觉方向', '图片清单', '套图生成', '专业交付'],
     currentStage: '当前阶段',
     lockedStage: '请先完成前置步骤',
     draft: '草稿',
@@ -430,7 +507,11 @@ const IDENTITY_SPEC_FIELDS = [
 ];
 
 function getCollapsedSectionsForStage(stage) {
-  const activeKey = SECTION_KEYS[Math.max(0, Math.min(SECTION_KEYS.length - 1, Number(stage) || 0))];
+  const numericStage = Number(stage);
+  if (!Number.isFinite(numericStage) || numericStage < 0) {
+    return Object.fromEntries(SECTION_KEYS.map((key) => [key, true]));
+  }
+  const activeKey = SECTION_KEYS[Math.max(0, Math.min(SECTION_KEYS.length - 1, numericStage))];
   return Object.fromEntries(SECTION_KEYS.map((key) => [key, key !== activeKey]));
 }
 
@@ -452,6 +533,7 @@ function createEmptyForm(platformId = ECOMMERCE_PLATFORMS[0].id) {
     identitySpec: {},
     templateId: '',
     visualStyleId: getVisualStylesForIndustry(industryId)[0]?.id || 'clean-commercial',
+    imageProviderId: '',
     selectedSlots: getDefaultSlotIds(platformId)
   };
 }
@@ -581,11 +663,12 @@ function FieldHelpLabel({ fieldId, label, help, helpLabel, open, onToggle, reset
   );
 }
 
-function CollapsibleSectionLegend({ label, summary, collapsed, contentId, expandLabel, collapseLabel, onToggle }) {
+function CollapsibleSectionLegend({ label, summary, collapsed, contentId, expandLabel, collapseLabel, onToggle, headerAction = null }) {
   const actionLabel = collapsed ? expandLabel : collapseLabel;
   return (
     <div className="ecommerceCollapsibleLegend">
       <button
+        className="ecommerceCollapsibleLegendToggle"
         type="button"
         aria-expanded={!collapsed}
         aria-controls={contentId}
@@ -596,11 +679,22 @@ function CollapsibleSectionLegend({ label, summary, collapsed, contentId, expand
           <strong>{label}</strong>
           {summary ? <small>{summary}</small> : null}
         </span>
-        <span className="ecommerceCollapsibleLegendAction">
+      </button>
+      <div className="ecommerceCollapsibleLegendControls">
+        {headerAction}
+        <button
+          className="ecommerceCollapsibleLegendAction"
+          type="button"
+          aria-expanded={!collapsed}
+          aria-controls={contentId}
+          aria-label={`${actionLabel}: ${label}`}
+          title={`${actionLabel}: ${label}`}
+          onClick={onToggle}
+        >
           <span>{actionLabel}</span>
           <ChevronDown size={18} aria-hidden="true" />
-        </span>
-      </button>
+        </button>
+      </div>
     </div>
   );
 }
@@ -614,6 +708,8 @@ function EcommerceImageLightbox({ image, t, onClose }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
   const panRef = useRef(null);
+  const canvasRef = useRef(null);
+  const imageRef = useRef(null);
 
   useEffect(() => {
     setZoom(1);
@@ -637,18 +733,38 @@ function EcommerceImageLightbox({ image, t, onClose }) {
     };
   }, [image, onClose]);
 
+  useEffect(() => {
+    if (!image) return undefined;
+    const keepImageInBounds = () => setOffset((current) => boundedOffset(current, zoom));
+    globalThis.addEventListener?.('resize', keepImageInBounds);
+    return () => globalThis.removeEventListener?.('resize', keepImageInBounds);
+  }, [image, zoom]);
+
   if (!image) return null;
+
+  function boundedOffset(nextOffset, zoomValue = zoom) {
+    const canvas = canvasRef.current;
+    const imageElement = imageRef.current;
+    if (!canvas || !imageElement || zoomValue <= 1) return { x: 0, y: 0 };
+    return clampImagePanOffset(nextOffset, {
+      viewportWidth: canvas.clientWidth,
+      viewportHeight: canvas.clientHeight,
+      contentWidth: imageElement.offsetWidth,
+      contentHeight: imageElement.offsetHeight,
+      zoom: zoomValue
+    });
+  }
 
   function setNextZoom(nextValue) {
     const nextZoom = clampImageZoom(nextValue);
     setZoom(nextZoom);
-    if (nextZoom <= 1) setOffset({ x: 0, y: 0 });
+    setOffset((current) => boundedOffset(current, nextZoom));
   }
 
   function adjustZoom(delta) {
     setZoom((current) => {
       const nextZoom = clampImageZoom(Number((current + delta).toFixed(2)));
-      if (nextZoom <= 1) setOffset({ x: 0, y: 0 });
+      setOffset((currentOffset) => boundedOffset(currentOffset, nextZoom));
       return nextZoom;
     });
   }
@@ -659,7 +775,7 @@ function EcommerceImageLightbox({ image, t, onClose }) {
   }
 
   function beginPan(event) {
-    if (zoom <= 1 || event.button !== 0) return;
+    if (zoom <= 1 || (event.pointerType === 'mouse' && event.button !== 0)) return;
     panRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -675,10 +791,10 @@ function EcommerceImageLightbox({ image, t, onClose }) {
     const pan = panRef.current;
     if (!pan || pan.pointerId !== event.pointerId) return;
     event.preventDefault();
-    setOffset({
+    setOffset(boundedOffset({
       x: pan.originX + event.clientX - pan.startX,
       y: pan.originY + event.clientY - pan.startY
-    });
+    }));
   }
 
   function endPan(event) {
@@ -721,6 +837,7 @@ function EcommerceImageLightbox({ image, t, onClose }) {
           </div>
         </header>
         <div
+          ref={canvasRef}
           className={`ecommerceImageLightboxCanvas ${zoom > 1 ? 'zoomed' : ''} ${panning ? 'panning' : ''}`}
           onWheel={(event) => {
             event.preventDefault();
@@ -733,10 +850,12 @@ function EcommerceImageLightbox({ image, t, onClose }) {
           onPointerCancel={endPan}
         >
           <img
+            ref={imageRef}
             src={image.imageUrl}
             alt={image.alt}
             draggable={false}
             className={panning ? 'panning' : ''}
+            onLoad={() => setOffset((current) => boundedOffset(current, zoom))}
             style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})` }}
           />
         </div>
@@ -753,6 +872,7 @@ function EcommerceVersionCenterModal({
   language,
   platformName,
   productName,
+  providerId,
   actionState,
   onClose,
   onPreview,
@@ -770,6 +890,13 @@ function EcommerceVersionCenterModal({
     setBaseGenerationId(output?.selectedGenerationId || successfulVersions[0]?.id || '');
     setAdjustment('');
   }, [slot?.id, output?.selectedGenerationId]);
+
+  const baseGeneration = versions.find((item) => item.id === baseGenerationId) || null;
+  const revisionSize = slot ? resolveEcommerceRefinementSize(baseGeneration, slot) : '1024x1024';
+  const { pricing: revisionPricing, loading: revisionPricingLoading } = useServerImagePricing(
+    { size: revisionSize, quality: 'medium', providerId },
+    { enabled: Boolean(slot) }
+  );
 
   if (!slot) return null;
   const consistencyLabel = output?.consistencyStatus === 'passed'
@@ -879,11 +1006,11 @@ function EcommerceVersionCenterModal({
           <textarea value={adjustment} onChange={(event) => setAdjustment(event.target.value)} placeholder={t.localRevisionPlaceholder} disabled={output?.locked} />
           <button
             type="button"
-            disabled={output?.locked || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
+            disabled={output?.locked || revisionPricingLoading || !revisionPricing || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
             onClick={() => onRevise({ baseGenerationId, adjustment: adjustment.trim() })}
           >
             {actionState === 'revise' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-            {t.createRevision}
+            {t.createRevisionLabel} · <ImageCreditPrice pricing={revisionPricing} language={language} compact />
           </button>
           {output?.locked ? <p>{t.slotLocked}</p> : null}
         </div>
@@ -1077,17 +1204,44 @@ function FloatingSaveControl({ label, savingLabel, dragLabel, hideLabel, showLab
   );
 }
 
-export default function EcommerceWorkspace({ language, session, profile, onSignIn, onBilling, onProfileChange }) {
+function ecommerceGenerationFailureText(payload, t) {
+  const code = payload?.error || payload;
+  if (code === 'AI_PROVIDER_NOT_CONFIGURED' || code === 'INVALID_IMAGE_PROVIDER') return t.providerRequired;
+  if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.maiReferenceUnsupported;
+  if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maiReferenceLimit;
+  if (code === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceFormat;
+  if (code === 'IMAGE_PROVIDER_UNAVAILABLE') return t.providerUnavailable(payload?.providerName, payload?.providerModel);
+  if (code === 'IMAGE_PROVIDER_AUTH_FAILED') return t.providerAuthFailed;
+  if (code === 'IMAGE_PROVIDER_BALANCE_ERROR') return t.providerBalanceError;
+  if (code === 'IMAGE_PROVIDER_TIMEOUT') return t.providerTimeout;
+  if (code === 'UPSTREAM_BUSY') return t.providerBusy;
+  if (code === 'SERVER_RESTARTED') return t.serverRestarted;
+  return t.generationFailed;
+}
+
+export default function EcommerceWorkspace({
+  language,
+  session,
+  profile,
+  onSignIn,
+  onBilling,
+  onProfileChange,
+  pendingEcommerceProjectId = '',
+  onEcommerceProjectConsumed,
+  suspendFloatingControls = false
+}) {
   const t = copy[language] || copy.en;
   const signedIn = hasSession(session);
   const hasAccess = signedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
   const [projects, setProjects] = useState([]);
   const [form, setForm] = useState(() => createEmptyForm());
   const [status, setStatus] = useState('idle');
+  const [imageProviders, setImageProviders] = useState([]);
   const [message, setMessage] = useState('');
   const [assets, setAssets] = useState([]);
   const [assetType, setAssetType] = useState('product');
   const [assetStatus, setAssetStatus] = useState('idle');
+  const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
   const [generations, setGenerations] = useState([]);
   const [outputs, setOutputs] = useState([]);
   const [selectedProductionSlots, setSelectedProductionSlots] = useState([]);
@@ -1099,7 +1253,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const [aiBriefStatus, setAiBriefStatus] = useState('idle');
   const [identitySpecStatus, setIdentitySpecStatus] = useState('idle');
   const [projectListCollapsed, setProjectListCollapsed] = useState(false);
-  const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(1));
+  const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(-1));
   const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [versionCenterSlotId, setVersionCenterSlotId] = useState('');
@@ -1111,12 +1265,42 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const fileInputRef = useRef(null);
   const generationTasksRef = useRef(new Map());
   const sectionRefs = useRef({});
+  const projectNameInputRef = useRef(null);
   const platform = useMemo(() => getEcommercePlatform(form.platformId), [form.platformId]);
   const industry = useMemo(
     () => ECOMMERCE_INDUSTRIES.find((item) => item.id === form.industryId) || ECOMMERCE_INDUSTRIES[0],
     [form.industryId]
   );
   const recommendedVisualStyles = useMemo(() => getVisualStylesForIndustry(form.industryId), [form.industryId]);
+  const providerCompatibilityById = useMemo(() => new Map(
+    imageProviders.map((provider) => [provider.id, ecommerceProviderCompatibility(provider, assets)])
+  ), [assets, imageProviders]);
+  const selectedProviderCompatibility = providerCompatibilityById.get(form.imageProviderId)
+    || { valid: false, error: 'AI_PROVIDER_NOT_CONFIGURED' };
+  const selectedProviderCompatibilityMessage = ecommerceProviderCompatibilityText(selectedProviderCompatibility, t);
+  const linkedMediaAssetIds = useMemo(() => assets.map((asset) => asset.mediaAssetId).filter(Boolean), [assets]);
+  const remainingProjectAssetSlots = Math.max(0, 30 - assets.length);
+
+  useEffect(() => {
+    fetch('/api/image-providers', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!payload?.ok) return;
+        const nextProviders = payload.providers || [];
+        setImageProviders(nextProviders);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!imageProviders.length) return;
+    setForm((current) => {
+      const resolvedProviderId = resolveImageProviderId(imageProviders, current.imageProviderId);
+      return resolvedProviderId && resolvedProviderId !== current.imageProviderId
+        ? { ...current, imageProviderId: resolvedProviderId }
+        : current;
+    });
+  }, [imageProviders, form.id, form.imageProviderId]);
   const recommendedTemplates = useMemo(
     () => getEcommerceTemplates(form.platformId, form.industryId),
     [form.platformId, form.industryId]
@@ -1130,14 +1314,22 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   const hasAdoptedOutput = outputs.some((output) => Boolean(output.selectedGenerationId));
   const projectHasUnsavedChanges = !form.id || status === 'dirty' || status === 'error';
   const saveAttention = hasAccess && status !== 'saving' && projectHasUnsavedChanges;
-  const currentStage = !form.id ? 1 : !form.masterAssetId ? 2 : hasAdoptedOutput ? 6 : 5;
+  const currentStage = !form.projectName.trim()
+    ? 0
+    : !form.productName.trim()
+      ? 1
+      : !form.id
+        ? 2
+        : !form.masterAssetId
+          ? 3
+          : hasAdoptedOutput ? 7 : 6;
   const maxUnlockedStage = !form.id
-    ? 1
+    ? 2
     : !form.masterAssetId
-      ? 2
+      ? 3
       : projectHasUnsavedChanges
-        ? 4
-        : hasAdoptedOutput ? 6 : 5;
+        ? 5
+        : hasAdoptedOutput ? 7 : 6;
   const activeWorkflowStep = hoveredWorkflowStep != null && hoveredWorkflowStep <= maxUnlockedStage
     ? hoveredWorkflowStep
     : Math.min(currentStage, maxUnlockedStage);
@@ -1145,10 +1337,26 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
 
   useEffect(() => {
     if (previousStageRef.current === currentStage) return;
+    const previousStage = previousStageRef.current;
     previousStageRef.current = currentStage;
+    // Typing a product name must not collapse the brief or move the user into
+    // assets. Workflow progression here is reserved for explicit actions such
+    // as saving the project or confirming a master asset.
+    if (previousStage === 1 && form.productName.trim()) return;
+    if (previousStage === 3 && form.masterAssetId) {
+      setCollapsedSections((current) => ({
+        ...Object.fromEntries(SECTION_KEYS.map((key) => [key, true])),
+        visual: false
+      }));
+      setHoveredWorkflowStep(4);
+      globalThis.requestAnimationFrame?.(() => {
+        sectionRefs.current.visual?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
     setCollapsedSections((current) => {
-      const next = getCollapsedSectionsForStage(currentStage);
-      if (current.assets === false && currentStage > 2) next.assets = false;
+      const next = getCollapsedSectionsForStage(currentStage - 1);
+      if (current.assets === false && currentStage > 3) next.assets = false;
       return next;
     });
   }, [currentStage]);
@@ -1160,7 +1368,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   useEffect(() => {
     setCollapsedSections((current) => Object.fromEntries(SECTION_KEYS.map((key, index) => [
       key,
-      index > maxUnlockedStage ? true : current[key]
+      index + 1 > maxUnlockedStage ? true : current[key]
     ])));
   }, [maxUnlockedStage]);
 
@@ -1217,6 +1425,22 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     return () => {
       active = false;
     };
+  }, [signedIn, form.id]);
+
+  useEffect(() => {
+    if (!signedIn || !form.id) return undefined;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        await refreshProjectRuntime();
+      } finally {
+        refreshing = false;
+      }
+    };
+    const timer = globalThis.setInterval?.(refresh, 1500);
+    return () => globalThis.clearInterval?.(timer);
   }, [signedIn, form.id]);
 
   useEffect(() => {
@@ -1288,6 +1512,47 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     }));
   }
 
+  async function handleImageProviderChange(nextProviderId) {
+    if (!nextProviderId || nextProviderId === formRef.current.imageProviderId) return;
+    const provider = imageProviders.find((item) => item.id === nextProviderId);
+    const compatibility = ecommerceProviderCompatibility(provider, assets);
+    if (!compatibility.valid) {
+      setGenerationMessage(ecommerceProviderCompatibilityText(compatibility, t));
+      return;
+    }
+
+    const previousForm = formRef.current;
+    const nextForm = { ...previousForm, imageProviderId: nextProviderId };
+    setForm(nextForm);
+    setGenerationMessage('');
+    if (!previousForm.id) return;
+
+    setStatus('saving');
+    setGenerationMessage(t.providerSaving);
+    try {
+      const response = await fetch('/api/ecommerce/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...nextForm,
+          aiBriefOriginals,
+          sellingPoints: nextForm.sellingPoints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload.project) throw new Error(payload?.error || 'SAVE_FAILED');
+      const savedProject = payload.project;
+      setProjects((current) => [savedProject, ...current.filter((item) => item.id !== savedProject.id)]);
+      setForm(projectToForm(savedProject));
+      setStatus('saved');
+      setGenerationMessage('');
+    } catch {
+      setForm(previousForm);
+      setStatus('saved');
+      setGenerationMessage(t.saveFailed);
+    }
+  }
+
   function updateIdentitySpec(field, value) {
     if (!IDENTITY_SPEC_FIELDS.includes(field)) return;
     setMessage('');
@@ -1307,7 +1572,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       onBilling?.();
       return;
     }
-    if (!form.id || !assets.some((asset) => asset.assetType === 'product')) {
+    if (!form.id || !assets.some((asset) => asset.available !== false && asset.assetType === 'product')) {
       setMessage(t.identitySpecAssetsRequired);
       return;
     }
@@ -1338,6 +1603,8 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         })
       });
       const payload = await response.json().catch(() => ({}));
+      if (payload.user) onProfileChange?.(payload.user);
+      if (payload.error === 'CREDITS_REQUIRED') onBilling?.();
       if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'IDENTITY_SPEC_FAILED');
       const normalizedBrief = normalizeEcommerceAiBrief(payload.brief, { language });
       if (!normalizedBrief?.identitySpec || !Object.keys(normalizedBrief.identitySpec).length) {
@@ -1413,7 +1680,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
 
   function toggleSection(sectionKey) {
     if (!SECTION_KEYS.includes(sectionKey)) return;
-    const step = SECTION_KEYS.indexOf(sectionKey);
+    const step = SECTION_KEYS.indexOf(sectionKey) + 1;
     if (step > maxUnlockedStage) {
       setMessage(t.lockedStage);
       return;
@@ -1422,7 +1689,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
   }
 
   function sectionInteractionProps(sectionKey) {
-    const step = SECTION_KEYS.indexOf(sectionKey);
+    const step = SECTION_KEYS.indexOf(sectionKey) + 1;
     const available = step <= maxUnlockedStage;
     return {
       ref: (node) => {
@@ -1441,7 +1708,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           setHoveredWorkflowStep((current) => current === step ? null : current);
         }
       },
-      'data-workflow-step': step + 1,
+      'data-workflow-step': step,
       'data-workflow-locked': available ? undefined : 'true'
     };
   }
@@ -1451,26 +1718,46 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setMessage(t.lockedStage);
       return;
     }
-    const sectionKey = SECTION_KEYS[step];
+    if (step === 0) {
+      setHoveredWorkflowStep(0);
+      globalThis.requestAnimationFrame?.(() => {
+        projectNameInputRef.current?.focus({ preventScroll: true });
+        sectionRefs.current.start?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      return;
+    }
+    const sectionKey = SECTION_KEYS[step - 1];
     setCollapsedSections((current) => ({ ...current, [sectionKey]: false }));
     setHoveredWorkflowStep(step);
     globalThis.requestAnimationFrame?.(() => sectionRefs.current[sectionKey]?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
   function startNewProject() {
-    setForm(createEmptyForm());
+    setForm({
+      ...createEmptyForm(),
+      imageProviderId: resolveImageProviderId(imageProviders)
+    });
     setMessage('');
     setStatus('idle');
     setAssets([]);
     setAiBriefOriginals({});
     setAiBriefStatus('idle');
     setIdentitySpecStatus('idle');
-    setCollapsedSections(getCollapsedSectionsForStage(1));
+    setCollapsedSections(getCollapsedSectionsForStage(-1));
+    setHoveredWorkflowStep(null);
     setPreviewImage(null);
+    globalThis.requestAnimationFrame?.(() => {
+      projectNameInputRef.current?.focus({ preventScroll: true });
+      sectionRefs.current.start?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
 
   function openProject(project) {
-    setForm(projectToForm(project));
+    const nextForm = projectToForm(project);
+    setForm({
+      ...nextForm,
+      imageProviderId: resolveImageProviderId(imageProviders, nextForm.imageProviderId)
+    });
     setMessage('');
     setStatus('saved');
     const originals = normalizeAiBriefOriginals(project.aiBriefOriginals);
@@ -1479,6 +1766,28 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     setIdentitySpecStatus('idle');
     setCollapsedSections(getCollapsedSectionsForStage(project.masterAssetId ? 5 : 2));
     setPreviewImage(null);
+  }
+
+  useEffect(() => {
+    if (!pendingEcommerceProjectId || !projects.length) return;
+    const project = projects.find((item) => item.id === pendingEcommerceProjectId);
+    if (!project) return;
+    openProject(project);
+    setCollapsedSections((current) => ({ ...current, assets: false }));
+    globalThis.requestAnimationFrame?.(() => sectionRefs.current.assets?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    onEcommerceProjectConsumed?.();
+  }, [pendingEcommerceProjectId, projects]);
+
+  async function handleDeleteProject(event, project) {
+    event.stopPropagation();
+    const label = project.projectName || project.productName;
+    if (!globalThis.confirm?.(language === 'zh' ? `确定删除项目“${label}”？` : `Delete project "${label}"?`)) return;
+    const response = await fetch(`/api/ecommerce/projects?id=${encodeURIComponent(project.id)}`, { method: 'DELETE' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.ok) return setMessage(language === 'zh' ? '项目删除失败' : 'Project deletion failed');
+    const remaining = projects.filter((item) => item.id !== project.id);
+    setProjects(remaining);
+    if (form.id === project.id) remaining[0] ? openProject(remaining[0]) : startNewProject();
   }
 
   async function handleSave(event) {
@@ -1543,8 +1852,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       globalThis.document?.getElementById('ecommerce-product-name')?.focus();
       return;
     }
-    const hasBlankAiField = ['coreUser', 'coreScenario', 'sellingPoints'].some((field) => !String(form[field] || '').trim())
-      || IDENTITY_SPEC_FIELDS.some((field) => !String(form.identitySpec?.[field] || '').trim());
+    const hasBlankAiField = ['coreUser', 'coreScenario', 'sellingPoints'].some((field) => !String(form[field] || '').trim());
     if (!hasBlankAiField) {
       setAiBriefStatus('success');
       return;
@@ -1557,6 +1865,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          focus: 'brief',
           language,
           projectId: form.id,
           industryId: form.industryId,
@@ -1571,20 +1880,21 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         })
       });
       const payload = await response.json().catch(() => ({}));
+      if (payload.user) onProfileChange?.(payload.user);
+      if (payload.error === 'CREDITS_REQUIRED') onBilling?.();
       if (!response.ok || !payload?.ok || !payload.brief) throw new Error(payload?.error || 'AI_BRIEF_FAILED');
       const normalizedBrief = normalizeEcommerceAiBrief(payload.brief, { language });
       if (!normalizedBrief) throw new Error('AI_BRIEF_INCOMPLETE');
       const generatedBrief = {
         coreUser: normalizedBrief.coreUser,
         coreScenario: normalizedBrief.coreScenario,
-        sellingPoints: normalizedBrief.sellingPoints,
-        identitySpec: normalizedBrief.identitySpec || {}
+        sellingPoints: normalizedBrief.sellingPoints
       };
       if ([generatedBrief.coreUser, generatedBrief.coreScenario, generatedBrief.sellingPoints].some((value) => !String(value || '').trim())) {
         throw new Error('AI_BRIEF_INCOMPLETE');
       }
       const currentForm = formRef.current;
-      const nextForm = { ...currentForm, identitySpec: { ...(currentForm.identitySpec || {}) } };
+      const nextForm = { ...currentForm };
       const nextOriginals = normalizeAiBriefOriginals(aiBriefOriginalsRef.current);
       for (const field of ['coreUser', 'coreScenario', 'sellingPoints']) {
         if (!String(currentForm[field] || '').trim() && String(generatedBrief[field] || '').trim()) {
@@ -1592,15 +1902,6 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           nextOriginals[field] = generatedBrief[field];
         }
       }
-      nextOriginals.identitySpec = { ...(nextOriginals.identitySpec || {}) };
-      for (const field of IDENTITY_SPEC_FIELDS) {
-        const generated = String(generatedBrief.identitySpec?.[field] || '').trim();
-        if (!String(currentForm.identitySpec?.[field] || '').trim() && generated) {
-          nextForm.identitySpec[field] = generated;
-          nextOriginals.identitySpec[field] = generated;
-        }
-      }
-      if (!Object.keys(nextOriginals.identitySpec).length) delete nextOriginals.identitySpec;
       setAiBriefOriginals(nextOriginals);
       setForm(nextForm);
       if (form.id) setStatus('dirty');
@@ -1611,11 +1912,9 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     }
   }
 
-  async function handleAssetFiles(event) {
-    const files = [...(event.target.files || [])].slice(0, Math.max(0, 30 - assets.length));
-    event.target.value = '';
-    if (!files.length || !form.id || !hasAccess) return;
-
+  async function uploadProjectAssets(inputFiles, uploadType = assetType, purpose = '') {
+    const files = [...(inputFiles || [])].slice(0, Math.max(0, 30 - assets.length));
+    if (!files.length || !form.id || !hasAccess) return [];
     setAssetStatus('uploading');
     let failed = false;
     const uploaded = [];
@@ -1629,7 +1928,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         const response = await fetch('/api/ecommerce/assets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId: form.id, assetType, fileName: file.name, dataUrl })
+          body: JSON.stringify({ projectId: form.id, assetType: uploadType, purpose, fileName: file.name, dataUrl })
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload?.ok || !payload.asset) throw new Error(payload?.error || 'UPLOAD_FAILED');
@@ -1647,6 +1946,60 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setIdentitySpecStatus('idle');
     }
     setAssetStatus(failed ? 'error' : 'idle');
+    return uploaded;
+  }
+
+  async function handleAssetFiles(event) {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
+    await uploadProjectAssets(files, assetType);
+  }
+
+  async function handleLibraryAssets(assetIds) {
+    const ids = [...new Set((assetIds || []).filter(Boolean))].slice(0, remainingProjectAssetSlots);
+    if (!form.id || !ids.length) return;
+    setAssetStatus('updating');
+    let failed = false;
+    for (const assetId of ids) {
+      try {
+        const response = await fetch('/api/assets/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assetId,
+            projectId: form.id,
+            assetType,
+            role: assetType
+          })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'ASSET_PROJECT_LINK_FAILED');
+      } catch {
+        failed = true;
+      }
+    }
+    try {
+      const response = await fetch(`/api/ecommerce/assets?projectId=${encodeURIComponent(form.id)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'ASSET_LOAD_FAILED');
+      setAssets(payload.assets || []);
+      setForm((current) => ({ ...current, masterAssetId: payload.masterAssetId || '' }));
+      setProjects((current) => current.map((project) => project.id === form.id
+        ? { ...project, masterAssetId: payload.masterAssetId || '' }
+        : project));
+      setIdentitySpecStatus('idle');
+    } catch {
+      failed = true;
+    }
+    setAssetStatus(failed ? 'error' : 'idle');
+    if (failed) {
+      setMessage(t.assetLibraryLinkFailed);
+      throw new Error('ASSET_LIBRARY_LINK_FAILED');
+    }
+  }
+
+  async function handleRefinementAssetFiles(files) {
+    return uploadProjectAssets(files, 'reference', 'detail');
   }
 
   async function handleDeleteAsset(assetId) {
@@ -1656,12 +2009,11 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const response = await fetch(`/api/ecommerce/assets?id=${encodeURIComponent(assetId)}`, { method: 'DELETE' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'DELETE_FAILED');
-      setAssets((current) => current.filter((item) => item.id !== assetId));
+      setAssets(payload.assets || []);
       setIdentitySpecStatus('idle');
-      if (form.masterAssetId === assetId) {
-        setForm((current) => ({ ...current, masterAssetId: '' }));
-        setProjects((current) => current.map((item) => item.id === form.id ? { ...item, masterAssetId: '' } : item));
-      }
+      const masterAssetId = payload.masterAssetId || payload.project?.masterAssetId || '';
+      setForm((current) => ({ ...current, masterAssetId }));
+      setProjects((current) => current.map((item) => item.id === form.id ? { ...item, masterAssetId } : item));
       setAssetStatus('idle');
     } catch {
       setAssetStatus('error');
@@ -1775,7 +2127,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     const response = await fetch('/api/ecommerce/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId: form.id, requests })
+      body: JSON.stringify({ projectId: form.id, providerId: form.imageProviderId, requests })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.ok || !payload.tasks?.length) {
@@ -1784,7 +2136,12 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         await refreshProjectRuntime();
         setGenerationMessage(t.taskAlreadyActive);
       }
-      throw new Error(payload.error || 'TASK_CREATE_FAILED');
+      if (!['SLOT_LOCKED', 'TASK_ALREADY_ACTIVE'].includes(payload.error)) {
+        setGenerationMessage(ecommerceGenerationFailureText(payload, t));
+      }
+      const error = new Error(payload.error || 'TASK_CREATE_FAILED');
+      error.payload = payload;
+      throw error;
     }
     for (const task of payload.tasks) updateGenerationTask(task.slotId, { ...task, taskId: task.id });
     return payload.tasks;
@@ -1803,9 +2160,29 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setGenerationMessage(t.saveChangesFirst);
       return false;
     }
+    if (!selectedProviderCompatibility.valid) {
+      setGenerationMessage(selectedProviderCompatibilityMessage);
+      return false;
+    }
     const output = outputs.find((item) => item.slotId === slotId);
     if (output?.locked) {
       setGenerationMessage(t.slotLocked);
+      return false;
+    }
+    const catalogSlot = platform.slots.find((item) => item.id === slotId);
+    let confirmedPricing;
+    try {
+      confirmedPricing = await requestImagePricing(catalogSlot
+        ? { size: resolveEcommerceSlotGenerationSize(catalogSlot), quality: 'medium', providerId: form.imageProviderId }
+        : { size: '1024x1024', quality: 'low', providerId: form.imageProviderId });
+    } catch (error) {
+      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+      return false;
+    }
+    const requiredCredits = Number(confirmedPricing.credits || 0);
+    if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
+      setGenerationMessage(t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
+      onBilling?.();
       return false;
     }
 
@@ -1817,52 +2194,23 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           slotId,
           quality: 'medium',
           adjustment: request.adjustment || '',
-          baseGenerationId: request.baseGenerationId || ''
+          baseGenerationId: request.baseGenerationId || '',
+          targetArea: request.targetArea || 'auto',
+          referenceInputs: request.referenceInputs || []
         }]);
         taskId = serverTask.id;
       }
     } catch (error) {
-      if (!['TASK_ALREADY_ACTIVE', 'SLOT_LOCKED'].includes(error?.message)) setGenerationMessage(t.generationFailed);
+      if (!['TASK_ALREADY_ACTIVE', 'SLOT_LOCKED'].includes(error?.message)) {
+        setGenerationMessage(ecommerceGenerationFailureText(error?.payload || error?.message, t));
+      }
       return false;
     }
     const queuedTask = generationTasksRef.current.get(slotId);
     if (queuedTask && queuedTask.taskId !== taskId) return false;
-    updateGenerationTask(slotId, { ...(serverTask || queuedTask), taskId, status: 'running' });
+    updateGenerationTask(slotId, { ...(serverTask || queuedTask), taskId, status: 'queued' });
     setGenerationMessage('');
-    try {
-      const response = await fetch('/api/ecommerce/generate-slot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: form.id, slotId, taskId })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (payload.user) onProfileChange?.(payload.user);
-      if (payload.generation) {
-        setGenerations((current) => [payload.generation, ...current.filter((item) => item.id !== payload.generation.id)]);
-      }
-      if (payload.output) {
-        setOutputs((current) => [payload.output, ...current.filter((item) => item.slotId !== payload.output.slotId)]);
-      }
-      if (payload.task) updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
-      if (!response.ok || !payload?.ok || !payload.generation) {
-        if (payload.error === 'GENERATION_CANCELLED') return false;
-        if (payload.error === 'CREDITS_REQUIRED') onBilling?.();
-        setGenerationMessage(
-          payload.error === 'CONTENT_MODERATION_BLOCKED'
-            ? t.moderationBlocked
-            : payload.error === 'PROJECT_CHANGED'
-              ? t.projectChanged
-              : payload.error === 'SLOT_LOCKED'
-                ? t.slotLocked
-                : t.generationFailed
-        );
-        return false;
-      }
-      return true;
-    } catch {
-      setGenerationMessage(t.generationFailed);
-      return false;
-    }
+    return true;
   }
 
   async function handleCancelGeneration(slotId) {
@@ -1880,9 +2228,20 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'CANCEL_FAILED');
       if (payload.task) updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
+      if (!['cancelled', 'failed', 'interrupted'].includes(payload.task?.status)) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, 250));
+          const taskResponse = await fetch(`/api/ecommerce/tasks?projectId=${encodeURIComponent(form.id)}`, { cache: 'no-store' });
+          const taskPayload = await taskResponse.json().catch(() => ({}));
+          if (!taskResponse.ok || !taskPayload?.ok) continue;
+          const currentTask = (taskPayload.tasks || []).find((item) => item.id === task.taskId);
+          if (!currentTask) break;
+          updateGenerationTask(slotId, { ...currentTask, taskId: currentTask.id });
+          if (['cancelled', 'failed', 'interrupted'].includes(currentTask.status)) break;
+        }
+      }
     } catch {
-      const currentTask = generationTasksRef.current.get(slotId);
-      if (currentTask?.taskId === task.taskId) updateGenerationTask(slotId, { ...task, status: 'running' });
+      await refreshProjectRuntime().catch(() => undefined);
       setGenerationMessage(t.generationFailed);
     }
   }
@@ -1899,9 +2258,9 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.task) throw new Error(payload.error || 'TASK_RETRY_FAILED');
       updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
-      return runSlotGeneration(slotId, payload.task.id);
-    } catch {
-      setGenerationMessage(t.generationFailed);
+      return true;
+    } catch (error) {
+      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
       return false;
     }
   }
@@ -1922,30 +2281,42 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
       setGenerationMessage(t.saveChangesFirst);
       return;
     }
+    if (!selectedProviderCompatibility.valid) {
+      setGenerationMessage(selectedProviderCompatibilityMessage);
+      return;
+    }
+    let pricingQuotes;
+    try {
+      pricingQuotes = await requestImagePricingBatch(slotIds.map((slotId) => {
+        const slot = platform.slots.find((item) => item.id === slotId);
+        return slot
+          ? { key: slotId, size: resolveEcommerceSlotGenerationSize(slot), quality: 'medium', providerId: form.imageProviderId }
+          : { key: slotId, size: '1024x1024', quality: 'low', providerId: form.imageProviderId };
+      }));
+    } catch (error) {
+      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+      return;
+    }
+    const requiredCredits = pricingQuotes.reduce((total, quote) => total + Number(quote?.pricing?.credits || 0), 0);
     const availableCredits = profile?.isSuperAdmin ? Number.POSITIVE_INFINITY : Number(profile?.creditBalance || 0);
-    if (slotIds.length > availableCredits) {
-      setGenerationMessage(t.insufficientBatchCredits(slotIds.length, availableCredits));
+    if (requiredCredits > availableCredits) {
+      setGenerationMessage(t.insufficientBatchCredits(requiredCredits, availableCredits));
       onBilling?.();
       return;
     }
 
-    let jobs;
     try {
-      jobs = (await createServerTasks(slotIds.map((slotId) => ({
+      await createServerTasks(slotIds.map((slotId) => ({
         id: createGenerationTaskId(), slotId, quality: 'medium'
-      })))).map((task) => ({ slotId: task.slotId, taskId: task.id }));
+      })));
     } catch (error) {
-      if (!['TASK_ALREADY_ACTIVE', 'SLOT_LOCKED'].includes(error?.message)) setGenerationMessage(t.generationFailed);
+      if (!['TASK_ALREADY_ACTIVE', 'SLOT_LOCKED'].includes(error?.message)) {
+        setGenerationMessage(ecommerceGenerationFailureText(error?.payload || error?.message, t));
+      }
       return;
     }
-    setBatchRunning(true);
-    setGenerationMessage('');
-    await runTaskPool(jobs, BATCH_GENERATION_CONCURRENCY, async (job) => {
-      const task = generationTasksRef.current.get(job.slotId);
-      if (!task || task.taskId !== job.taskId) return false;
-      return runSlotGeneration(job.slotId, job.taskId);
-    });
     setBatchRunning(false);
+    setGenerationMessage('');
   }
 
   async function handleSelectVersion(slotId, generationId) {
@@ -2023,6 +2394,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     try {
       const success = await runSlotGeneration(slotId, '', request);
       if (success) await refreshProjectRuntime();
+      return success;
     } finally {
       setVersionActionState('');
     }
@@ -2071,7 +2443,27 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
     return latest;
   }, [generationsBySlot]);
   const productionSlots = platform.slots.filter((item) => form.selectedSlots.includes(item.id));
+  const {
+    pricingByKey: productionPricingQuotes,
+    loading: productionPricingLoading
+  } = useServerImagePricingBatch(productionSlots.map((slot) => ({
+    key: slot.id,
+    size: resolveEcommerceSlotGenerationSize(slot),
+    quality: 'medium',
+    providerId: form.imageProviderId
+  })));
+  const productionPricingBySlot = new Map(productionSlots.map((slot) => [slot.id, productionPricingQuotes[slot.id] || null]));
   const selectableProductionSlots = productionSlots.filter((item) => !outputsBySlot.get(item.id)?.locked);
+  const selectedPricingComplete = selectedProductionSlots.every((slotId) => Boolean(productionPricingBySlot.get(slotId)));
+  const selectedProductionPricing = selectedPricingComplete ? selectedProductionSlots.reduce((total, slotId) => {
+    const pricing = productionPricingBySlot.get(slotId);
+    return {
+      credits: total.credits + Number(pricing?.credits || 0),
+      originalCredits: total.originalCredits + Number(pricing?.originalCredits || pricing?.credits || 0),
+      discountApplied: total.discountApplied || Boolean(pricing?.discountApplied),
+      promotion: pricing?.promotion || total.promotion
+    };
+  }, { credits: 0, originalCredits: 0, discountApplied: false, promotion: null }) : null;
   const allProductionSelected = Boolean(selectableProductionSlots.length) && selectableProductionSlots.every((item) => selectedProductionSlots.includes(item.id));
   const activeGenerationCount = Object.values(generationTasks).filter((task) => ['queued', 'running', 'cancelling'].includes(task.status)).length;
   const versionCenterCatalogSlot = platform.slots.find((item) => item.id === versionCenterSlotId);
@@ -2125,7 +2517,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             onClick={() => navigateToWorkflowStep(index)}
             key={label}
           >
-            <span>{index + 1}</span>
+            <span>{index}</span>
             <strong>{label}</strong>
             {active ? <em>{t.currentStage}</em> : locked ? <em>{t.lockedStage}</em> : null}
           </button>
@@ -2168,16 +2560,14 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   {projects.map((project) => {
                     const itemPlatform = getEcommercePlatform(project.platformId);
                     return (
-                      <button
-                        className={project.id === form.id ? 'active' : ''}
-                        type="button"
-                        onClick={() => openProject(project)}
-                        key={project.id}
-                      >
+                      <article className={`ecommerceProjectCard ${project.id === form.id ? 'active' : ''}`} key={project.id}>
+                      <button className="ecommerceProjectOpen" type="button" onClick={() => openProject(project)}>
                         <span><Box size={15} /> {localName(itemPlatform)}</span>
                         <strong>{project.projectName || project.productName}</strong>
                         <em>{project.selectedSlots?.length || 0} · {t.draft}</em>
                       </button>
+                      <button className="ecommerceProjectDelete" type="button" onClick={(event) => handleDeleteProject(event, project)} aria-label={language === 'zh' ? '删除项目' : 'Delete project'}><Trash2 size={15} /></button>
+                      </article>
                     );
                   })}
                 </div>
@@ -2188,7 +2578,22 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
 
         <form id="ecommerce-product-project-form" className="ecommerceProjectForm" onSubmit={handleSave}>
           <div className="ecommerceStagePanel ecommerceProductBriefStage">
-          <div className="ecommerceField ecommerceProjectNameField">
+          <div
+            className={`ecommerceField ecommerceProjectNameField ${activeWorkflowStep === 0 ? 'stageActive' : ''}`}
+            ref={(node) => {
+              if (node) sectionRefs.current.start = node;
+              else delete sectionRefs.current.start;
+            }}
+            onMouseEnter={() => setHoveredWorkflowStep(0)}
+            onMouseLeave={() => setHoveredWorkflowStep((current) => current === 0 ? null : current)}
+            onFocusCapture={() => setHoveredWorkflowStep(0)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setHoveredWorkflowStep((current) => current === 0 ? null : current);
+              }
+            }}
+            data-workflow-step="0"
+          >
             <FieldHelpLabel
               fieldId="ecommerce-project-name"
               label={t.projectName}
@@ -2200,10 +2605,10 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               hasAiOriginal={hasAiOriginal('projectName')}
               onReset={() => resetBriefField('projectName')}
             />
-            <input id="ecommerce-project-name" value={form.projectName} onChange={(event) => updateField('projectName', event.target.value)} placeholder={t.projectNamePlaceholder} />
+            <input ref={projectNameInputRef} id="ecommerce-project-name" value={form.projectName} onChange={(event) => updateField('projectName', event.target.value)} placeholder={t.projectNamePlaceholder} />
           </div>
 
-          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.platform ? 'collapsed' : ''} ${activeWorkflowStep === 0 ? 'stageActive' : ''}`} {...sectionInteractionProps('platform')}>
+          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.platform ? 'collapsed' : ''} ${activeWorkflowStep === 1 ? 'stageActive' : ''}`} {...sectionInteractionProps('platform')}>
             <CollapsibleSectionLegend
               label={t.platform}
               summary={localName(platform)}
@@ -2226,7 +2631,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             </div>
           </fieldset>
 
-          <fieldset className={`ecommerceSection ecommerceProductBriefSection ecommerceCollapsibleSection ${collapsedSections.brief ? 'collapsed' : ''} ${activeWorkflowStep === 1 ? 'stageActive' : ''}`} {...sectionInteractionProps('brief')}>
+          <fieldset className={`ecommerceSection ecommerceProductBriefSection ecommerceCollapsibleSection ${collapsedSections.brief ? 'collapsed' : ''} ${activeWorkflowStep === 2 ? 'stageActive' : ''}`} {...sectionInteractionProps('brief')}>
             <CollapsibleSectionLegend
               label={t.productBrief}
               summary={form.productName.trim() || localName(industry)}
@@ -2235,10 +2640,23 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               expandLabel={t.expandSection}
               collapseLabel={t.collapseSection}
               onToggle={() => toggleSection('brief')}
+              headerAction={(
+                <button
+                  className={`ecommerceAiBriefButton ecommerceAiBriefHeaderButton ${aiBriefStatus === 'success' ? 'success' : ''}`}
+                  type="button"
+                  disabled={aiBriefStatus === 'loading'}
+                  onClick={handleAiFillBrief}
+                  aria-label={aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}
+                  aria-busy={aiBriefStatus === 'loading'}
+                  title={aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}
+                >
+                  {aiBriefStatus === 'loading' ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
+                </button>
+              )}
             />
             <div className="ecommerceCollapsibleContent" id="ecommerce-brief-section" hidden={collapsedSections.brief}>
             <div className="ecommerceFieldsGrid">
-              <label className="ecommerceField">
+              <label className="ecommerceField ecommerceIndustryField">
                 <span>{t.industry}</span>
                 <select value={form.industryId} onChange={(event) => selectIndustry(event.target.value)}>
                   {ECOMMERCE_INDUSTRIES.map((item) => (
@@ -2246,7 +2664,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   ))}
                 </select>
               </label>
-              <div className="ecommerceField">
+              <div className="ecommerceField ecommerceProductNameField">
                 <FieldHelpLabel
                   fieldId="ecommerce-product-name"
                   label={t.productName}
@@ -2273,19 +2691,6 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   onReset={() => resetBriefField('brandName')}
                 />
                 <input id="ecommerce-brand-name" value={form.brandName} onChange={(event) => updateField('brandName', event.target.value)} placeholder={t.brandNamePlaceholder} />
-              </div>
-              <div className="ecommerceAiBriefSlot">
-                <button
-                  className={`ecommerceAiBriefButton ${aiBriefStatus === 'success' ? 'success' : ''}`}
-                  type="button"
-                  disabled={aiBriefStatus === 'loading'}
-                  onClick={handleAiFillBrief}
-                  aria-label={aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}
-                  aria-busy={aiBriefStatus === 'loading'}
-                  title={aiBriefStatus === 'loading' ? t.aiFillingBrief : aiBriefStatus === 'success' ? t.aiBriefFilled : t.aiFillBrief}
-                >
-                  {aiBriefStatus === 'loading' ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
-                </button>
               </div>
               <div className="ecommerceField ecommerceBriefDimensionField">
                 <FieldHelpLabel
@@ -2315,7 +2720,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                 />
                 <textarea id="ecommerce-core-scenario" value={form.coreScenario} onChange={(event) => updateField('coreScenario', event.target.value)} placeholder={t.coreScenarioPlaceholder} />
               </div>
-              <div className="ecommerceField ecommerceFieldWide ecommerceSellingPointsField">
+              <div className="ecommerceField ecommerceSellingPointsField">
                 <FieldHelpLabel
                   fieldId="ecommerce-selling-points"
                   label={t.sellingPoints}
@@ -2334,7 +2739,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           </fieldset>
           </div>
 
-          <fieldset className={`ecommerceSection ecommerceAssetSection ecommerceCollapsibleSection ${collapsedSections.assets ? 'collapsed' : ''} ${activeWorkflowStep === 2 ? 'stageActive' : ''}`} {...sectionInteractionProps('assets')}>
+          <fieldset className={`ecommerceSection ecommerceAssetSection ecommerceCollapsibleSection ${collapsedSections.assets ? 'collapsed' : ''} ${activeWorkflowStep === 3 ? 'stageActive' : ''}`} {...sectionInteractionProps('assets')}>
             <CollapsibleSectionLegend
               label={t.sourceAssets}
               summary={t.assetSummary(assets.length, Boolean(form.masterAssetId))}
@@ -2366,10 +2771,16 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                       hidden
                       onChange={handleAssetFiles}
                     />
-                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!hasAccess || assetStatus === 'uploading' || assets.length >= 30}>
-                      {assetStatus === 'uploading' ? <LoaderCircle size={16} className="spin" /> : <ImageUp size={16} />}
-                      {assetStatus === 'uploading' ? t.uploadingAssets : t.chooseImages}
-                    </button>
+                    <div className="ecommerceAssetSourceButtons">
+                      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!hasAccess || assetStatus === 'uploading' || assets.length >= 30}>
+                        {assetStatus === 'uploading' ? <LoaderCircle size={16} className="spin" /> : <ImageUp size={16} />}
+                        {assetStatus === 'uploading' ? t.uploadingAssets : t.uploadFromDevice}
+                      </button>
+                      <button type="button" onClick={() => setAssetLibraryOpen(true)} disabled={!hasAccess || assetStatus === 'uploading' || remainingProjectAssetSlots <= 0}>
+                        <FolderOpen size={16} />
+                        {t.chooseFromLibrary}
+                      </button>
+                    </div>
                     <small>{assetStatus === 'error' ? t.uploadFailed : t.assetLimit}</small>
                   </div>
                 </div>
@@ -2377,8 +2788,8 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                 {assets.length ? (
                   <div className="ecommerceAssetGrid">
                     {assets.map((asset, index) => (
-                      <article className={asset.isMaster ? 'master' : ''} key={asset.id}>
-                        <img src={asset.imageUrl} alt={asset.fileName} loading="lazy" />
+                      <article className={`${asset.isMaster ? 'master' : ''} ${asset.available === false ? 'unavailable' : ''}`.trim()} key={asset.id}>
+                        {asset.available === false ? <div className="ecommerceAssetUnavailable"><ShieldAlert size={22} /><strong>{t.assetUnavailable}</strong><small>{t.assetUnavailableHint}</small></div> : <img src={asset.imageUrl} alt={asset.fileName} loading="lazy" />}
                         {asset.isMaster ? <em className="ecommerceMasterBadge"><Check size={12} /> {t.masterAsset}</em> : null}
                         <div className="ecommerceAssetInfo">
                           <span>{assetTypeLabels[asset.assetType] || asset.assetType}</span>
@@ -2388,7 +2799,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                             <select
                               value={asset.purpose || ''}
                               onChange={(event) => handleAssetPurpose(asset.id, event.target.value)}
-                              disabled={assetStatus === 'updating'}
+                              disabled={assetStatus === 'updating' || asset.available === false}
                             >
                               {Object.entries(t.assetPurposeOptions).map(([value, label]) => (
                                 <option value={value} key={value}>{label}</option>
@@ -2401,7 +2812,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                               title={t.moveAssetUp}
                               aria-label={`${t.moveAssetUp}: ${asset.fileName}`}
                               onClick={() => moveAsset(asset.id, -1)}
-                              disabled={index === 0}
+                              disabled={index === 0 || asset.available === false}
                             ><ArrowUp size={13} /></button>
                             <span>{index + 1}</span>
                             <button
@@ -2409,14 +2820,14 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                               title={t.moveAssetDown}
                               aria-label={`${t.moveAssetDown}: ${asset.fileName}`}
                               onClick={() => moveAsset(asset.id, 1)}
-                              disabled={index === assets.length - 1}
+                              disabled={index === assets.length - 1 || asset.available === false}
                             ><ArrowDown size={13} /></button>
                           </div>
                         </div>
                         <button className="ecommerceAssetDeleteButton" type="button" aria-label={`${t.deleteAsset}: ${asset.fileName}`} onClick={() => handleDeleteAsset(asset.id)}>
                           <Trash2 size={14} />
                         </button>
-                        {!asset.isMaster && asset.assetType === 'product' ? (
+                        {asset.available !== false && !asset.isMaster && asset.assetType === 'product' ? (
                           <button className="ecommerceSetMasterButton" type="button" onClick={() => handleSetMaster(asset.id)}>
                             {t.setMaster}
                           </button>
@@ -2461,7 +2872,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             </div>
           </fieldset>
 
-          <fieldset className={`ecommerceSection ecommerceVisualSection ecommerceCollapsibleSection ${collapsedSections.visual ? 'collapsed' : ''} ${activeWorkflowStep === 3 ? 'stageActive' : ''}`} {...sectionInteractionProps('visual')}>
+          <fieldset className={`ecommerceSection ecommerceVisualSection ecommerceCollapsibleSection ${collapsedSections.visual ? 'collapsed' : ''} ${activeWorkflowStep === 4 ? 'stageActive' : ''}`} {...sectionInteractionProps('visual')}>
             <CollapsibleSectionLegend
               label={t.visualDirection}
               summary={localName(getEcommerceVisualStyle(form.visualStyleId))}
@@ -2529,7 +2940,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
             </div>
           </fieldset>
 
-          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.outputs ? 'collapsed' : ''} ${activeWorkflowStep === 4 ? 'stageActive' : ''}`} {...sectionInteractionProps('outputs')}>
+          <fieldset className={`ecommerceSection ecommerceCollapsibleSection ${collapsedSections.outputs ? 'collapsed' : ''} ${activeWorkflowStep === 5 ? 'stageActive' : ''}`} {...sectionInteractionProps('outputs')}>
             <CollapsibleSectionLegend
               label={t.outputSlots}
               summary={t.selectedCount(form.selectedSlots.length)}
@@ -2564,7 +2975,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           </fieldset>
 
           {form.id ? (
-            <fieldset className={`ecommerceSection ecommerceProductionSection ecommerceCollapsibleSection ${collapsedSections.production ? 'collapsed' : ''} ${activeWorkflowStep === 5 ? 'stageActive' : ''}`} {...sectionInteractionProps('production')}>
+            <fieldset className={`ecommerceSection ecommerceProductionSection ecommerceCollapsibleSection ${collapsedSections.production ? 'collapsed' : ''} ${activeWorkflowStep === 6 ? 'stageActive' : ''}`} {...sectionInteractionProps('production')}>
               <CollapsibleSectionLegend
                 label={t.production}
                 summary={t.productionSummary(outputs.filter((output) => output.selectedGenerationId).length, productionSlots.length)}
@@ -2575,6 +2986,26 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                 onToggle={() => toggleSection('production')}
               />
               <div className="ecommerceCollapsibleContent ecommerceProductionContent" id="ecommerce-production-section" hidden={collapsedSections.production}>
+              <label className="ecommerceField ecommerceProductionProvider">
+                <span>{language === 'zh' ? '生图服务' : 'Image service'}</span>
+                <select
+                  value={form.imageProviderId}
+                  onChange={(event) => handleImageProviderChange(event.target.value)}
+                  disabled={status === 'saving' || activeGenerationCount > 0}
+                >
+                  {imageProviders.map((provider) => {
+                    const compatibility = providerCompatibilityById.get(provider.id);
+                    return (
+                      <option value={provider.id} disabled={!compatibility?.valid} key={provider.id}>
+                        {provider.name}{compatibility?.valid ? '' : ` · ${t.providerUnavailableChoice}`}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              {!selectedProviderCompatibility.valid ? (
+                <p className="ecommerceGenerationMessage ecommerceProviderCompatibilityMessage">{selectedProviderCompatibilityMessage}</p>
+              ) : null}
               <div className="ecommerceBatchToolbar">
                 <button
                   type="button"
@@ -2584,12 +3015,14 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                   <ListChecks size={15} />
                   {allProductionSelected ? t.clearSelection : t.selectAll}
                 </button>
-                <span>{t.batchSelection(selectedProductionSlots.length)}</span>
+                <span className="ecommerceBatchPrice">
+                  {t.batchSelectionLabel(selectedProductionSlots.length)} <ImageCreditPrice pricing={selectedProductionPricing} language={language} compact />
+                </span>
                 <button
                   className="primary"
                   type="button"
                   onClick={handleGenerateSelected}
-                  disabled={batchRunning || activeGenerationCount > 0 || !selectedProductionSlots.length || !form.masterAssetId || status === 'dirty'}
+                  disabled={batchRunning || activeGenerationCount > 0 || !selectedProductionSlots.length}
                 >
                   {batchRunning ? <LoaderCircle size={15} className="spin" /> : <Zap size={15} />}
                   {batchRunning ? `${t.batchGenerating} ${activeGenerationCount}` : t.generateSelected}
@@ -2598,6 +3031,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
               {generationMessage ? <p className="ecommerceGenerationMessage">{generationMessage}</p> : null}
               <div className="ecommerceProductionGrid">
                 {productionSlots.map((item) => {
+                  const slotPricing = productionPricingBySlot.get(item.id);
                   const output = outputsBySlot.get(item.id);
                   const versions = generationsBySlot.get(item.id) || [];
                   const adopted = adoptedGenerationBySlot.get(item.id);
@@ -2680,14 +3114,20 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                             : retryable
                               ? handleRetryTask(item.id)
                               : runSlotGeneration(item.id)}
-                          disabled={output?.locked || task?.status === 'cancelling' || (!taskActive && (batchRunning || !form.masterAssetId || status === 'dirty'))}
+                          disabled={output?.locked || task?.status === 'cancelling' || (!taskActive && (batchRunning || productionPricingLoading || !slotPricing || !form.masterAssetId || status === 'dirty' || status === 'saving' || !selectedProviderCompatibility.valid))}
                         >
                           {taskActive
                             ? task.status === 'cancelling' ? <LoaderCircle size={15} className="spin" /> : <X size={15} />
                             : retryable ? <RotateCcw size={15} /> : adopted ? <RefreshCw size={15} /> : <Sparkles size={15} />}
                           {taskActive
                             ? task.status === 'cancelling' ? t.cancelling : t.cancel
-                            : retryable ? t.retry : status === 'dirty' ? t.saveChangesFirst : adopted ? t.regenerateSlot : t.generateSlot}
+                            : retryable
+                              ? <>{t.retryLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>
+                              : status === 'dirty'
+                                ? t.saveChangesFirst
+                                : adopted
+                                  ? <>{t.regenerateSlotLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>
+                                  : <>{t.generateSlotLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}
                         </button>
                         <button className="versions" type="button" onClick={() => setVersionCenterSlotId(item.id)}>
                           <History size={14} /> {t.versions}{versions.length ? ` · ${versions.length}` : ''}
@@ -2716,7 +3156,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           ) : null}
 
           {form.id ? (
-            <fieldset className={`ecommerceSection ecommerceCollapsibleSection ecommerceDeliverySection ${collapsedSections.delivery ? 'collapsed' : ''} ${activeWorkflowStep === 6 ? 'stageActive' : ''}`} {...sectionInteractionProps('delivery')}>
+            <fieldset className={`ecommerceSection ecommerceCollapsibleSection ecommerceDeliverySection ${collapsedSections.delivery ? 'collapsed' : ''} ${activeWorkflowStep === 7 ? 'stageActive' : ''}`} {...sectionInteractionProps('delivery')}>
               <CollapsibleSectionLegend
                 label={t.professionalDelivery}
                 summary={t.deliverySummary(outputs.filter((output) => output.selectedGenerationId).length)}
@@ -2738,8 +3178,10 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
                     outputs={outputs}
                     generations={generations}
                     assets={assets}
-                    reuseEnabled={maxUnlockedStage >= 6}
+                    reuseEnabled={maxUnlockedStage >= 7}
                     onProjectCreated={handleDeliveryProjectCreated}
+                    onRefineImage={handleCreateRevision}
+                    onUploadRefinementAssets={handleRefinementAssetFiles}
                   />
                 )}
               </div>
@@ -2755,17 +3197,29 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
           </div>
         </form>
       </div>
-      <FloatingSaveControl
-        label={t.save}
-        savingLabel={t.saving}
-        dragLabel={t.dragFloatingSave}
-        hideLabel={t.hideFloatingSave}
-        showLabel={t.showFloatingSave}
-        saving={status === 'saving'}
-        disabled={status === 'saving' || !hasAccess}
-        attention={saveAttention}
-        attentionLabel={t.saveRequiredHint}
-        formId="ecommerce-product-project-form"
+      {signedIn && !suspendFloatingControls ? (
+        <FloatingSaveControl
+          label={t.save}
+          savingLabel={t.saving}
+          dragLabel={t.dragFloatingSave}
+          hideLabel={t.hideFloatingSave}
+          showLabel={t.showFloatingSave}
+          saving={status === 'saving'}
+          disabled={status === 'saving' || !hasAccess}
+          attention={saveAttention}
+          attentionLabel={t.saveRequiredHint}
+          formId="ecommerce-product-project-form"
+        />
+      ) : null}
+      <EcommerceAssetLibraryPicker
+        open={assetLibraryOpen && Boolean(form.id)}
+        language={language}
+        session={session}
+        assetTypeLabel={assetTypeLabels[assetType] || assetType}
+        linkedAssetIds={linkedMediaAssetIds}
+        maxSelectable={remainingProjectAssetSlots}
+        onClose={() => setAssetLibraryOpen(false)}
+        onConfirm={handleLibraryAssets}
       />
       <EcommerceVersionCenterModal
         slot={versionCenterSlot}
@@ -2775,6 +3229,7 @@ export default function EcommerceWorkspace({ language, session, profile, onSignI
         language={language}
         platformName={localName(platform)}
         productName={form.productName}
+        providerId={form.imageProviderId}
         actionState={versionActionState}
         onClose={() => setVersionCenterSlotId('')}
         onPreview={(version) => setPreviewImage({

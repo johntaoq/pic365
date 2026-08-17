@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "generate:site-data": "node scripts/generate-site-data.mjs",
+    "generate:gallery-thumbnails": "node scripts/generate-gallery-thumbnails.mjs",
     "generate:style-skill": "node scripts/generate-style-skill.mjs",
     "ga4:oauth": "node scripts/google-analytics-oauth.mjs",
     "install:skill": "node scripts/install-style-skill.mjs",
@@ -13,27 +14,34 @@
     "predev": "npm run generate:site-data && npm run generate:style-skill",
     "dev": "vite",
     "storage:azurite": "azurite --silent --skipApiVersionCheck --location ./data/azurite --blobPort 10000 --queuePort 10001 --tablePort 10002",
+    "storage:migrate": "node scripts/migrate-blob-storage.mjs",
+    "admin:promote": "node scripts/promote-admin.mjs",
+    "providers:rotate-secret": "node scripts/rotate-provider-secrets.mjs",
     "start": "node server/index.js",
     "test": "node --test tests/*.test.js",
     "prebuild": "npm run generate:site-data && npm run generate:style-skill",
     "build": "vite build",
+    "package:pic365": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-pic365-release.ps1",
     "preview": "vite preview"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.33.0",
     "@google-analytics/data": "^5.2.2",
-    "@supabase/supabase-js": "^2.105.4",
-    "@vitejs/plugin-react": "^5.1.1",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
     "google-auth-library": "^10.6.2",
     "jszip": "^3.10.1",
-    "lucide-react": "^0.561.0",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
     "sharp": "^0.35.3",
-    "stripe": "^22.1.1",
-    "vite": "^7.2.7"
+    "stripe": "^22.1.1"
   },
   "devDependencies": {
-    "azurite": "^3.36.0"
+    "@vitejs/plugin-react": "^5.2.0",
+    "azurite": "^3.36.0",
+    "dompurify": "^3.4.13",
+    "lucide-react": "^0.561.0",
+    "marked": "^18.0.9",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^7.3.6"
   }
 }

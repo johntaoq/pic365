@@ -1,28 +1,8 @@
-import { getAuthContext } from '../_lib/supabase.js';
+import { authenticateRequest } from '../_lib/local-auth.js';
+import { listAdminUsers } from '../_lib/local-db.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
-}
-
-function formatAdminUser(row) {
-  return {
-    id: row.id,
-    email: row.email,
-    fullName: row.full_name || '',
-    avatarUrl: row.avatar_url || '',
-    role: row.role || 'user',
-    creditBalance: Number(row.credit_balance || 0),
-    freeGenerationsUsed: Number(row.free_generations_used || 0),
-    freeUsed: Number(row.free_generations_used || 0) >= 1,
-    usage: {
-      totalGenerations: Number(row.total_generations || 0),
-      totalGenerationCredits: Number(row.total_generation_credits || 0),
-      purchasedCredits: Number(row.purchased_credits || 0),
-      lastGenerationAt: row.last_generation_at || '',
-      lastGenerationCaseId: Number(row.last_generation_case_id || 0) || null
-    },
-    createdAt: row.created_at || ''
-  };
 }
 
 export default async function handler(req, res) {
@@ -31,28 +11,24 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  const auth = await getAuthContext(req);
+  const auth = authenticateRequest(req);
   if (auth.error) {
     return json(res, auth.status || 401, { ok: false, error: auth.error });
   }
 
-  if (auth.profile?.role !== 'super_admin') {
+  if (!auth.profile?.isSuperAdmin) {
     return json(res, 403, { ok: false, error: 'FORBIDDEN' });
   }
 
-  const { data, error } = await auth.client.rpc('get_admin_user_summaries', {
-    p_limit: 100
-  });
-
-  if (error) {
+  try {
+    return json(res, 200, {
+      ok: true,
+      users: listAdminUsers(100)
+    });
+  } catch (error) {
     console.warn('Failed to list admin users', {
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-    return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
+    return json(res, 500, { ok: false, error: 'ADMIN_USERS_LOAD_FAILED' });
   }
-
-  return json(res, 200, {
-    ok: true,
-    users: (data || []).map((user) => formatAdminUser(user))
-  });
 }

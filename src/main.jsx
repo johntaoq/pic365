@@ -1,9 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {
+  defaultImagePricingConfigForModel,
+  getImageGenerationPricing,
+  IMAGE_PRICING_PIXEL_STEP,
+  IMAGE_PRICING_STRATEGIES,
+  normalizeImagePricingConfig
+} from '../shared/image-pricing.js';
 import { buildSafePromptFallback } from '../shared/prompt-safety.js';
+import { getClientImagePricing, ImageCreditPrice, refreshImagePromotion, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
 import {
   ArrowUpRight,
   BarChart3,
+  Bell,
+  Calculator,
   ChevronDown,
   Check,
   Coins,
@@ -11,18 +21,25 @@ import {
   CreditCard,
   Eye,
   Heart,
+  HardDrive,
   ImageIcon,
+  KeyRound,
+  Layers3,
   LoaderCircle,
   LogIn,
   LogOut,
   PackageCheck,
+  Plus,
   RefreshCw,
   ReceiptText,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
+  Star,
+  Tags,
   TrendingUp,
+  Trash2,
   UserCircle,
   UserPlus,
   Users,
@@ -32,6 +49,11 @@ import {
 import './styles.css';
 import { authClient } from './authClient';
 import CreateWorkspace from './create-workspace';
+import { fetchImageGeneration } from './image-generation-client.js';
+import { SITE_NOTICE_EXAMPLES } from '../shared/site-notice.js';
+
+const SiteNoticeContent = lazy(() => import('./site-notice-content.jsx'));
+const MediaAssetCenter = lazy(() => import('./media-asset-center.jsx'));
 
 const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID;
 const watchaLogoUrl =
@@ -44,6 +66,11 @@ const copy = {
     navCreate: 'Create Canvas',
     navTemplates: 'Industry Templates',
     navCases: 'Showcase',
+    navAssets: 'Assets',
+    ecommerceMode: 'Product image sets',
+    freeMode: 'Free Drawing Workshop',
+    api: 'API',
+    creationMode: 'Creation mode',
     eyebrow: 'Live GPT-Image2 prompt gallery',
     title: 'From viral images to reusable prompts.',
     subtitle:
@@ -95,13 +122,14 @@ const copy = {
     contentModerationBlocked: 'Content review blocked this prompt.',
     sanitizeNoChange: 'The prompt did not change.',
     oneFreeGeneration: '1 free test image',
-    superAdminGeneration: 'Super admin mode: every generation costs 1 credit.',
-    generationCost: 'Costs 1 credit',
+    superAdminGeneration: (credits) => `Super admin reference price: ${credits} credits; balance is not deducted.`,
+    generationCost: (credits) => `Estimated cost: ${credits} credits`,
     freeLimitReached: 'Free generation used. Buy credits to keep generating.',
     creditsRequired: 'Credits required. Buy credits to keep generating.',
     guestFreeLimitReached: 'Your free guest image has been used. Sign in with credits to continue.',
     generationBusy: 'The image service is busy. Please try again in a moment.',
     generationFailed: 'Generation failed. Please try again later.',
+    generationTimeout: 'Generation exceeded the 300-second wait limit. Please try again.',
     promptRequired: 'Prompt is required and must stay under 6000 characters.',
     serverUnavailable: 'Generation service is not configured yet.',
     checkoutUnavailable: 'Checkout is not configured yet.',
@@ -168,9 +196,32 @@ const copy = {
     paymentReady: 'Secure checkout via Stripe.',
     billingNotReady: 'Stripe checkout is not configured yet.',
     adminAdjust: 'Adjust credits',
+    editUser: 'Edit user',
     creditAmount: 'Amount',
     reason: 'Reason',
-    applyAdjustment: 'Apply adjustment',
+    newPassword: 'New password',
+    newPasswordHint: 'Leave blank to keep the current password unchanged.',
+    applyAdjustment: 'Save changes',
+    cancel: 'Cancel',
+    promotionTitle: 'Image promotion',
+    promotionSubtitle: 'Keep list prices unchanged and apply one scheduled discount to every image workflow.',
+    promotionEnabled: 'Enable promotion',
+    promotionName: 'Campaign name',
+    promotionNamePlaceholder: 'For example: Summer launch',
+    promotionPayPercent: 'Customer pays',
+    promotionPayPercentHint: '80% means 20% off. The list price is calculated first, then multiplied by the promotion rate and rounded to the nearest 1 credit; the minimum remains 20 credits.',
+    promotionStartsAt: 'Starts at',
+    promotionEndsAt: 'Ends at',
+    promotionSave: 'Save promotion',
+    promotionSaving: 'Saving...',
+    promotionSaved: 'Promotion saved.',
+    promotionUpdateFailed: 'Promotion could not be saved.',
+    promotionRangeInvalid: 'End time must be later than start time.',
+    promotionActive: 'Active now',
+    promotionScheduled: 'Scheduled',
+    promotionExpired: 'Expired',
+    promotionInactive: 'Inactive',
+    promotionPreview: 'Price preview',
     freeReady: 'Free test ready',
     freeUsedShort: 'Free test used',
     signInToGenerate: 'Sign in to generate',
@@ -228,6 +279,10 @@ const copy = {
     loadingUsers: 'Loading users...',
     noUsers: 'No users yet.',
     adminOnly: 'Only super admins can view this page.',
+    adminLoadFailed: 'Unable to load account administration data.',
+    creditAdjustmentFailed: 'Credit adjustment failed. Please try again.',
+    creditAdjustmentInsufficient: 'The adjustment cannot make the account balance negative.',
+    adminUserNotFound: 'The selected user no longer exists.',
     fullPrompt: 'Full Prompt',
     templatePrompt: 'Template Prompt',
     useWhen: 'Use When',
@@ -243,6 +298,11 @@ const copy = {
     navCreate: '创作画板',
     navTemplates: '行业模板',
     navCases: '范例美图',
+    navAssets: '资产库',
+    ecommerceMode: '电商套图',
+    freeMode: '自由画坊',
+    api: 'API',
+    creationMode: '创作模式',
     eyebrow: '实时更新的 GPT-Image2 提示词画廊',
     title: '从爆款图片，到可复用 Prompt。',
     subtitle:
@@ -294,13 +354,14 @@ const copy = {
     contentModerationBlocked: '内容审核未通过。',
     sanitizeNoChange: '提示词未发生变化。',
     oneFreeGeneration: '免费生成 1 张测试图',
-    superAdminGeneration: '超级管理员模式：每次生图消耗 1 积分。',
-    generationCost: '本次消耗 1 积分',
+    superAdminGeneration: (credits) => `超级管理员参考价 ${credits} 积分，不扣账户余额。`,
+    generationCost: (credits) => `预计消耗 ${credits} 积分`,
     freeLimitReached: '免费额度已用完，可购买积分继续生成。',
     creditsRequired: '积分不足，可购买积分继续生成。',
     guestFreeLimitReached: '游客免费图片已用完，请登录并获得积分后继续使用。',
     generationBusy: '生图服务繁忙，请稍后再试。',
     generationFailed: '生成失败，请稍后再试。',
+    generationTimeout: '生图等待超过 300 秒，请重新尝试。',
     promptRequired: 'Prompt 不能为空，并且不能超过 6000 字符。',
     serverUnavailable: '生成服务还没有完成配置。',
     checkoutUnavailable: '支付功能还没有完成配置。',
@@ -367,9 +428,32 @@ const copy = {
     paymentReady: '使用 Stripe 安全支付。',
     billingNotReady: 'Stripe 支付还没有完成配置。',
     adminAdjust: '调整积分',
+    editUser: '编辑用户',
     creditAmount: '数量',
     reason: '原因',
-    applyAdjustment: '确认调整',
+    newPassword: '新密码',
+    newPasswordHint: '不填写则保留用户原密码不变。',
+    applyAdjustment: '保存修改',
+    cancel: '取消',
+    promotionTitle: '生图促销',
+    promotionSubtitle: '基础原价保持不变，统一为自由生图、电商套图和单图精修设置活动折扣。',
+    promotionEnabled: '启用促销',
+    promotionName: '活动名称',
+    promotionNamePlaceholder: '例如：暑期上新',
+    promotionPayPercent: '实付比例',
+    promotionPayPercentHint: '填写 80 表示八折。先计算原价，再乘以折扣比例，四舍五入精确到 1 积分；最低仍为 20 积分。',
+    promotionStartsAt: '开始时间',
+    promotionEndsAt: '结束时间',
+    promotionSave: '保存促销设置',
+    promotionSaving: '正在保存……',
+    promotionSaved: '促销设置已保存。',
+    promotionUpdateFailed: '促销设置保存失败。',
+    promotionRangeInvalid: '结束时间必须晚于开始时间。',
+    promotionActive: '活动进行中',
+    promotionScheduled: '等待开始',
+    promotionExpired: '已结束',
+    promotionInactive: '未启用',
+    promotionPreview: '价格预览',
     freeReady: '免费测试可用',
     freeUsedShort: '免费测试已用',
     signInToGenerate: '登录后生成',
@@ -427,6 +511,10 @@ const copy = {
     loadingUsers: '正在加载用户...',
     noUsers: '暂无用户。',
     adminOnly: '仅超级管理员可查看。',
+    adminLoadFailed: '账户管理数据加载失败，请稍后重试。',
+    creditAdjustmentFailed: '积分调整失败，请稍后重试。',
+    creditAdjustmentInsufficient: '调整后账户积分不能小于 0。',
+    adminUserNotFound: '所选用户已不存在。',
     fullPrompt: '完整 Prompt',
     templatePrompt: '模板 Prompt',
     useWhen: '适用场景',
@@ -506,19 +594,40 @@ const GENERATED_TESTS_STORAGE_KEY = 'gpt-image-2-generated-tests:v1';
 const MAX_SAVED_GENERATIONS = 12;
 const HERO_CASE_COUNT = 5;
 const HOT_STRIP_CASE_COUNT = 8;
+const GALLERY_INITIAL_COUNT = 12;
+const GALLERY_BATCH_SIZE = 12;
+const EMPTY_SITE_DATA = Object.freeze({
+  repository: '',
+  totalCases: 0,
+  categories: [],
+  styles: [],
+  scenes: [],
+  cases: []
+});
+const EMPTY_STYLE_LIBRARY = Object.freeze({
+  categories: [],
+  styles: [],
+  scenes: [],
+  templates: [],
+  tagLabels: {}
+});
 let bodyScrollLockCount = 0;
 let bodyScrollLockState = null;
 
 const PAGE_HASHES = {
   cases: 'gallery',
   templates: 'templates',
-  create: 'create'
+  create: 'create',
+  assets: 'assets',
+  admin: 'admin'
 };
 
 function pageFromHash(hash = '') {
   const value = String(hash || '').replace(/^#/, '');
   if (value === PAGE_HASHES.templates) return 'templates';
   if (value === PAGE_HASHES.cases) return 'cases';
+  if (value === PAGE_HASHES.assets) return 'assets';
+  if (value === PAGE_HASHES.admin) return 'admin';
   return 'create';
 }
 
@@ -783,13 +892,54 @@ function generationErrorMessage(error, language) {
   if (error === 'GUEST_FREE_LIMIT_REACHED') return t.guestFreeLimitReached;
   if (error === 'AUTH_REQUIRED') return t.authRequired;
   if (error === 'FORBIDDEN') return t.adminOnly;
+  if (error === 'ADMIN_USERS_LOAD_FAILED' || error === 'ADMIN_METRICS_LOAD_FAILED') return t.adminLoadFailed;
+  if (error === 'CREDIT_ADJUSTMENT_FAILED' || error === 'INVALID_CREDIT_ADJUSTMENT') return t.creditAdjustmentFailed;
+  if (error === 'CREDITS_INSUFFICIENT') return t.creditAdjustmentInsufficient;
+  if (error === 'USER_NOT_FOUND') return t.adminUserNotFound;
   if (error === 'UPSTREAM_BUSY') return t.generationBusy;
+  if (error === 'IMAGE_PROVIDER_UNAVAILABLE') return language === 'zh'
+    ? '当前生图服务没有可用的模型渠道，请联系管理员检查服务配置。'
+    : 'The selected image service has no available model channel. Please ask an administrator to check its configuration.';
+  if (error === 'IMAGE_PROVIDER_AUTH_FAILED') return language === 'zh'
+    ? '当前生图服务的 API Key 无效或无权限。'
+    : 'The selected image service API key is invalid or unauthorized.';
+  if (error === 'IMAGE_PROVIDER_BALANCE_ERROR') return language === 'zh'
+    ? '当前生图服务的上游余额或额度不足。'
+    : 'The upstream image service has insufficient balance or quota.';
+  if (error === 'IMAGE_PROVIDER_TIMEOUT') return language === 'zh'
+    ? '生图服务请求超时，请稍后重试。'
+    : 'The image service request timed out. Please try again later.';
+  if (error === 'CLIENT_GENERATION_TIMEOUT') return t.generationTimeout;
   if (error === 'SERVER_NOT_CONFIGURED') return t.serverUnavailable;
   if (error === 'BILLING_NOT_CONFIGURED') return t.checkoutUnavailable;
   if (error === 'CHECKOUT_FAILED') return t.checkoutFailed;
   if (error === 'INVALID_PROMPT') return t.promptRequired;
   if (error === 'CONTENT_MODERATION_BLOCKED') return t.contentModerationBlocked;
   return t.generationFailed;
+}
+
+function dateTimeLocalValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function dateTimeLocalIso(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function promotionDraftFromValue(value = {}) {
+  return {
+    enabled: Boolean(value.enabled),
+    name: String(value.name || ''),
+    payPercent: Number(value.payPercent || 100),
+    startsAt: dateTimeLocalValue(value.startsAt),
+    endsAt: dateTimeLocalValue(value.endsAt)
+  };
 }
 
 function getAuthHeaders(session) {
@@ -800,13 +950,15 @@ function isAuthenticatedSession(session) {
   return Boolean(session?.user || session?.access_token);
 }
 
-function getGenerationQuotaText(profile, language) {
+function getGenerationQuotaText(profile, language, requiredCredits = 0) {
   const t = copy[language];
   if (!profile) return t.authRequired;
   if (profile.isSuperAdmin) {
-    return profile.creditBalance > 0 ? `${t.superAdminGeneration} ${t.creditsAvailable(profile.creditBalance)}` : t.creditsRequired;
+    return `${t.superAdminGeneration(requiredCredits)} ${t.creditsAvailable(profile.creditBalance)}`;
   }
-  if (profile.creditBalance > 0) return t.creditsAvailable(profile.creditBalance);
+  if (profile.creditBalance > 0) {
+    return `${t.generationCost(requiredCredits)} · ${t.creditsAvailable(profile.creditBalance)}`;
+  }
   return t.creditsRequired;
 }
 
@@ -962,7 +1114,7 @@ function Hero({ latestCases, language, totalCases, categoryCount, onOpenCase, on
         </div>
       </div>
       <div className="heroDeck" aria-label="Latest GPT-Image2 cases">
-        {latestCases.slice(0, 5).map((caseItem, index) => (
+        {latestCases.length ? latestCases.slice(0, 5).map((caseItem, index) => (
           <button
             className={`heroCard heroCard${index + 1}`}
             type="button"
@@ -970,9 +1122,17 @@ function Hero({ latestCases, language, totalCases, categoryCount, onOpenCase, on
             onClick={() => onOpenCase(caseItem)}
             key={caseItem.id}
           >
-            <img src={caseItem.image} alt={caseItem.imageAlt} />
+            <img
+              src={caseItem.thumbnail || caseItem.image}
+              alt={caseItem.imageAlt}
+              loading={index === 0 ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchPriority={index === 0 ? 'high' : 'auto'}
+            />
             <span>{language === 'zh' ? '案例' : 'Case'} {caseItem.id}</span>
           </button>
+        )) : Array.from({ length: 5 }, (_, index) => (
+          <span className={`heroCard heroCard${index + 1} galleryImageSkeleton`} aria-hidden="true" key={`hero-skeleton-${index}`} />
         ))}
       </div>
     </section>
@@ -1081,7 +1241,6 @@ function authErrorMessage(error, language) {
 function authRedirectErrorMessage(code, language) {
   const t = copy[language];
   if (code === 'watcha_not_configured') return t.watchaNotConfigured;
-  if (code === 'supabase_not_configured') return t.authNotConfigured;
   if (code === 'watcha_state_failed') return t.watchaSessionExpired;
   if (code === 'watcha_denied') return t.watchaDenied;
   if (code === 'watcha_login_failed') return t.watchaLoginFailed;
@@ -1212,7 +1371,7 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
   );
 }
 
-function UserMenu({ language, session, profile, onSignIn, onSignOut, onAdmin, onBilling, onAccount, onFavorites }) {
+function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, onAccount, onFavorites }) {
   const t = copy[language];
   const [open, setOpen] = useState(false);
   const ref = useDropdownDismiss(open, setOpen);
@@ -1308,20 +1467,6 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onAdmin, on
             <CreditCard size={17} />
             {t.creditCenter}
           </button>
-          {profile?.isSuperAdmin ? (
-            <button
-              className="dropdownAction"
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onAdmin();
-              }}
-            >
-              <ShieldCheck size={17} />
-              {t.adminPanel}
-            </button>
-          ) : null}
           <button
             className="dropdownAction danger"
             type="button"
@@ -1381,7 +1526,7 @@ function AccountPanel({
   const avatarUrl = profile?.avatarUrl || session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture || '';
   const usage = profile?.usage || {};
   const recentTransactions = profile?.recentTransactions || [];
-  const generationTransactions = recentTransactions.filter((transaction) => transaction.type === 'generation');
+  const generationTransactions = recentTransactions.filter((transaction) => ['generation', 'refund'].includes(transaction.type));
   const favoriteCases = normalizeFavoriteRows(favoriteRows)
     .map((favorite) => ({
       ...favorite,
@@ -1511,7 +1656,7 @@ function AccountPanel({
                   onClick={() => onOpenCase?.(caseItem)}
                   key={caseId}
                 >
-                  <img src={caseItem.image} alt={caseItem.imageAlt} />
+                  <img src={caseItem.thumbnail || caseItem.image} alt={caseItem.imageAlt} loading="lazy" decoding="async" />
                   <span>#{caseId}</span>
                   <strong>{caseItem.title}</strong>
                   <em>
@@ -1727,8 +1872,146 @@ function AdminRankList({ rows, type, language }) {
   );
 }
 
-function AdminPanel({ open, language, session, casesById, onClose, onOpenCase }) {
+function formatPricingInputValue(value, precision) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  return Number.isInteger(precision) ? number.toFixed(precision) : String(number);
+}
+
+function PricingNumberInput({
+  value,
+  onCommit,
+  min,
+  max,
+  step = 'any',
+  precision,
+  alignUpStep,
+  disabled = false,
+  readOnly = false,
+  title
+}) {
+  const [draft, setDraft] = useState(() => formatPricingInputValue(value, precision));
+  const focusedRef = useRef(false);
+  const skipCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(formatPricingInputValue(value, precision));
+  }, [value, precision, disabled, readOnly]);
+
+  const restore = () => setDraft(formatPricingInputValue(value, precision));
+
+  const commit = () => {
+    focusedRef.current = false;
+    if (skipCommitRef.current) {
+      skipCommitRef.current = false;
+      restore();
+      return;
+    }
+    const trimmed = String(draft).trim();
+    if (!trimmed) {
+      restore();
+      return;
+    }
+    let next = Number(trimmed);
+    if (!Number.isFinite(next)) {
+      restore();
+      return;
+    }
+    if (Number.isFinite(alignUpStep) && alignUpStep > 0) {
+      next = Math.ceil((next - 1e-9) / alignUpStep) * alignUpStep;
+    }
+    if (Number.isFinite(min)) next = Math.max(min, next);
+    if (Number.isFinite(max)) next = Math.min(max, next);
+    if (Number.isInteger(precision)) next = Number(next.toFixed(precision));
+    onCommit?.(next);
+    setDraft(formatPricingInputValue(next, precision));
+  };
+
+  return (
+    <input
+      type="number"
+      inputMode={Number.isInteger(precision) && precision > 0 ? 'decimal' : 'numeric'}
+      min={min}
+      max={max}
+      step={step}
+      value={readOnly ? formatPricingInputValue(value, precision) : draft}
+      disabled={disabled}
+      readOnly={readOnly}
+      title={title}
+      onFocus={() => { focusedRef.current = true; }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+        if (event.key === 'Escape') {
+          skipCommitRef.current = true;
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+function createProviderDraft(model = 'gpt-image-2') {
+  const pricingConfig = defaultImagePricingConfigForModel(model);
+  return {
+    id: '',
+    name: '',
+    baseUrl: '',
+    apiKey: '',
+    model,
+    providerType: 'openai-compatible',
+    pricingStrategy: pricingConfig.strategy,
+    pricingConfig,
+    enabled: true,
+    isDefault: false
+  };
+}
+
+function providerPricingLabel(provider, language) {
+  const strategy = provider?.pricingStrategy || provider?.pricingConfig?.strategy;
+  const labels = language === 'zh'
+    ? {
+        [IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_FORMULA]: '像素 × 质量公式',
+        [IMAGE_PRICING_STRATEGIES.FIXED_QUALITY]: '按质量固定价',
+        [IMAGE_PRICING_STRATEGIES.FIXED_IMAGE]: '每张固定价',
+        [IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX]: '像素区间矩阵'
+      }
+    : {
+        [IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_FORMULA]: 'Pixel × quality formula',
+        [IMAGE_PRICING_STRATEGIES.FIXED_QUALITY]: 'Fixed by quality',
+        [IMAGE_PRICING_STRATEGIES.FIXED_IMAGE]: 'Fixed per image',
+        [IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX]: 'Pixel-band matrix'
+      };
+  return labels[strategy] || strategy || '-';
+}
+
+function createNotificationDraft(value = {}) {
+  return {
+    siteNoticeEnabled: Boolean(value.siteNoticeEnabled),
+    siteNoticeTitle: String(value.siteNoticeTitle || ''),
+    siteNoticeBody: String(value.siteNoticeBody || ''),
+    siteNoticeFormat: ['markdown', 'html'].includes(value.siteNoticeFormat) ? value.siteNoticeFormat : 'markdown',
+    siteNoticePlacement: ['banner', 'modal'].includes(value.siteNoticePlacement) ? value.siteNoticePlacement : 'banner',
+    audience: ['all', 'signed-in', 'members'].includes(value.audience) ? value.audience : 'all',
+    notifyGenerationFailure: value.notifyGenerationFailure !== false,
+    notifyLowCredits: value.notifyLowCredits !== false,
+    lowCreditThreshold: Number(value.lowCreditThreshold || 20),
+    notifyChannelFailure: value.notifyChannelFailure !== false
+  };
+}
+
+function RichSiteNoticeContent({ body, format, className = '' }) {
+  return (
+    <Suspense fallback={<div className={className}>{body}</div>}>
+      <SiteNoticeContent className={className} body={body} format={format} />
+    </Suspense>
+  );
+}
+
+function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOpenCase, onSiteNoticeUpdated }) {
   const t = copy[language];
+  const [activeSection, setActiveSection] = useState('pricing');
   const [users, setUsers] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [range, setRange] = useState('7d');
@@ -1738,7 +2021,233 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
   const [message, setMessage] = useState('');
   const [adjustment, setAdjustment] = useState(null);
   const [adjustStatus, setAdjustStatus] = useState('idle');
-  useBodyScrollLock(open);
+  const [promotion, setPromotion] = useState(null);
+  const [promotionDraft, setPromotionDraft] = useState(() => promotionDraftFromValue());
+  const [promotionStatus, setPromotionStatus] = useState('idle');
+  const [promotionMessage, setPromotionMessage] = useState('');
+  const [providers, setProviders] = useState([]);
+  const [providerDraft, setProviderDraft] = useState(() => createProviderDraft());
+  const [providerMessage, setProviderMessage] = useState('');
+  const [notificationDraft, setNotificationDraft] = useState(() => createNotificationDraft());
+  const [notificationStatus, setNotificationStatus] = useState('idle');
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [adminAlerts, setAdminAlerts] = useState([]);
+
+  async function loadPromotion() {
+    try {
+      const response = await fetch('/api/image-pricing', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PRICING_LOAD_FAILED');
+      setPromotion(payload.promotion || null);
+      setPromotionDraft(promotionDraftFromValue(payload.promotion));
+    } catch {
+      setPromotionMessage(t.promotionUpdateFailed);
+    }
+  }
+
+  async function loadProviders() {
+    try {
+      const response = await fetch('/api/admin/image-providers', { headers: getAuthHeaders(session), cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PROVIDER_LOAD_FAILED');
+      setProviders(payload.providers || []);
+    } catch {
+      setProviderMessage(language === 'zh' ? '生图服务配置加载失败' : 'Image service configuration failed to load.');
+    }
+  }
+
+  async function loadNotifications() {
+    try {
+      const response = await fetch('/api/admin/notifications', { headers: getAuthHeaders(session), cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'NOTIFICATION_CONFIG_FAILED');
+      setNotificationDraft(createNotificationDraft(payload.notifications));
+      setAdminAlerts(payload.alerts || []);
+      setNotificationStatus('idle');
+      setNotificationMessage('');
+    } catch {
+      setNotificationStatus('error');
+      setNotificationMessage(language === 'zh' ? '通知配置加载失败。' : 'Notification configuration failed to load.');
+    }
+  }
+
+  async function acknowledgeAlert(alertId) {
+    try {
+      const response = await fetch('/api/admin/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+        body: JSON.stringify({ action: 'acknowledge-alert', alertId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'ALERT_UPDATE_FAILED');
+      setAdminAlerts(payload.alerts || []);
+    } catch {
+      setNotificationMessage(language === 'zh' ? '提醒状态更新失败。' : 'Alert status could not be updated.');
+    }
+  }
+
+  async function saveNotifications(event) {
+    event.preventDefault();
+    setNotificationStatus('loading');
+    setNotificationMessage('');
+    try {
+      const response = await fetch('/api/admin/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+        body: JSON.stringify(notificationDraft)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'NOTIFICATION_CONFIG_FAILED');
+      setNotificationDraft(createNotificationDraft(payload.notifications));
+      setNotificationStatus('success');
+      setNotificationMessage(language === 'zh' ? '通知配置已保存。' : 'Notification settings saved.');
+      onSiteNoticeUpdated?.();
+    } catch {
+      setNotificationStatus('error');
+      setNotificationMessage(language === 'zh' ? '通知配置保存失败。' : 'Notification settings could not be saved.');
+    }
+  }
+
+  function editProvider(provider) {
+    setProviderDraft({
+      ...provider,
+      apiKey: '',
+      pricingStrategy: provider.pricingStrategy || provider.pricingConfig?.strategy,
+      pricingConfig: normalizeImagePricingConfig(provider.pricingConfig, {
+        model: provider.model,
+        strategy: provider.pricingStrategy
+      })
+    });
+    setProviderMessage('');
+  }
+
+  function resetProviderDraft() {
+    setProviderDraft(createProviderDraft());
+  }
+
+  function updateProviderPricingConfig(patch) {
+    setProviderDraft((current) => ({
+      ...current,
+      pricingConfig: normalizeImagePricingConfig({ ...current.pricingConfig, ...patch }, {
+        model: current.model,
+        strategy: current.pricingStrategy
+      })
+    }));
+  }
+
+  function updateProviderPricingFormula(patch) {
+    setProviderDraft((current) => ({
+      ...current,
+      pricingConfig: normalizeImagePricingConfig({
+        ...current.pricingConfig,
+        formula: { ...(current.pricingConfig?.formula || {}), ...patch }
+      }, {
+        model: current.model,
+        strategy: current.pricingStrategy
+      })
+    }));
+  }
+
+  function changeProviderPricingStrategy(pricingStrategy) {
+    setProviderDraft((current) => ({
+      ...current,
+      pricingStrategy,
+      pricingConfig: normalizeImagePricingConfig({ ...current.pricingConfig, strategy: pricingStrategy }, {
+        model: current.model,
+        strategy: pricingStrategy
+      })
+    }));
+  }
+
+  function resetProviderPricingForModel() {
+    setProviderDraft((current) => {
+      const pricingConfig = defaultImagePricingConfigForModel(current.model);
+      return { ...current, pricingStrategy: pricingConfig.strategy, pricingConfig };
+    });
+  }
+
+  function updateProviderMatrixBand(index, patch) {
+    setProviderDraft((current) => {
+      const bands = [...(current.pricingConfig?.bands || [])];
+      bands[index] = { ...bands[index], ...patch };
+      return {
+        ...current,
+        pricingConfig: normalizeImagePricingConfig({ ...current.pricingConfig, bands }, {
+          model: current.model,
+          strategy: current.pricingStrategy
+        })
+      };
+    });
+  }
+
+  function addProviderMatrixBand() {
+    setProviderDraft((current) => {
+      const bands = [...(current.pricingConfig?.bands || [])];
+      const previous = bands.at(-1);
+      bands.push({
+        id: `band-${bands.length + 1}`,
+        maxPixels: Math.min(8_294_400, Math.max(655_360, Number(previous?.maxPixels || 655_360) + 1_000_000)),
+        pricesRmb: { ...(previous?.pricesRmb || { low: 0.2, medium: 0.5, high: 1 }) }
+      });
+      return {
+        ...current,
+        pricingConfig: normalizeImagePricingConfig({ ...current.pricingConfig, bands }, {
+          model: current.model,
+          strategy: current.pricingStrategy
+        })
+      };
+    });
+  }
+
+  function removeProviderMatrixBand(index) {
+    setProviderDraft((current) => ({
+      ...current,
+      pricingConfig: normalizeImagePricingConfig({
+        ...current.pricingConfig,
+        bands: (current.pricingConfig?.bands || []).filter((_, bandIndex) => bandIndex !== index)
+      }, {
+        model: current.model,
+        strategy: current.pricingStrategy
+      })
+    }));
+  }
+
+  async function saveProvider(event) {
+    event.preventDefault();
+    setProviderMessage('');
+    const response = await fetch('/api/admin/image-providers', {
+      method: providerDraft.id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+      body: JSON.stringify(providerDraft)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setProviderMessage(language === 'zh' ? `保存失败：${payload.error || '配置错误'}` : `Save failed: ${payload.error || 'invalid configuration'}`);
+      return;
+    }
+    if (activeSection === 'pricing') {
+      editProvider(payload.provider);
+      setProviderMessage(language === 'zh' ? '计费规则已保存' : 'Pricing rule saved.');
+    } else {
+      resetProviderDraft();
+      setProviderMessage(language === 'zh' ? '生图服务已保存' : 'Image service saved.');
+    }
+    await loadProviders();
+  }
+
+  async function removeProvider(provider) {
+    if (!globalThis.confirm?.(language === 'zh' ? `删除生图服务“${provider.name}”？` : `Delete image service "${provider.name}"?`)) return;
+    const response = await fetch('/api/admin/image-providers', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) }, body: JSON.stringify({ id: provider.id })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setProviderMessage(language === 'zh' ? `删除失败：${payload.error || '配置正在使用'}` : `Delete failed: ${payload.error || 'configuration is in use'}`);
+      return;
+    }
+    if (providerDraft.id === provider.id) resetProviderDraft();
+    await loadProviders();
+  }
 
   async function loadAdminData(nextRange = range, nextStart = customStart, nextEnd = customEnd) {
     if (!isAuthenticatedSession(session)) {
@@ -1774,11 +2283,9 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
     } catch (error) {
       setStatus('error');
       setMessage(
-        error.message === 'SERVER_NOT_CONFIGURED'
-          ? t.checkoutUnavailable
-          : error.message === 'INVALID_DATE_RANGE'
-            ? t.invalidDateRange
-            : generationErrorMessage(error.message, language)
+        error.message === 'INVALID_DATE_RANGE'
+          ? t.invalidDateRange
+          : generationErrorMessage(error.message, language)
       );
     }
   }
@@ -1807,7 +2314,8 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
         body: JSON.stringify({
           userId: adjustment.userId,
           amount: Number(adjustment.amount),
-          reason: adjustment.reason
+          reason: adjustment.reason,
+          password: adjustment.password
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -1819,15 +2327,53 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
       await loadAdminData();
     } catch (error) {
       setAdjustStatus('error');
-      setMessage(generationErrorMessage(error.message, language));
+      setMessage(error.message === 'INVALID_PASSWORD' ? t.authInvalidPassword : generationErrorMessage(error.message, language));
+    }
+  }
+
+  async function handleSavePromotion(event) {
+    event.preventDefault();
+    setPromotionStatus('loading');
+    setPromotionMessage('');
+    try {
+      const response = await fetch('/api/image-pricing', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(session)
+        },
+        body: JSON.stringify({
+          enabled: promotionDraft.enabled,
+          name: promotionDraft.name,
+          payPercent: Number(promotionDraft.payPercent),
+          startsAt: dateTimeLocalIso(promotionDraft.startsAt),
+          endsAt: dateTimeLocalIso(promotionDraft.endsAt)
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PROMOTION_UPDATE_FAILED');
+      setPromotion(payload.promotion || null);
+      setPromotionDraft(promotionDraftFromValue(payload.promotion));
+      setPromotionStatus('success');
+      setPromotionMessage(t.promotionSaved);
+      await refreshImagePromotion().catch(() => undefined);
+    } catch (error) {
+      setPromotionStatus('error');
+      setPromotionMessage(error.message === 'INVALID_PROMOTION_RANGE' ? t.promotionRangeInvalid : t.promotionUpdateFailed);
     }
   }
 
   useEffect(() => {
-    if (open) loadAdminData(range);
-  }, [open, isAuthenticatedSession(session), range]);
+    loadAdminData(range);
+    loadPromotion();
+    loadProviders();
+    loadNotifications();
+  }, [isAuthenticatedSession(session), range]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (activeSection !== 'pricing' || providerDraft.id || !providers.length) return;
+    editProvider(providers.find((provider) => provider.isDefault) || providers[0]);
+  }, [activeSection, providerDraft.id, providers]);
   const traffic = metrics?.traffic || {};
   const business = metrics?.business || {};
   const trafficTotals = traffic.totals || {};
@@ -1852,266 +2398,320 @@ function AdminPanel({ open, language, session, casesById, onClose, onOpenCase })
     { key: 'registrations', label: t.registrations, color: '#c7ff65' },
     { key: 'creditsConsumed', label: t.creditsConsumed, color: '#ff8f70', dashed: true }
   ];
+  const promotionPreviewPricing = getClientImagePricing(
+    { size: '1024x1024', quality: 'medium' },
+    { ...promotionDraft, enabled: true, startsAt: null, endsAt: null }
+  );
+  const providerPricingPreviewRows = [
+    ['640×1024', '640x1024'],
+    ['816×816', '816x816'],
+    ['1024×1536', '1024x1536'],
+    ['2048×2048', '2048x2048'],
+    ['2880×2880', '2880x2880']
+  ].map(([label, size]) => ({
+    label,
+    low: getImageGenerationPricing({ size, quality: 'low' }, providerDraft.pricingConfig),
+    medium: getImageGenerationPricing({ size, quality: 'medium' }, providerDraft.pricingConfig),
+    high: getImageGenerationPricing({ size, quality: 'high' }, providerDraft.pricingConfig)
+  }));
+  const promotionStateLabel = promotion?.active
+    ? t.promotionActive
+    : promotion?.scheduled
+      ? t.promotionScheduled
+      : promotion?.expired
+        ? t.promotionExpired
+        : t.promotionInactive;
+  const adminSections = [
+    { id: 'pricing', label: language === 'zh' ? '计费' : 'Pricing', Icon: Calculator },
+    { id: 'credits', label: language === 'zh' ? '积分' : 'Credits', Icon: Coins },
+    { id: 'users', label: language === 'zh' ? '用户' : 'Users', Icon: Users },
+    { id: 'account', label: language === 'zh' ? '账户设置' : 'Account', Icon: UserCircle },
+    { id: 'promotion', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
+    { id: 'notifications', label: language === 'zh' ? '通知' : 'Notifications', Icon: Bell },
+    { id: 'channels', label: language === 'zh' ? '渠道配置' : 'Channels', Icon: KeyRound }
+  ];
+  const activeAdminSection = adminSections.find((item) => item.id === activeSection) || adminSections[0];
+
+  const openUserAdjustment = (user) => setAdjustment({
+    userId: user.id,
+    email: user.email,
+    amount: 10,
+    reason: '',
+    password: ''
+  });
+  const providerPricingStrategy = providerDraft.pricingStrategy || providerDraft.pricingConfig?.strategy;
+  const formulaPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_FORMULA;
+  const matrixPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX;
+  const fixedQualityPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.FIXED_QUALITY;
+  const fixedImagePricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.FIXED_IMAGE;
+  const steppedPricingActive = formulaPricingActive || matrixPricingActive;
+
+  const pricingEditor = (
+    <section className="adminProviderPricingEditor">
+      <header>
+        <div>
+          <strong>{language === 'zh' ? '独立计费规则' : 'Independent pricing rule'}</strong>
+          <span>{language === 'zh' ? '报价与实际扣费共用本规则，促销在原价之后计算' : 'Quotes and final charges use this rule; promotions apply after list price.'}</span>
+        </div>
+        <button type="button" onClick={resetProviderPricingForModel}><RefreshCw size={14} />{language === 'zh' ? '应用模型预设' : 'Apply model preset'}</button>
+      </header>
+      <div className="adminProviderPricingGrid">
+        <label><span>{language === 'zh' ? '计费方式' : 'Pricing method'}</span><select value={providerPricingStrategy} onChange={(event) => changeProviderPricingStrategy(event.target.value)}>
+          <option value={IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_FORMULA}>{language === 'zh' ? '像素 × 质量公式' : 'Pixel × quality formula'}</option>
+          <option value={IMAGE_PRICING_STRATEGIES.FIXED_QUALITY}>{language === 'zh' ? '按质量固定价' : 'Fixed by quality'}</option>
+          <option value={IMAGE_PRICING_STRATEGIES.FIXED_IMAGE}>{language === 'zh' ? '每张固定价' : 'Fixed per image'}</option>
+          <option value={IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX}>{language === 'zh' ? '像素区间矩阵' : 'Pixel-band matrix'}</option>
+        </select></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '价格阶梯（元）' : 'Price step (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.priceStepRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ priceStepRmb: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最低收费（元）' : 'Minimum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.minimumChargeRmb} min={0} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ minimumChargeRmb: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最高收费（元）' : 'Maximum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.maximumChargeRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ maximumChargeRmb: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? 'Auto 计费像素' : 'Auto billed pixels'}</span><PricingNumberInput value={providerDraft.pricingConfig.autoSizePixels} min={655360} max={8294400} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ autoSizePixels: value })} /></label>
+        <label className="isPricingDisabled"><span>{language === 'zh' ? 'Auto 计费质量' : 'Auto billed quality'}</span><select value="medium" disabled><option value="medium">Medium</option></select></label>
+        <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.pricingConfig.promotionEligible !== false} onChange={(event) => updateProviderPricingConfig({ promotionEligible: event.target.checked })} /><span>{language === 'zh' ? '允许参与促销' : 'Promotion eligible'}</span></label>
+      </div>
+      {formulaPricingActive ? (
+        <div className="adminProviderPricingGrid formula">
+          <label><span>{language === 'zh' ? '基础成本（折扣前/元）' : 'Base list cost (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.baseCostRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingFormula({ baseCostRmb: value })} /></label>
+          <label className="isPricingReadonly"><span>{language === 'zh' ? '每百万像素成本（元）' : 'Cost per MP (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.costPerMegapixelRmb} min={0} step="0.000001" precision={6} readOnly title={language === 'zh' ? '系统根据模型成本预设，不可编辑' : 'Read-only model cost coefficient'} /></label>
+          {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{qualityName.toUpperCase()} {language === 'zh' ? '质量倍率' : 'quality factor'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.qualityFactors[qualityName]} min={0} step="0.1" onCommit={(value) => updateProviderPricingFormula({ qualityFactors: { ...providerDraft.pricingConfig.formula.qualityFactors, [qualityName]: value } })} /></label>)}
+          <label><span>{language === 'zh' ? '售价倍率' : 'Price multiplier'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.priceMultiplier} min={0} step="0.01" onCommit={(value) => updateProviderPricingFormula({ priceMultiplier: value })} /></label>
+          <label><span>{language === 'zh' ? '固定附加费（元）' : 'Fixed fee (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.fixedFeeRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingFormula({ fixedFeeRmb: value })} /></label>
+          <label><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.actualCostRatio} min={0} step="0.01" onCommit={(value) => updateProviderPricingFormula({ actualCostRatio: value })} /></label>
+        </div>
+      ) : null}
+      {fixedQualityPricingActive ? (
+        <div className="adminProviderPricingGrid formula">
+          {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{qualityName.toUpperCase()} {language === 'zh' ? '单张价格（元）' : 'price (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.qualityPricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ qualityPricesRmb: { ...providerDraft.pricingConfig.qualityPricesRmb, [qualityName]: value } })} /></label>)}
+          <label className="isPricingDisabled"><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.actualCostRatio} min={0} step="0.01" disabled /></label>
+        </div>
+      ) : null}
+      {fixedImagePricingActive ? (
+        <div className="adminProviderPricingGrid formula">
+          <label><span>{language === 'zh' ? '每张价格（元）' : 'Price per image (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.fixedPriceRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ fixedPriceRmb: value })} /></label>
+          <label className="isPricingDisabled"><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.actualCostRatio} min={0} step="0.01" disabled /></label>
+        </div>
+      ) : null}
+      {matrixPricingActive ? (
+        <div className="adminProviderMatrix">
+          <div className="adminProviderMatrixHeader"><span>{language === 'zh' ? '像素上限' : 'Max pixels'}</span><span>Low</span><span>Medium</span><span>High</span><span /></div>
+          {(providerDraft.pricingConfig.bands || []).map((band, index) => <div className="adminProviderMatrixRow" key={`${band.id}-${index}`}>
+            <PricingNumberInput value={band.maxPixels} min={655360} max={8294400} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} onCommit={(value) => updateProviderMatrixBand(index, { maxPixels: value })} />
+            {['low', 'medium', 'high'].map((qualityName) => <PricingNumberInput value={band.pricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderMatrixBand(index, { pricesRmb: { ...band.pricesRmb, [qualityName]: value } })} key={qualityName} />)}
+            <button type="button" onClick={() => removeProviderMatrixBand(index)} aria-label={language === 'zh' ? '删除档位' : 'Remove band'}><Trash2 size={14} /></button>
+          </div>)}
+          <button className="adminProviderMatrixAdd" type="button" onClick={addProviderMatrixBand}><Plus size={14} />{language === 'zh' ? '增加像素档位' : 'Add pixel band'}</button>
+        </div>
+      ) : null}
+      <div className="adminProviderPricingPreview">
+        <strong>{language === 'zh' ? '原价预览（100积分＝1元）' : 'List-price preview (100 credits = RMB 1)'}</strong>
+        <div><span>{language === 'zh' ? '尺寸' : 'Size'}</span><span>Low</span><span>Medium</span><span>High</span></div>
+        {providerPricingPreviewRows.map((row) => <div key={row.label}><span>{row.label}</span><b>{row.low.credits}</b><b>{row.medium.credits}</b><b>{row.high.credits}</b></div>)}
+      </div>
+    </section>
+  );
 
   return (
-    <div
-      className="previewOverlay adminOverlay"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section className="adminDialog" role="dialog" aria-modal="true" aria-labelledby="admin-title">
-        <button className="previewClose" type="button" onClick={onClose} aria-label={t.closePreview}>
-          <X size={20} />
-        </button>
-        <div className="adminHeader">
-          <div>
-            <span className="eyebrow">
-              <ShieldCheck size={16} />
-              {t.superAdmin}
-            </span>
-            <h2 id="admin-title">{t.adminTitle}</h2>
-            <p>{t.adminSubtitle}</p>
-          </div>
-          <div className="adminHeaderActions">
+    <section className="adminWorkspace" aria-labelledby="admin-title">
+      <div className="adminWorkspaceHeader">
+        <div>
+          <span className="eyebrow"><ShieldCheck size={16} />{t.superAdmin}</span>
+          <h2 id="admin-title">{language === 'zh' ? '运营管理中心' : 'Operations admin'}</h2>
+          <p>{activeAdminSection.label} · {language === 'zh' ? '每个页面只处理一类核心工作' : 'Each page focuses on one operational responsibility.'}</p>
+        </div>
+        <span className="adminEnvironmentBadge">{import.meta.env.DEV ? (language === 'zh' ? '本地环境' : 'Local environment') : (language === 'zh' ? '生产环境' : 'Production')}</span>
+      </div>
+
+      <nav className="adminWorkspaceNav" aria-label={language === 'zh' ? '管理后台子菜单' : 'Admin sections'}>
+        {adminSections.map(({ id, label, Icon }) => (
+          <button className={activeSection === id ? 'active' : ''} type="button" onClick={() => setActiveSection(id)} key={id}>
+            <Icon size={16} /><span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="adminWorkspaceContent">
+        {['credits', 'users'].includes(activeSection) ? (
+          <div className="adminWorkspaceToolbar">
             <div className="adminRangeToggle" role="group" aria-label={t.adminMetrics}>
-              {[
-                ['today', t.rangeToday],
-                ['7d', t.range7d],
-                ['30d', t.range30d],
-                ['90d', t.range90d],
-                ['custom', t.customRange]
-              ].map(([value, label]) => (
-                <button
-                  className={cx(range === value && 'active')}
-                  type="button"
-                  onClick={() => setRange(value)}
-                  key={value}
-                >
-                  {label}
-                </button>
+              {[["today", t.rangeToday], ["7d", t.range7d], ["30d", t.range30d], ["90d", t.range90d], ["custom", t.customRange]].map(([value, label]) => (
+                <button className={cx(range === value && 'active')} type="button" onClick={() => setRange(value)} key={value}>{label}</button>
               ))}
             </div>
             {range === 'custom' ? (
               <div className="adminCustomRange">
-                <label>
-                  <span>{t.startDate}</span>
-                  <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} />
-                </label>
-                <label>
-                  <span>{t.endDate}</span>
-                  <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
-                </label>
-                <button type="button" onClick={handleCustomApply} disabled={status === 'loading'}>
-                  {t.applyRange}
-                </button>
+                <label><span>{t.startDate}</span><input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label>
+                <label><span>{t.endDate}</span><input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} /></label>
+                <button type="button" onClick={handleCustomApply} disabled={status === 'loading'}>{t.applyRange}</button>
               </div>
             ) : null}
-            <button type="button" onClick={() => loadAdminData()} disabled={status === 'loading'}>
-              {status === 'loading' ? <LoaderCircle className="spinIcon" size={17} /> : <RefreshCw size={17} />}
-              {t.refresh}
-            </button>
+            <button type="button" onClick={() => loadAdminData()} disabled={status === 'loading'}>{status === 'loading' ? <LoaderCircle className="spinIcon" size={17} /> : <RefreshCw size={17} />}{t.refresh}</button>
           </div>
-        </div>
+        ) : null}
 
-        {metrics ? (
+        {activeSection === 'pricing' ? (
+          <section className="adminBlock adminProviderBlock">
+            <div className="adminSectionHeading">
+              <div><h3><Calculator size={18} />{language === 'zh' ? '计费规则' : 'Pricing rules'}</h3><p>{language === 'zh' ? '每个生图渠道拥有独立规则，便于以后接入 Banana、Grok 和千问。' : 'Each image channel has its own rule for future providers.'}</p></div>
+            </div>
+            {providers.length ? (
+              <form className="adminPricingForm" onSubmit={saveProvider}>
+                <label className="adminPricingProviderSelect"><span>{language === 'zh' ? '计费服务' : 'Image service'}</span><select value={providerDraft.id} onChange={(event) => editProvider(providers.find((provider) => provider.id === event.target.value) || providers[0])}>{providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.name} · {provider.model}</option>)}</select></label>
+                {pricingEditor}
+                <button className="adminProviderAction adminProviderSave" type="submit"><Calculator size={16} />{language === 'zh' ? '保存计费规则' : 'Save pricing rule'}</button>
+              </form>
+            ) : <div className="adminState"><KeyRound size={20} />{language === 'zh' ? '请先在“渠道配置”中添加生图服务。' : 'Add an image service in Channels first.'}</div>}
+            {providerMessage ? <p className="adminNotice">{providerMessage}</p> : null}
+          </section>
+        ) : null}
+
+        {activeSection === 'credits' ? (
           <div className="adminDashboard">
-            <section className="adminBlock">
-              <h3>
-                <TrendingUp size={18} />
-                {t.trafficMetrics}
-              </h3>
-              {analyticsMessage ? <p className="adminNotice">{analyticsMessage}</p> : null}
-              {selectedRangeLabel ? (
-                <p className="adminRangeSummary">
-                  {t.selectedRange}: <strong>{selectedRangeLabel}</strong>
-                </p>
-              ) : null}
+            {metrics ? <section className="adminBlock">
+              <h3><Coins size={18} />{language === 'zh' ? '积分概览' : 'Credit overview'}</h3>
               <div className="adminMetricGrid">
-                <AdminMetricCard icon={<BarChart3 size={18} />} label={t.pv} value={firstNumber(trafficTotals.pv, trafficTotals.pageViews)} />
-                <AdminMetricCard icon={<Users size={18} />} label={t.uv} value={firstNumber(trafficTotals.uv, trafficTotals.activeUsers)} />
-                <AdminMetricCard icon={<ReceiptText size={18} />} label={t.visits} value={firstNumber(trafficTotals.visits, trafficTotals.sessions)} />
-                <AdminMetricCard icon={<UserPlus size={18} />} label={t.newUsers} value={trafficTotals.newUsers} />
-              </div>
-              <div className="adminChartGrid">
-                <div className="adminPanelCard chart">
-                  <h4>{t.trafficTrend}</h4>
-                  {traffic.configured && traffic.daily?.length ? (
-                    <AdminTrendChart rows={traffic.daily} series={trafficSeries} language={language} emptyLabel={t.noAnalyticsRows} />
-                  ) : (
-                    <p className="emptyTransactions">{t.noAnalyticsRows}</p>
-                  )}
-                </div>
-              </div>
-              <div className="adminTrafficGrid">
-                <div className="adminPanelCard">
-                  <h4>{t.topPages}</h4>
-                  <AdminRankList rows={traffic.topPages || []} type="pages" language={language} />
-                </div>
-                <div className="adminPanelCard">
-                  <h4>{t.channels}</h4>
-                  <AdminRankList rows={traffic.channels || []} type="channels" language={language} />
-                </div>
-                <div className="adminPanelCard">
-                  <h4>{t.countries}</h4>
-                  <AdminRankList rows={traffic.countries || []} type="countries" language={language} />
-                </div>
-              </div>
-            </section>
-
-            <section className="adminBlock">
-              <h3>
-                <ShieldCheck size={18} />
-                {t.businessMetrics}
-              </h3>
-              <div className="adminMetricGrid">
-                <AdminMetricCard icon={<Users size={18} />} label={t.registeredUsers} value={firstNumber(businessTotals.registeredUsers, business.totalUsers)} hint={`${t.newRegistrations}: ${formatNumber(firstNumber(businessRange.newRegistrations, business.rangeUsers))}`} />
-                <AdminMetricCard icon={<ImageIcon size={18} />} label={t.totalGenerationsMetric} value={firstNumber(businessTotals.totalGenerations, business.totalGenerations)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.generations, business.rangeGenerations))}`} />
-                <AdminMetricCard icon={<PackageCheck size={18} />} label={t.succeeded} value={firstNumber(businessTotals.succeededGenerations, business.succeededGenerations)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.succeededGenerations, business.rangeSucceededGenerations))}`} />
-                <AdminMetricCard icon={<Coins size={18} />} label={t.creditsConsumed} value={firstNumber(businessTotals.totalCreditsConsumed, business.totalGenerationCredits)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.creditsConsumed, business.rangeGenerationCredits))}`} />
-                <AdminMetricCard icon={<X size={18} />} label={t.failed} value={firstNumber(businessTotals.failedGenerations, business.failedGenerations)} />
-                <AdminMetricCard icon={<LoaderCircle size={18} />} label={t.pending} value={firstNumber(businessTotals.pendingGenerations, business.pendingGenerations)} />
                 <AdminMetricCard icon={<Coins size={18} />} label={t.creditsInCirculation} value={firstNumber(businessTotals.totalCreditBalance, business.totalCreditBalance)} />
+                <AdminMetricCard icon={<Coins size={18} />} label={t.creditsConsumed} value={firstNumber(businessTotals.totalCreditsConsumed, business.totalGenerationCredits)} hint={`${t.rangeGenerations}: ${formatNumber(firstNumber(businessRange.creditsConsumed, business.rangeGenerationCredits))}`} />
                 <AdminMetricCard icon={<CreditCard size={18} />} label={t.purchasedCredits} value={firstNumber(businessTotals.purchasedCredits, business.purchasedCredits)} />
+                <AdminMetricCard icon={<ImageIcon size={18} />} label={t.totalGenerationsMetric} value={firstNumber(businessTotals.totalGenerations, business.totalGenerations)} />
               </div>
-              <div className="adminChartGrid">
-                <div className="adminPanelCard chart">
-                  <h4>{t.businessTrend}</h4>
-                  {business.daily?.length ? (
-                    <AdminTrendChart rows={business.daily} series={businessSeries} language={language} emptyLabel={t.noAnalyticsRows} />
-                  ) : (
-                    <p className="emptyTransactions">{t.noAnalyticsRows}</p>
-                  )}
-                </div>
-              </div>
+              <div className="adminChartGrid"><div className="adminPanelCard chart"><h4>{t.businessTrend}</h4>{business.daily?.length ? <AdminTrendChart rows={business.daily} series={businessSeries} language={language} emptyLabel={t.noAnalyticsRows} /> : <p className="emptyTransactions">{t.noAnalyticsRows}</p>}</div></div>
+            </section> : null}
+            <section className="adminBlock">
+              <h3><Users size={18} />{language === 'zh' ? '用户积分' : 'User credits'}</h3>
+              <div className="adminTableWrap"><table className="adminTable adminCreditTable"><thead><tr><th>{t.users}</th><th>{t.creditBalance}</th><th>{t.spentCredits}</th><th>{t.purchased}</th><th>{t.adminAdjust}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong>{user.fullName ? <span>{user.fullName}</span> : null}</div></div></td><td>{formatNumber(user.creditBalance)}</td><td>{formatNumber(user.usage?.totalGenerationCredits)}</td><td>{formatNumber(user.usage?.purchasedCredits)}</td><td><button className="tableAction" type="button" onClick={() => openUserAdjustment(user)}><Coins size={15} />{t.adminAdjust}</button></td></tr>)}</tbody></table></div>
             </section>
           </div>
         ) : null}
 
-        <div className="adminHeader compact">
-          <div>
-            <h3>{t.users}</h3>
-          </div>
-          <button type="button" onClick={() => loadAdminData()} disabled={status === 'loading'}>
-            {status === 'loading' ? <LoaderCircle className="spinIcon" size={17} /> : <RefreshCw size={17} />}
-            {t.refresh}
-          </button>
-        </div>
-        {status === 'loading' ? (
-          <div className="adminState">
-            <LoaderCircle className="spinIcon" size={20} />
-            {t.loadingUsers}
+        {activeSection === 'users' ? (
+          <div className="adminDashboard">
+            {metrics ? <section className="adminBlock">
+              <h3><TrendingUp size={18} />{t.trafficMetrics}</h3>
+              {analyticsMessage ? <p className="adminNotice">{analyticsMessage}</p> : null}
+              {selectedRangeLabel ? <p className="adminRangeSummary">{t.selectedRange}: <strong>{selectedRangeLabel}</strong></p> : null}
+              <div className="adminMetricGrid"><AdminMetricCard icon={<BarChart3 size={18} />} label={t.pv} value={firstNumber(trafficTotals.pv, trafficTotals.pageViews)} /><AdminMetricCard icon={<Users size={18} />} label={t.uv} value={firstNumber(trafficTotals.uv, trafficTotals.activeUsers)} /><AdminMetricCard icon={<ReceiptText size={18} />} label={t.visits} value={firstNumber(trafficTotals.visits, trafficTotals.sessions)} /><AdminMetricCard icon={<UserPlus size={18} />} label={t.newUsers} value={trafficTotals.newUsers} /></div>
+            </section> : null}
+            <section className="adminBlock">
+              <h3><Users size={18} />{t.users}</h3>
+              {status === 'loading' ? <div className="adminState"><LoaderCircle className="spinIcon" size={20} />{t.loadingUsers}</div> : null}
+              {status === 'error' ? <p className="authMessage error">{message || t.adminOnly}</p> : null}
+              {status !== 'loading' && !users.length && status !== 'error' ? <div className="adminState"><Users size={20} />{t.noUsers}</div> : null}
+              {users.length ? <div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{t.users}</th><th>{t.role}</th><th>{t.creditBalance}</th><th>{t.freeGeneration}</th><th>{t.totalGenerations}</th><th>{t.spentCredits}</th><th>{t.purchased}</th><th>{t.lastGeneration}</th><th>{t.createdAt}</th><th>{t.adminAdjust}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong>{user.fullName ? <span>{user.fullName}</span> : null}</div></div></td><td><span className="roleBadge">{user.role}</span></td><td>{user.creditBalance}</td><td>{user.freeUsed == null ? '-' : user.freeUsed ? t.freeUsedShort : t.freeReady}</td><td>{formatNumber(user.usage?.totalGenerations)}</td><td>{formatNumber(user.usage?.totalGenerationCredits)}</td><td>{formatNumber(user.usage?.purchasedCredits)}</td><td>{user.usage?.lastGenerationCaseId ? <button className="tableAction compactAction" type="button" onClick={() => { const caseItem = casesById?.get(user.usage.lastGenerationCaseId); if (caseItem) onOpenCase?.(caseItem); }} disabled={!casesById?.has(user.usage.lastGenerationCaseId)}><ImageIcon size={14} />#{user.usage.lastGenerationCaseId}</button> : '-'}</td><td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'}</td><td><button className="tableAction" type="button" onClick={() => openUserAdjustment(user)}><Coins size={15} />{t.adminAdjust}</button></td></tr>)}</tbody></table></div> : null}
+            </section>
           </div>
         ) : null}
-        {status === 'error' ? <p className="authMessage error">{message || t.adminOnly}</p> : null}
-        {adjustment ? (
-          <form className="adminAdjustForm" onSubmit={handleAdjustCredits}>
-            <strong>{adjustment.email}</strong>
-            <label>
-              {t.creditAmount}
-              <input
-                type="number"
-                step="1"
-                value={adjustment.amount}
-                onChange={(event) => setAdjustment((current) => ({ ...current, amount: event.target.value }))}
+
+        {activeSection === 'account' ? (
+          <section className="adminBlock adminAccountBlock">
+            <div className="adminAccountAvatar">{profile?.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <UserCircle size={34} />}</div>
+            <div><span>{language === 'zh' ? '当前管理员' : 'Current administrator'}</span><h3>{profile?.fullName || profile?.email || '-'}</h3><p>{profile?.email || '-'} · {profile?.role || 'super_admin'}</p></div>
+            <div className="adminAccountStats"><span>{language === 'zh' ? '积分余额' : 'Credit balance'}</span><strong>{formatNumber(profile?.creditBalance)}</strong></div>
+            <button className="adminProviderAction adminProviderSave" type="button" onClick={() => onOpenAccount?.()}><Settings size={16} />{language === 'zh' ? '打开账户设置' : 'Open account settings'}</button>
+          </section>
+        ) : null}
+
+        {activeSection === 'promotion' ? (
+          <section className="adminBlock adminPromotionBlock">
+            <div className="adminPromotionHeading"><h3><Sparkles size={18} />{t.promotionTitle}</h3><span className={`adminPromotionStatus ${promotion?.active ? 'active' : promotion?.scheduled ? 'scheduled' : ''}`}>{promotionStateLabel}</span></div>
+            <p className="adminPromotionSubtitle">{t.promotionSubtitle}</p>
+            <form className="adminPromotionForm" onSubmit={handleSavePromotion}>
+              <label className="adminPromotionToggle"><input type="checkbox" checked={promotionDraft.enabled} onChange={(event) => setPromotionDraft((current) => ({ ...current, enabled: event.target.checked }))} /><span>{t.promotionEnabled}</span></label>
+              <label><span>{t.promotionName}</span><input value={promotionDraft.name} onChange={(event) => setPromotionDraft((current) => ({ ...current, name: event.target.value }))} placeholder={t.promotionNamePlaceholder} maxLength={80} /></label>
+              <label><span>{t.promotionPayPercent}</span><div className="adminPromotionPercentInput"><input type="number" min="10" max="100" step="1" value={promotionDraft.payPercent} onChange={(event) => setPromotionDraft((current) => ({ ...current, payPercent: event.target.value }))} /><b>%</b></div></label>
+              <label><span>{t.promotionStartsAt}</span><input type="datetime-local" value={promotionDraft.startsAt} onChange={(event) => setPromotionDraft((current) => ({ ...current, startsAt: event.target.value }))} /></label>
+              <label><span>{t.promotionEndsAt}</span><input type="datetime-local" value={promotionDraft.endsAt} onChange={(event) => setPromotionDraft((current) => ({ ...current, endsAt: event.target.value }))} /></label>
+              <div className="adminPromotionPreview"><span>{t.promotionPreview}</span><ImageCreditPrice pricing={promotionPreviewPricing} language={language} /></div>
+              <button type="submit" disabled={promotionStatus === 'loading'}>{promotionStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <Settings size={16} />}{promotionStatus === 'loading' ? t.promotionSaving : t.promotionSave}</button>
+            </form>
+            <p className="adminPromotionHint">{t.promotionPayPercentHint}</p>
+            {promotionMessage ? <p className={`adminNotice ${promotionStatus === 'error' ? 'error' : ''}`}>{promotionMessage}</p> : null}
+          </section>
+        ) : null}
+
+        {activeSection === 'notifications' ? (
+          <form className="adminBlock adminNotificationForm" onSubmit={saveNotifications}>
+            <div className="adminSectionHeading"><div><h3><Bell size={18} />{language === 'zh' ? '通知管理' : 'Notifications'}</h3><p>{language === 'zh' ? '发布站内公告，并设置需要重点关注的运营提醒。' : 'Publish site notices and configure operational alerts.'}</p></div></div>
+            <label className="adminNotificationToggle"><input type="checkbox" checked={notificationDraft.siteNoticeEnabled} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeEnabled: event.target.checked }))} /><span>{language === 'zh' ? '启用站内公告' : 'Enable site notice'}</span></label>
+            <div className="adminNotificationGrid">
+              <label><span>{language === 'zh' ? '公告标题' : 'Notice title'}</span><input value={notificationDraft.siteNoticeTitle} maxLength={120} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeTitle: event.target.value }))} /></label>
+              <label><span>{language === 'zh' ? '显示对象' : 'Audience'}</span><select value={notificationDraft.audience} onChange={(event) => setNotificationDraft((current) => ({ ...current, audience: event.target.value }))}><option value="all">{language === 'zh' ? '所有访客' : 'All visitors'}</option><option value="signed-in">{language === 'zh' ? '已登录用户' : 'Signed-in users'}</option><option value="members">{language === 'zh' ? '有积分用户' : 'Users with credits'}</option></select></label>
+              <label><span>{language === 'zh' ? '内容格式' : 'Content format'}</span><select value={notificationDraft.siteNoticeFormat} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeFormat: event.target.value }))}><option value="markdown">Markdown</option><option value="html">HTML</option></select></label>
+              <label><span>{language === 'zh' ? '显示位置' : 'Placement'}</span><select value={notificationDraft.siteNoticePlacement} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticePlacement: event.target.value }))}><option value="banner">{language === 'zh' ? '顶部横幅' : 'Top banner'}</option><option value="modal">{language === 'zh' ? '居中弹窗' : 'Centered popup'}</option></select></label>
+            </div>
+            <label className="adminNotificationBody">
+              <span>{language === 'zh' ? '公告内容' : 'Notice content'}</span>
+              <textarea
+                value={notificationDraft.siteNoticeBody}
+                maxLength={5000}
+                rows={6}
+                placeholder={SITE_NOTICE_EXAMPLES[notificationDraft.siteNoticeFormat]}
+                onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeBody: event.target.value }))}
               />
             </label>
-            <label>
-              {t.reason}
-              <input
-                value={adjustment.reason}
-                onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value }))}
-              />
-            </label>
-            <button type="submit" disabled={adjustStatus === 'loading'}>
-              {adjustStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <Coins size={16} />}
-              {t.applyAdjustment}
-            </button>
+            <div className="adminNotificationExample">
+              <div><strong>{language === 'zh' ? `${notificationDraft.siteNoticeFormat === 'html' ? 'HTML' : 'Markdown'} 简单范例` : `Simple ${notificationDraft.siteNoticeFormat === 'html' ? 'HTML' : 'Markdown'} example`}</strong><code>{SITE_NOTICE_EXAMPLES[notificationDraft.siteNoticeFormat]}</code></div>
+              <button type="button" onClick={() => setNotificationDraft((current) => ({ ...current, siteNoticeBody: SITE_NOTICE_EXAMPLES[current.siteNoticeFormat] }))}>{language === 'zh' ? '填入范例' : 'Use example'}</button>
+            </div>
+            <div className="adminNotificationPreview">
+              <span>{language === 'zh' ? '即时预览' : 'Live preview'}</span>
+              <article><strong>{notificationDraft.siteNoticeTitle || (language === 'zh' ? '站内通知' : 'Notice')}</strong><RichSiteNoticeContent body={notificationDraft.siteNoticeBody || SITE_NOTICE_EXAMPLES[notificationDraft.siteNoticeFormat]} format={notificationDraft.siteNoticeFormat} /></article>
+            </div>
+            <div className="adminNotificationAlertGrid">
+              <label><input type="checkbox" checked={notificationDraft.notifyGenerationFailure} onChange={(event) => setNotificationDraft((current) => ({ ...current, notifyGenerationFailure: event.target.checked }))} /><span>{language === 'zh' ? '关注生图失败' : 'Generation failures'}</span></label>
+              <label><input type="checkbox" checked={notificationDraft.notifyChannelFailure} onChange={(event) => setNotificationDraft((current) => ({ ...current, notifyChannelFailure: event.target.checked }))} /><span>{language === 'zh' ? '关注渠道异常' : 'Channel failures'}</span></label>
+              <label><input type="checkbox" checked={notificationDraft.notifyLowCredits} onChange={(event) => setNotificationDraft((current) => ({ ...current, notifyLowCredits: event.target.checked }))} /><span>{language === 'zh' ? '关注低余额用户' : 'Low-credit users'}</span></label>
+              <label className="adminLowCreditThreshold"><span>{language === 'zh' ? '低余额阈值' : 'Low-credit threshold'}</span><input type="number" min="0" step="1" value={notificationDraft.lowCreditThreshold} onChange={(event) => setNotificationDraft((current) => ({ ...current, lowCreditThreshold: event.target.value }))} /></label>
+            </div>
+            <div className="adminProviderList adminAlertList">
+              {adminAlerts.length ? adminAlerts.map((alert) => (
+                <article className={`adminAlertItem ${alert.severity}`} key={alert.id}>
+                  <div><strong>{alert.message}</strong><span>{alert.type} · {alert.occurrences} · {alert.lastSeenAt ? new Date(alert.lastSeenAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : ''}</span></div>
+                  <button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => acknowledgeAlert(alert.id)}><Check size={14} />{language === 'zh' ? '已处理' : 'Acknowledge'}</button>
+                </article>
+              )) : <p className="adminNotice">{language === 'zh' ? '当前没有待处理的运营提醒。' : 'No open operational alerts.'}</p>}
+            </div>
+            <button className="adminProviderAction adminProviderSave" type="submit" disabled={notificationStatus === 'loading'}>{notificationStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <Bell size={16} />}{language === 'zh' ? '保存通知设置' : 'Save notification settings'}</button>
+            {notificationMessage ? <p className={`adminNotice ${notificationStatus === 'error' ? 'error' : ''}`}>{notificationMessage}</p> : null}
           </form>
         ) : null}
-        {adjustStatus === 'error' ? <p className="authMessage error">{message}</p> : null}
-        {status !== 'loading' && !users.length && status !== 'error' ? (
-          <div className="adminState">
-            <Users size={20} />
-            {t.noUsers}
-          </div>
+
+        {activeSection === 'channels' ? (
+          <section className="adminBlock adminProviderBlock">
+            <div className="adminSectionHeading"><div><h3><KeyRound size={18} />{language === 'zh' ? '渠道配置' : 'Channel configuration'}</h3><p>{language === 'zh' ? '显示名称会成为用户看到的生图服务名称；API Key 加密保存。' : 'The display name is shown to users. API keys are encrypted at rest.'}</p></div></div>
+            <form className="adminProviderForm adminChannelForm" onSubmit={saveProvider}>
+              <label><span>{language === 'zh' ? '显示名称' : 'Display name'}</span><input required value={providerDraft.name} onChange={(event) => setProviderDraft((current) => ({ ...current, name: event.target.value }))} placeholder="GPT Image 2 / Gemini Banana" /></label>
+              <label><span>{language === 'zh' ? '接口类型' : 'Provider type'}</span><select value={providerDraft.providerType} onChange={(event) => setProviderDraft((current) => ({ ...current, providerType: event.target.value }))}>
+                <option value="openai-compatible">{language === 'zh' ? 'OpenAI 兼容 · 自动识别' : 'OpenAI compatible · Auto'}</option>
+                <option value="openai-compatible-json">{language === 'zh' ? 'OpenAI 兼容 · JSON 编辑' : 'OpenAI compatible · JSON edits'}</option>
+                <option value="openai-compatible-multipart">{language === 'zh' ? 'OpenAI 兼容 · Multipart 编辑' : 'OpenAI compatible · Multipart edits'}</option>
+              </select></label>
+              <label><span>Base URL</span><input required value={providerDraft.baseUrl} onChange={(event) => setProviderDraft((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://example.com" /></label>
+              <label><span>Model</span><input required value={providerDraft.model} onChange={(event) => setProviderDraft((current) => ({ ...current, model: event.target.value }))} placeholder="gpt-image-2" /></label>
+              <label><span>API Key</span><input type="password" required={!providerDraft.id} value={providerDraft.apiKey} onChange={(event) => setProviderDraft((current) => ({ ...current, apiKey: event.target.value }))} placeholder={providerDraft.id ? (providerDraft.apiKeyMasked || (language === 'zh' ? '留空保持不变' : 'Leave blank to keep')) : 'sk-...'} /></label>
+              <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.enabled} onChange={(event) => setProviderDraft((current) => ({ ...current, enabled: event.target.checked }))} /><span>{language === 'zh' ? '启用' : 'Enabled'}</span></label>
+              <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.isDefault} onChange={(event) => setProviderDraft((current) => ({ ...current, isDefault: event.target.checked }))} /><span>{language === 'zh' ? '默认服务' : 'Default'}</span></label>
+              <button className="adminProviderAction adminProviderSave" type="submit"><Settings size={16} />{providerDraft.id ? (language === 'zh' ? '保存渠道' : 'Save channel') : (language === 'zh' ? '新增渠道' : 'Add channel')}</button>
+              {providerDraft.id ? <button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><X size={16} />{language === 'zh' ? '取消编辑' : 'Cancel edit'}</button> : null}
+            </form>
+            <div className="adminProviderList">{providers.map((provider) => <article key={provider.id}><div><strong>{provider.name}</strong><span>{provider.model} · {providerPricingLabel(provider, language)} · {provider.apiKeyMasked || (language === 'zh' ? '未配置' : 'Not configured')} {provider.isDefault ? `· ${language === 'zh' ? '默认' : 'Default'}` : ''}</span></div><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除服务' : 'Delete service'}><Trash2 size={15} /></button></article>)}</div>
+            {providerMessage ? <p className="adminNotice">{providerMessage}</p> : null}
+          </section>
         ) : null}
-        {users.length ? (
-          <div className="adminTableWrap">
-            <table className="adminTable">
-              <thead>
-                <tr>
-                  <th>{t.users}</th>
-                  <th>{t.role}</th>
-                  <th>{t.creditBalance}</th>
-                  <th>{t.freeGeneration}</th>
-                  <th>{t.totalGenerations}</th>
-                  <th>{t.spentCredits}</th>
-                  <th>{t.purchased}</th>
-                  <th>{t.lastGeneration}</th>
-                  <th>{t.createdAt}</th>
-                  <th>{t.adminAdjust}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.id}>
-                    <td>
-                      <div className="adminUserCell">
-                        {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}
-                        <div>
-                          <strong>{user.email}</strong>
-                          {user.fullName ? <span>{user.fullName}</span> : null}
-                        </div>
-                      </div>
-                    </td>
-                    <td><span className="roleBadge">{user.role}</span></td>
-                    <td>{user.creditBalance}</td>
-                    <td>{user.freeUsed ? t.freeUsedShort : t.freeReady}</td>
-                    <td>{formatNumber(user.usage?.totalGenerations)}</td>
-                    <td>{formatNumber(user.usage?.totalGenerationCredits)}</td>
-                    <td>{formatNumber(user.usage?.purchasedCredits)}</td>
-                    <td>
-                      {user.usage?.lastGenerationCaseId ? (
-                        <button
-                          className="tableAction compactAction"
-                          type="button"
-                          onClick={() => {
-                            const caseItem = casesById?.get(user.usage.lastGenerationCaseId);
-                            if (caseItem) onOpenCase?.(caseItem);
-                          }}
-                          disabled={!casesById?.has(user.usage.lastGenerationCaseId)}
-                        >
-                          <ImageIcon size={14} />
-                          #{user.usage.lastGenerationCaseId}
-                        </button>
-                      ) : '-'}
-                    </td>
-                    <td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'}</td>
-                    <td>
-                      <button
-                        className="tableAction"
-                        type="button"
-                        onClick={() => setAdjustment({
-                          userId: user.id,
-                          email: user.email,
-                          amount: 10,
-                          reason: ''
-                        })}
-                      >
-                        <Coins size={15} />
-                        {t.adminAdjust}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
-    </div>
+      </div>
+
+      {adjustment ? (
+        <div className="adminUserEditBackdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && adjustStatus !== 'loading') setAdjustment(null); }}>
+          <form className="adminAdjustForm" onSubmit={handleAdjustCredits} role="dialog" aria-modal="true" aria-label={t.editUser}>
+            <header><div><span>{t.editUser}</span><strong>{adjustment.email}</strong></div><button className="adminEditClose" type="button" onClick={() => setAdjustment(null)} disabled={adjustStatus === 'loading'} aria-label={t.cancel}><X size={18} /></button></header>
+            <label>{t.creditAmount}<input type="number" step="1" value={adjustment.amount} onChange={(event) => setAdjustment((current) => ({ ...current, amount: event.target.value }))} /></label>
+            <label>{t.reason}<input value={adjustment.reason} maxLength={240} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value }))} /></label>
+            <label className="adminPasswordField">{t.newPassword}<input type="password" autoComplete="new-password" minLength={8} maxLength={128} value={adjustment.password} onChange={(event) => setAdjustment((current) => ({ ...current, password: event.target.value }))} /><small>{t.newPasswordHint}</small></label>
+            {adjustStatus === 'error' ? <p className="authMessage error">{message}</p> : null}
+            <footer><button className="secondary" type="button" onClick={() => setAdjustment(null)} disabled={adjustStatus === 'loading'}>{t.cancel}</button><button type="submit" disabled={adjustStatus === 'loading' || (!Number(adjustment.amount) && !adjustment.password)}>{adjustStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <Coins size={16} />}{t.applyAdjustment}</button></footer>
+          </form>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -2346,7 +2946,7 @@ function TemplateSection({ language, styleLibrary, onOpenTemplate }) {
                 type="button"
                 onClick={() => onOpenTemplate(item)}
               >
-                <img src={item.cover} alt={title} loading="lazy" />
+                <img src={item.cover} alt={title} loading="lazy" decoding="async" fetchPriority="low" />
                 <span className="caseBadge">
                   {language === 'zh' ? '模板' : 'Template'} {String(index + 1).padStart(2, '0')}
                 </span>
@@ -2400,7 +3000,7 @@ function PromptCard({
   return (
     <article className="caseCard">
       <button className="caseImage imageButton" type="button" onClick={() => onOpen(caseItem)}>
-        <img src={caseItem.image} alt={caseItem.imageAlt} loading="lazy" />
+        <img src={caseItem.thumbnail || caseItem.image} alt={caseItem.imageAlt} loading="lazy" decoding="async" fetchPriority="low" />
         <span className="caseBadge">{language === 'zh' ? '案例' : 'Case'} {caseItem.id}</span>
         <span className="imageHint">
           <Eye size={15} />
@@ -2419,7 +3019,7 @@ function PromptCard({
           )}
         </div>
         <h3>{caseItem.title}</h3>
-        <p>{caseItem.promptPreview}</p>
+        {caseItem.promptPreview ? <p>{caseItem.promptPreview}</p> : null}
         <div className="tagRow">
           {tags.map((tag) => (
             <span key={`${caseItem.id}-${tag}`}>{localizeLabel(tag, language, styleLibrary)}</span>
@@ -2471,6 +3071,10 @@ function PreviewDialog({
   onProfileChange
 }) {
   const t = copy[language];
+  const { pricing: casePricing, loading: casePricingLoading } = useServerImagePricing(
+    { size: '1024x1024', quality: 'medium' },
+    { enabled: preview?.type === 'case' }
+  );
   const [editablePrompt, setEditablePrompt] = useState('');
   const [generationState, setGenerationState] = useState({
     status: 'idle',
@@ -2540,11 +3144,11 @@ function PreviewDialog({
   const generatedImage = !isTemplate ? generationState.image : '';
   const isSignedIn = isAuthenticatedSession(session);
   const creditBalance = Number(profile?.creditBalance || 0);
-  const isOutOfCredits = isSignedIn && creditBalance <= 0 && !profile?.isSuperAdmin;
+  const isOutOfCredits = isSignedIn && Boolean(casePricing) && creditBalance < casePricing.credits && !profile?.isSuperAdmin;
   const isSanitizing = sanitizeState.status === 'processing';
   const moderationLocked = generationState.status === 'content_moderation_blocked';
-  const generationLocked = isGenerating || isSanitizing || moderationLocked;
-  const quotaText = isSignedIn ? getGenerationQuotaText(profile, language) : t.authRequired;
+  const generationLocked = isGenerating || isSanitizing || moderationLocked || (isSignedIn && (casePricingLoading || !casePricing));
+  const quotaText = isSignedIn ? getGenerationQuotaText(profile, language, Number(casePricing?.credits || 0)) : t.authRequired;
 
   async function handleSanitize() {
     if (isTemplate || isSanitizing) return;
@@ -2633,7 +3237,14 @@ function PreviewDialog({
       setGenerationState({ status: 'error', image: '', message: t.promptRequired });
       return;
     }
-    if (isOutOfCredits) {
+    let confirmedPricing;
+    try {
+      confirmedPricing = await requestImagePricing({ size: '1024x1024', quality: 'medium' });
+    } catch {
+      setGenerationState({ status: 'error', image: generatedImage, message: t.generationFailed });
+      return;
+    }
+    if (!profile?.isSuperAdmin && creditBalance < Number(confirmedPricing.credits || 0)) {
       onBillingRequired();
       setGenerationState({ status: 'idle', image: generatedImage, message: t.creditsRequired });
       return;
@@ -2642,7 +3253,7 @@ function PreviewDialog({
     setGenerationState({ status: 'generating', image: '', message: '' });
 
     try {
-      const response = await fetch('/api/generate-image', {
+      const response = await fetchImageGeneration('/api/generate-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2650,7 +3261,10 @@ function PreviewDialog({
         },
         body: JSON.stringify({
           caseId: item.id,
-          prompt
+          prompt,
+          size: '1024x1024',
+          quality: 'medium',
+          count: 1
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -2779,7 +3393,9 @@ function PreviewDialog({
             {!isTemplate ? (
               <button type="button" onClick={handleGenerate} disabled={generationLocked}>
                 {isGenerating ? <LoaderCircle className="spinIcon" size={17} /> : <ImageIcon size={17} />}
-                {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? t.generateTest : t.signInToGenerate}
+                {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? (
+                  <>{t.generateTest} · <ImageCreditPrice pricing={casePricing} language={language} compact /></>
+                ) : t.signInToGenerate}
               </button>
             ) : null}
             {!isTemplate && item.sourceUrl ? (
@@ -2841,7 +3457,9 @@ function PreviewDialog({
               </div>
               <button type="button" onClick={handleGenerate} disabled={generationLocked}>
                 {isGenerating ? <LoaderCircle className="spinIcon" size={17} /> : <ImageIcon size={17} />}
-                {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? t.generateImage : t.signInToGenerate}
+                {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? (
+                  <>{t.generateImage} · <ImageCreditPrice pricing={casePricing} language={language} compact /></>
+                ) : t.signInToGenerate}
               </button>
               {generationState.status === 'error' || moderationLocked ? (
                 <p className="generationMessage">{generationState.message}</p>
@@ -2892,10 +3510,16 @@ function PreviewDialog({
 
 function App() {
   useGaPageViews();
-  const [siteData, setSiteData] = useState(null);
-  const [styleLibrary, setStyleLibrary] = useState(null);
+  const [siteData, setSiteData] = useState(EMPTY_SITE_DATA);
+  const [styleLibrary, setStyleLibrary] = useState(EMPTY_STYLE_LIBRARY);
+  const [caseIndexLoading, setCaseIndexLoading] = useState(true);
+  const [visibleCaseCount, setVisibleCaseCount] = useState(GALLERY_INITIAL_COUNT);
   const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'en');
   const [activePage, setActivePage] = useState(() => pageFromHash(window.location.hash));
+  const [workspaceMode, setWorkspaceMode] = useState('single');
+  const [workspaceModeMenuOpen, setWorkspaceModeMenuOpen] = useState(false);
+  const [pendingReferenceAsset, setPendingReferenceAsset] = useState(null);
+  const [pendingEcommerceProjectId, setPendingEcommerceProjectId] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [style, setStyle] = useState('All');
@@ -2911,28 +3535,59 @@ function App() {
   const [authErrorCode, setAuthErrorCode] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountInitialSection, setAccountInitialSection] = useState('overview');
-  const [adminOpen, setAdminOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
-  const { copiedId, copyPrompt, copyText } = useCopy();
+  const [siteNotice, setSiteNotice] = useState(null);
+  const [siteNoticeDismissed, setSiteNoticeDismissed] = useState(false);
+  const lastSiteNoticeVersionRef = useRef('');
+  const fullCaseDataPromiseRef = useRef(null);
+  const gallerySentinelRef = useRef(null);
+  const { copiedId, copyText } = useCopy();
   const t = copy[language];
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetch('/cases.json').then((response) => response.json()),
-      fetch('/style-library.json').then((response) => response.json())
-    ])
-      .then(([payload, library]) => {
-        if (!cancelled) {
-          setSiteData(payload);
-          setStyleLibrary(library);
-        }
+    const dataVersion = encodeURIComponent(__PIC365_BUILD_ID__);
+    fetch(`/style-library.json?v=${dataVersion}`)
+      .then((response) => response.json())
+      .then((library) => {
+        if (!cancelled) setStyleLibrary(library);
+      })
+      .catch(() => undefined);
+    fetch(`/cases-index.json?v=${dataVersion}`, { priority: 'high' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!cancelled) setSiteData(payload);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setCaseIndexLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  function loadFullCaseData() {
+    if (siteData.cases.some((item) => item.prompt)) return Promise.resolve(siteData);
+    if (!fullCaseDataPromiseRef.current) {
+      const dataVersion = encodeURIComponent(__PIC365_BUILD_ID__);
+      fullCaseDataPromiseRef.current = fetch(`/cases.json?v=${dataVersion}`, { priority: 'low' })
+        .then((response) => {
+          if (!response.ok) throw new Error('CASE_DATA_LOAD_FAILED');
+          return response.json();
+        })
+        .then((payload) => {
+          setSiteData(payload);
+          return payload;
+        })
+        .catch((error) => {
+          fullCaseDataPromiseRef.current = null;
+          throw error;
+        });
+    }
+    return fullCaseDataPromiseRef.current;
+  }
 
   useEffect(() => {
     localStorage.setItem('language', language);
@@ -2972,6 +3627,57 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticatedSession(session)) return;
+    if (window.location.hash === '#admin' || window.location.hash === '#assets') return;
+    setWorkspaceMode('single');
+    setActivePage('create');
+    if (window.location.hash !== '#create') {
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#create`);
+    }
+  }, [isAuthenticatedSession(session)]);
+
+  const refreshSiteNotice = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/site-notice?t=${Date.now()}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'SITE_NOTICE_LOAD_FAILED');
+      setSiteNotice(payload.notice || null);
+    } catch {
+      setSiteNotice(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSiteNotice();
+    const handleRefresh = () => refreshSiteNotice();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshSiteNotice();
+    };
+    window.addEventListener('focus', handleRefresh);
+    window.addEventListener('pic365:site-notice-updated', handleRefresh);
+    document.addEventListener('visibilitychange', handleVisibility);
+    const intervalId = window.setInterval(refreshSiteNotice, 60_000);
+    return () => {
+      window.removeEventListener('focus', handleRefresh);
+      window.removeEventListener('pic365:site-notice-updated', handleRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [refreshSiteNotice]);
+
+  useEffect(() => {
+    refreshSiteNotice();
+  }, [refreshSiteNotice, session?.user?.id, profile?.creditBalance]);
+
+  useEffect(() => {
+    const nextVersion = String(siteNotice?.updatedAt || '');
+    if (nextVersion && nextVersion !== lastSiteNoticeVersionRef.current) {
+      setSiteNoticeDismissed(false);
+    }
+    lastSiteNoticeVersionRef.current = nextVersion;
+  }, [siteNotice?.updatedAt]);
+
+  useEffect(() => {
     let cancelled = false;
 
     if (!isAuthenticatedSession(session)) {
@@ -2999,6 +3705,11 @@ function App() {
       cancelled = true;
     };
   }, [isAuthenticatedSession(session)]);
+
+  useEffect(() => {
+    if (activePage !== 'admin' || profile == null || profile.isSuperAdmin) return;
+    handlePageChange('create');
+  }, [activePage, profile?.isSuperAdmin]);
 
   async function loadFavorites({ silent = true } = {}) {
     if (!isAuthenticatedSession(session)) {
@@ -3107,7 +3818,7 @@ function App() {
     return siteData.cases.filter((item) => {
       const matchQuery =
         !q ||
-        `${item.id} ${item.title} ${item.category} ${item.prompt} ${item.sourceLabel}`
+        `${item.id} ${item.title} ${item.category} ${item.prompt || ''} ${item.promptPreview || ''} ${item.sourceLabel}`
           .toLowerCase()
           .includes(q);
       const matchCategory = category === 'All' || item.category === category;
@@ -3147,12 +3858,57 @@ function App() {
       .slice(0, 12);
   }, [creationCategory, siteData]);
 
-  const visibleCases = filteredCases.slice(0, 72);
+  const visibleCases = filteredCases.slice(0, visibleCaseCount);
   const casesById = useMemo(() => new Map((siteData?.cases || []).map((caseItem) => [caseItem.id, caseItem])), [siteData]);
   const favoriteCaseIds = useMemo(
     () => new Set(normalizeFavoriteRows(favoriteRows).map((favorite) => favorite.caseId)),
     [favoriteRows]
   );
+
+  useEffect(() => {
+    setVisibleCaseCount(GALLERY_INITIAL_COUNT);
+  }, [query, category, style, scene]);
+
+  useEffect(() => {
+    if (!query.trim() || siteData.cases.some((item) => item.prompt)) return;
+    const timer = window.setTimeout(() => {
+      loadFullCaseData().catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, siteData]);
+
+  useEffect(() => {
+    if (activePage !== 'cases' || visibleCaseCount >= filteredCases.length) return undefined;
+    const sentinel = gallerySentinelRef.current;
+    if (!sentinel) return undefined;
+    const loadNextBatch = () => {
+      setVisibleCaseCount((current) => Math.min(filteredCases.length, current + GALLERY_BATCH_SIZE));
+    };
+    if (typeof IntersectionObserver === 'undefined') {
+      let frame = 0;
+      const checkPosition = () => {
+        if (frame) return;
+        frame = window.requestAnimationFrame(() => {
+          frame = 0;
+          if (sentinel.getBoundingClientRect().top <= window.innerHeight + 900) loadNextBatch();
+        });
+      };
+      window.addEventListener('scroll', checkPosition, { passive: true });
+      window.addEventListener('resize', checkPosition);
+      checkPosition();
+      return () => {
+        window.removeEventListener('scroll', checkPosition);
+        window.removeEventListener('resize', checkPosition);
+        if (frame) window.cancelAnimationFrame(frame);
+      };
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      loadNextBatch();
+    }, { rootMargin: '900px 0px', threshold: 0.01 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [activePage, filteredCases.length, visibleCaseCount]);
 
   async function handleSignOut() {
     await authClient.signOut().catch(() => undefined);
@@ -3160,7 +3916,6 @@ function App() {
     setProfile(null);
     setFavoriteRows([]);
     setAccountOpen(false);
-    setAdminOpen(false);
     setBillingOpen(false);
   }
 
@@ -3168,16 +3923,41 @@ function App() {
     if (nextProfile) setProfile(nextProfile);
   }
 
+  function openCasePreview(caseItem) {
+    if (!caseItem) return;
+    setPreview({ type: 'case', item: caseItem });
+    if (caseItem.prompt) return;
+    loadFullCaseData()
+      .then((payload) => {
+        const detailedCase = payload.cases.find((item) => item.id === caseItem.id);
+        if (!detailedCase) return;
+        setPreview((current) => (
+          current?.type === 'case' && current.item?.id === caseItem.id
+            ? { ...current, item: detailedCase }
+            : current
+        ));
+      })
+      .catch(() => undefined);
+  }
+
+  async function handleCopyCasePrompt(caseItem) {
+    let detailedCase = caseItem;
+    if (!detailedCase?.prompt) {
+      const payload = await loadFullCaseData().catch(() => null);
+      detailedCase = payload?.cases?.find((item) => item.id === caseItem?.id) || caseItem;
+    }
+    if (detailedCase?.prompt) await copyText(detailedCase.prompt, `case-${detailedCase.id}`);
+  }
+
   function handleOpenCaseFromAccount(caseItem) {
     setAccountOpen(false);
     setAccountInitialSection('overview');
     setBillingOpen(false);
-    setPreview({ type: 'case', item: caseItem });
+    openCasePreview(caseItem);
   }
 
   function handleOpenCaseFromAdmin(caseItem) {
-    setAdminOpen(false);
-    setPreview({ type: 'case', item: caseItem });
+    openCasePreview(caseItem);
   }
 
   function setTimedFavoriteMessage(message) {
@@ -3256,33 +4036,69 @@ function App() {
     setAccountInitialSection('overview');
   }
 
-  if (!siteData || !styleLibrary) {
-    return (
-      <main>
-        <div className="loadingScreen">
-          <WandSparkles size={28} />
-          <span>{t.loading}</span>
-        </div>
-      </main>
-    );
-  }
+  const showSiteNotice = Boolean(
+    siteNotice
+    && !siteNoticeDismissed
+    && (
+      siteNotice.audience === 'all'
+      || (siteNotice.audience === 'signed-in' && isAuthenticatedSession(session))
+      || (siteNotice.audience === 'members' && isAuthenticatedSession(session) && Number(profile?.creditBalance || 0) > 0)
+    )
+  );
 
   return (
     <main>
-      <header className="topbar">
-        <a className="brand" href="#">
-          <WandSparkles size={21} />
-          {t.brand}
+      <header className={cx('topbar', `topbarPage-${activePage}`, workspaceModeMenuOpen && 'withWorkspaceModes')}>
+        <a className="brand pic365Brand" href="#" aria-label="pic365">
+          <img className="pic365BrandLogo" src="/images/pic365-logo.png" alt="pic365" />
         </a>
         <div className="topbarControls">
-          <nav className="pageTabs" aria-label={language === 'zh' ? '主页面' : 'Main pages'}>
-            <button
-              className={cx('pageTab', activePage === 'create' && 'active')}
-              type="button"
-              onClick={() => handlePageChange('create')}
+          <nav className={cx('pageTabs', profile?.isSuperAdmin && 'withAdminTab')} aria-label={language === 'zh' ? '主页面' : 'Main pages'}>
+            <div
+              className={cx('pageTabDock', workspaceModeMenuOpen && 'modeMenuOpen')}
+              onMouseEnter={() => setWorkspaceModeMenuOpen(true)}
+              onMouseLeave={() => setWorkspaceModeMenuOpen(false)}
+              onFocusCapture={() => setWorkspaceModeMenuOpen(true)}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setWorkspaceModeMenuOpen(false);
+              }}
             >
-              {t.navCreate}
-            </button>
+              <button
+                className={cx('pageTab', activePage === 'create' && 'active')}
+                type="button"
+                aria-haspopup="true"
+                aria-expanded={workspaceModeMenuOpen}
+                onClick={() => {
+                  handlePageChange('create');
+                  setWorkspaceModeMenuOpen(true);
+                }}
+              >
+                {t.navCreate}
+              </button>
+              {workspaceModeMenuOpen ? (
+                <div className="workspaceModeRail" role="tablist" aria-label={t.creationMode}>
+                  {[
+                    { id: 'single', label: t.freeMode, Icon: WandSparkles },
+                    { id: 'ecommerce', label: t.ecommerceMode, Icon: Layers3 }
+                  ].map(({ id, label, Icon }) => (
+                    <button
+                      className={workspaceMode === id ? 'active' : ''}
+                      type="button"
+                      role="tab"
+                      aria-selected={workspaceMode === id}
+                      onClick={() => {
+                        setWorkspaceMode(id);
+                        handlePageChange('create');
+                      }}
+                      key={id}
+                    >
+                      <Icon size={15} />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <button
               className={cx('pageTab', activePage === 'templates' && 'active')}
               type="button"
@@ -3297,6 +4113,33 @@ function App() {
             >
               {t.navCases}
             </button>
+            <button
+              className={cx('pageTab', activePage === 'assets' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('assets')}
+            >
+              <HardDrive size={14} />
+              {t.navAssets}
+            </button>
+            <button
+              className="pageTab apiPageTab"
+              type="button"
+              onClick={() => window.open(import.meta.env.VITE_API_PORTAL_URL || 'https://www.unikeyx.com', '_blank', 'noopener,noreferrer')}
+              title={t.api}
+            >
+              <Star size={14} fill="currentColor" aria-hidden="true" />
+              {t.api}
+            </button>
+            {profile?.isSuperAdmin ? (
+              <button
+                className={cx('pageTab', 'adminPageTab', activePage === 'admin' && 'active')}
+                type="button"
+                onClick={() => handlePageChange('admin')}
+              >
+                <ShieldCheck size={15} />
+                {t.adminPanel}
+              </button>
+            ) : null}
           </nav>
           <LanguageSwitch language={language} setLanguage={setLanguage} />
           <UserMenu
@@ -3307,7 +4150,6 @@ function App() {
             onSignOut={handleSignOut}
             onAccount={() => handleOpenAccount('overview')}
             onFavorites={() => handleOpenAccount('favorites')}
-            onAdmin={() => setAdminOpen(true)}
             onBilling={() => {
               setBillingNotice('');
               setBillingOpen(true);
@@ -3315,6 +4157,25 @@ function App() {
           />
         </div>
       </header>
+      {showSiteNotice && siteNotice.placement !== 'modal' ? (
+        <aside className="siteNoticeBanner" role="status">
+          <Bell size={17} />
+          <div><strong>{siteNotice.title || (language === 'zh' ? '站内通知' : 'Notice')}</strong><RichSiteNoticeContent className="siteNoticeRichContent" body={siteNotice.body} format={siteNotice.format} /></div>
+          <button type="button" onClick={() => setSiteNoticeDismissed(true)} aria-label={language === 'zh' ? '关闭通知' : 'Dismiss notice'}><X size={16} /></button>
+        </aside>
+      ) : null}
+      {showSiteNotice && siteNotice.placement === 'modal' ? (
+        <div className="siteNoticeModalBackdrop" role="presentation">
+          <section className="siteNoticeModal" role="dialog" aria-modal="true" aria-labelledby="site-notice-title">
+            <div className="siteNoticeModalIcon"><Bell size={22} /></div>
+            <div className="siteNoticeModalBody">
+              <strong id="site-notice-title">{siteNotice.title || (language === 'zh' ? '站内通知' : 'Notice')}</strong>
+              <RichSiteNoticeContent className="siteNoticeRichContent" body={siteNotice.body} format={siteNotice.format} />
+            </div>
+            <button type="button" onClick={() => setSiteNoticeDismissed(true)} aria-label={language === 'zh' ? '关闭通知' : 'Dismiss notice'}><X size={17} /></button>
+          </section>
+        </div>
+      ) : null}
       {favoriteMessage ? <div className="toastNotice">{favoriteMessage}</div> : null}
 
       {activePage === 'cases' ? (
@@ -3324,7 +4185,7 @@ function App() {
         language={language}
         totalCases={siteData.totalCases}
         categoryCount={siteData.categories.length}
-        onOpenCase={(item) => setPreview({ type: 'case', item })}
+        onOpenCase={openCasePreview}
         onExplore={() => handlePageChange('cases')}
       />
 
@@ -3333,10 +4194,10 @@ function App() {
           <button
             type="button"
             aria-label={`${language === 'zh' ? '打开案例' : 'Open case'} ${caseItem.id}: ${caseItem.title}`}
-            onClick={() => setPreview({ type: 'case', item: caseItem })}
+            onClick={() => openCasePreview(caseItem)}
             key={caseItem.id}
           >
-            <img src={caseItem.image} alt={caseItem.imageAlt} />
+            <img src={caseItem.thumbnail || caseItem.image} alt={caseItem.imageAlt} loading="lazy" decoding="async" fetchPriority="low" />
             <span>#{caseItem.id}</span>
           </button>
         ))}
@@ -3398,18 +4259,24 @@ function App() {
           <span>{language === 'zh' ? `${filteredCases.length} ${t.matching}` : `${filteredCases.length} ${t.matching}`}</span>
         </div>
 
-        <div className="caseGrid">
-          {visibleCases.map((caseItem) => (
+        <div className="caseGrid" aria-busy={caseIndexLoading}>
+          {caseIndexLoading ? Array.from({ length: 9 }, (_, index) => (
+            <article className="caseCard galleryCaseSkeleton" aria-hidden="true" key={`gallery-skeleton-${index}`}>
+              <span className="galleryImageSkeleton" />
+              <span className="galleryLineSkeleton wide" />
+              <span className="galleryLineSkeleton" />
+            </article>
+          )) : visibleCases.map((caseItem) => (
             <PromptCard
               caseItem={caseItem}
               copied={copiedId === `case-${caseItem.id}`}
               favorited={favoriteCaseIds.has(caseItem.id)}
               favoriteBusy={favoriteBusyId === caseItem.id}
               language={language}
-              onCopy={copyPrompt}
-              onOpen={(item) => setPreview({ type: 'case', item })}
+              onCopy={handleCopyCasePrompt}
+              onOpen={openCasePreview}
               onGenerate={(item) => {
-                setPreview({ type: 'case', item });
+                openCasePreview(item);
                 if (!isAuthenticatedSession(session)) openAuth();
               }}
               onToggleFavorite={handleToggleFavorite}
@@ -3419,10 +4286,13 @@ function App() {
           ))}
         </div>
 
-        {filteredCases.length > visibleCases.length && (
-          <p className="limitNote">
-            {t.limit(visibleCases.length)}
-          </p>
+        {!caseIndexLoading && filteredCases.length > visibleCases.length && (
+          <div className="galleryLoadSentinel" ref={gallerySentinelRef}>
+            <LoaderCircle className="spinIcon" size={17} />
+            <button type="button" onClick={() => setVisibleCaseCount((current) => Math.min(filteredCases.length, current + GALLERY_BATCH_SIZE))}>
+              {t.limit(visibleCases.length)}
+            </button>
+          </div>
         )}
       </section>
 
@@ -3441,6 +4311,7 @@ function App() {
 
       {activePage === 'create' ? (
         <CreateWorkspace
+          workspaceMode={workspaceMode}
           language={language}
           session={session}
           profile={profile}
@@ -3448,7 +4319,7 @@ function App() {
           categoryOptions={creationCategoryOptions}
           category={creationCategory}
           onCategoryChange={setCreationCategory}
-          onOpenCase={(item) => setPreview({ type: 'case', item })}
+          onOpenCase={openCasePreview}
           onBrowseCases={() => handlePageChange('cases')}
           onSignIn={openAuth}
           onBilling={() => {
@@ -3456,6 +4327,42 @@ function App() {
             setBillingOpen(true);
           }}
           onProfileChange={handleProfileChange}
+          pendingReferenceAsset={pendingReferenceAsset}
+          onReferenceAssetConsumed={() => setPendingReferenceAsset(null)}
+          pendingEcommerceProjectId={pendingEcommerceProjectId}
+          onEcommerceProjectConsumed={() => setPendingEcommerceProjectId('')}
+          suspendFloatingControls={Boolean(preview || authOpen || accountOpen || billingOpen)}
+        />
+      ) : null}
+      {activePage === 'assets' ? (
+        <Suspense fallback={<div className="createWorkspaceLoading" aria-live="polite"><span /></div>}>
+          <MediaAssetCenter
+            language={language}
+            session={session}
+            profile={profile}
+            onSignIn={openAuth}
+            onUseAsReference={(asset) => {
+              setPendingReferenceAsset(asset);
+              setWorkspaceMode('single');
+              handlePageChange('create');
+            }}
+            onOpenEcommerceProject={(projectId) => {
+              setPendingEcommerceProjectId(projectId);
+              setWorkspaceMode('ecommerce');
+              handlePageChange('create');
+            }}
+          />
+        </Suspense>
+      ) : null}
+      {activePage === 'admin' && profile?.isSuperAdmin ? (
+        <AdminPanel
+          language={language}
+          session={session}
+          profile={profile}
+          casesById={casesById}
+          onOpenAccount={() => handleOpenAccount('overview')}
+          onOpenCase={handleOpenCaseFromAdmin}
+          onSiteNoticeUpdated={refreshSiteNotice}
         />
       ) : null}
       <PreviewDialog
@@ -3502,14 +4409,6 @@ function App() {
           setBillingNotice('');
           setBillingOpen(true);
         }}
-      />
-      <AdminPanel
-        open={adminOpen}
-        language={language}
-        session={session}
-        casesById={casesById}
-        onClose={() => setAdminOpen(false)}
-        onOpenCase={handleOpenCaseFromAdmin}
       />
       <CreditPanel
         open={billingOpen}

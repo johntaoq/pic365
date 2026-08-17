@@ -1,12 +1,15 @@
 import {
   createEcommerceProject,
+  deleteEcommerceProject,
   getEcommerceProject,
+  listEcommerceProjectAssets,
   listEcommerceProjects,
   updateEcommerceProject
 } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
 import { syncEcommerceProjectOutputs } from '../_lib/ecommerce-p1-db.js';
 import { readJsonBody } from '../_lib/request.js';
+import { deleteStoredFile } from '../_lib/storage.js';
 import {
   ECOMMERCE_INDUSTRIES,
   ECOMMERCE_PLATFORMS,
@@ -107,14 +110,15 @@ function normalizeProjectInput(body) {
       identitySpec: cleanIdentitySpec(body.identitySpec),
       templateId,
       visualStyleId,
+      imageProviderId: cleanText(body.imageProviderId, 80),
       selectedSlots: selectedSlots.length ? selectedSlots : getDefaultSlotIds(platformId)
     }
   };
 }
 
 export default async function handler(req, res) {
-  if (!['GET', 'POST', 'PATCH'].includes(req.method)) {
-    res.setHeader('Allow', 'GET, POST, PATCH');
+  if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, POST, PATCH, DELETE');
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
@@ -129,6 +133,16 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, project });
     }
     return json(res, 200, { ok: true, projects: listEcommerceProjects(auth.user.id) });
+  }
+
+  if (req.method === 'DELETE') {
+    const projectId = cleanText(req.query?.id, 80);
+    if (!projectId) return json(res, 400, { ok: false, error: 'PROJECT_ID_REQUIRED' });
+    const assets = listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true });
+    const project = deleteEcommerceProject(auth.user.id, projectId);
+    if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+    await Promise.allSettled(assets.map((asset) => asset.storagePath && !asset.mediaAssetId ? deleteStoredFile(asset.storagePath) : null));
+    return json(res, 200, { ok: true, project });
   }
 
   let body;

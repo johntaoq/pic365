@@ -199,7 +199,7 @@ export function normalizeWatchaUser(data) {
 }
 
 export function watchaFallbackEmail(userId) {
-  return `watcha-${String(userId).replace(/[^a-zA-Z0-9_-]/g, '')}@watcha.gpt-image2.canghe.ai`;
+  return `watcha-${String(userId).replace(/[^a-zA-Z0-9_-]/g, '')}@accounts.pic365.org`;
 }
 
 export function watchaUserMetadata(user) {

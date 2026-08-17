@@ -131,19 +131,15 @@ export default async function handler(req, res) {
 
   const language = body.language === 'en' ? 'en' : 'zh';
   const prepared = [];
-  const blocked = [];
+  const unavailable = [];
   try {
     for (const document of documents) {
       const inputs = await resolveRenderInputs(auth.user.id, project, document, platform);
       if (inputs.error) {
-        blocked.push({ documentId: document.id, slotId: document.slotId, error: inputs.error });
+        unavailable.push({ documentId: document.id, slotId: document.slotId, error: inputs.error });
         continue;
       }
       updateEcommerceDeliveryValidation(auth.user.id, document.id, inputs.validation);
-      if (!inputs.validation.ready) {
-        blocked.push({ documentId: document.id, slotId: document.slotId, validation: inputs.validation });
-        continue;
-      }
       const rendered = await renderDeliveryDocument({
         document,
         sourceStoragePath: inputs.generation.storage_path,
@@ -151,7 +147,7 @@ export default async function handler(req, res) {
       });
       prepared.push({ document, ...inputs, rendered });
     }
-    if (blocked.length) return json(res, 409, { ok: false, error: 'DELIVERY_NOT_READY', blocked });
+    if (unavailable.length) return json(res, 409, { ok: false, error: 'DELIVERY_SOURCE_UNAVAILABLE', unavailable });
 
     const zip = new JSZip();
     const manifest = [];
@@ -176,8 +172,18 @@ export default async function handler(req, res) {
         width: item.document.targetWidth,
         height: item.document.targetHeight,
         format: item.document.outputFormat,
+        validationReady: item.validation.ready,
         validationScore: item.validation.score,
-        warnings: item.validation.rules.filter((rule) => rule.status === 'warning').map((rule) => language === 'zh' ? rule.titleZh : rule.titleEn)
+        warnings: item.validation.rules
+          .filter((rule) => rule.status === 'warning')
+          .map((rule) => language === 'zh' ? rule.titleZh : rule.titleEn),
+        findings: item.validation.rules
+          .filter((rule) => rule.status !== 'passed')
+          .map((rule) => ({
+            level: rule.status,
+            title: language === 'zh' ? rule.titleZh : rule.titleEn,
+            detail: language === 'zh' ? rule.detailZh : rule.detailEn
+          }))
       });
     }
     if (body.includeDetailPage) {

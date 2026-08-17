@@ -66,6 +66,27 @@ test('renderer creates exact delivery dimensions with structured overlays', asyn
   assert.ok(rendered.bytes.length > 10_000);
 });
 
+test('comparison renderer preserves strict left and right halves', async () => {
+  const comparisonDocument = {
+    ...document,
+    documentType: 'comparison',
+    content: {
+      ...document.content,
+      comparison: {
+        leftTitle: '本商品\n专业方案',
+        leftItems: ['CPU: 2 cores', '支持 多任务'],
+        rightTitle: '对比对象',
+        rightItems: ['CPU: 1 core', '基础 配置']
+      }
+    }
+  };
+  const rendered = await renderDeliveryDocument({ document: comparisonDocument, sourceStoragePath: sourcePath });
+  const metadata = await sharp(rendered.bytes).metadata();
+  assert.equal(metadata.width, 1024);
+  assert.equal(metadata.height, 1024);
+  assert.ok(rendered.bytes.length > 10_000);
+});
+
 test('source analysis detects resolution and light corners', async () => {
   const diagnostics = await analyzeDeliverySource(sourcePath);
   assert.equal(diagnostics.sourceWidth, 900);

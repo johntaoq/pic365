@@ -17,7 +17,7 @@ function cleanText(value, maxLength = 120) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
-function generationPayload(row) {
+function generationPayload(row, { includePrompt = false } = {}) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -27,7 +27,8 @@ function generationPayload(row) {
     size: row.size,
     quality: row.quality,
     errorCode: row.error_code || '',
-    prompt: row.prompt || '',
+    prompt: includePrompt ? row.prompt || '' : '',
+    promptHidden: !includePrompt,
     imageUrl: row.status === 'succeeded' && row.storage_path
       ? `/api/generated?id=${encodeURIComponent(row.id)}`
       : '',
@@ -54,7 +55,8 @@ export default async function handler(req, res) {
     if (!projectForRequest(auth.user.id, projectId)) {
       return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
     }
-    const generations = listEcommerceProjectGenerations(auth.user.id, projectId).map(generationPayload);
+    const generations = listEcommerceProjectGenerations(auth.user.id, projectId)
+      .map((row) => generationPayload(row, { includePrompt: Boolean(auth.user.isSuperAdmin) }));
     const outputs = listEcommerceProjectOutputs(auth.user.id, projectId);
     return json(res, 200, { ok: true, generations, outputs });
   }
