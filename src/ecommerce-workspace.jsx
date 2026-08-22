@@ -57,6 +57,10 @@ import {
 import { resolveEcommerceRefinementSize, resolveEcommerceSlotGenerationSize } from '../shared/image-pricing.js';
 import { getImageModelConstraints, validateImageReferenceInputsForModel } from '../shared/image-generation.js';
 import { orderImageProviders, resolveImageProviderId } from '../shared/image-provider-selection.js';
+import {
+  readEcommerceProjectListCollapsed,
+  writeEcommerceProjectListCollapsed
+} from '../shared/ecommerce-ui-preferences.js';
 import EcommerceDeliveryCenter from './ecommerce-delivery-center.jsx';
 import EcommerceAssetLibraryPicker from './ecommerce-asset-library-picker.jsx';
 import { clampImagePanOffset } from './image-pan-zoom.js';
@@ -1139,7 +1143,8 @@ export default function EcommerceWorkspace({
   const [aiBriefOriginals, setAiBriefOriginals] = useState({});
   const [aiBriefStatus, setAiBriefStatus] = useState('idle');
   const [identitySpecStatus, setIdentitySpecStatus] = useState('idle');
-  const [projectListCollapsed, setProjectListCollapsed] = useState(true);
+  const preferenceUserId = String(session?.user?.id || 'guest');
+  const [projectListCollapsed, setProjectListCollapsed] = useState(() => readEcommerceProjectListCollapsed(preferenceUserId));
   const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(0));
   const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
@@ -1178,6 +1183,16 @@ export default function EcommerceWorkspace({
     : 'medium';
   const linkedMediaAssetIds = useMemo(() => assets.map((asset) => asset.mediaAssetId).filter(Boolean), [assets]);
   const remainingProjectAssetSlots = Math.max(0, ECOMMERCE_PROJECT_ASSET_LIMIT - assets.length);
+
+  useEffect(() => {
+    setProjectListCollapsed(readEcommerceProjectListCollapsed(preferenceUserId));
+  }, [preferenceUserId]);
+
+  function updateProjectListCollapsed(collapsed) {
+    const nextCollapsed = Boolean(collapsed);
+    setProjectListCollapsed(nextCollapsed);
+    writeEcommerceProjectListCollapsed(nextCollapsed, preferenceUserId);
+  }
 
   useEffect(() => {
     fetch('/api/image-providers', { cache: 'no-store' })
@@ -2686,7 +2701,7 @@ export default function EcommerceWorkspace({
       <div className={`ecommerceLayout ${projectListCollapsed || !showProjectList ? 'projectListCollapsed' : ''} ${!showProjectList ? 'noProjectList' : ''}`}>
         {showProjectList ? <aside className={`ecommerceProjectList ${projectListCollapsed ? 'collapsed' : ''}`}>
           {projectListCollapsed ? (
-            <button className="ecommerceProjectListExpand" type="button" onClick={() => setProjectListCollapsed(false)} aria-label={t.expandProjects} title={t.expandProjects}>
+            <button className="ecommerceProjectListExpand" type="button" onClick={() => updateProjectListCollapsed(false)} aria-label={t.expandProjects} title={t.expandProjects}>
               <ChevronRight size={18} /><Box size={17} /><span>{t.projects}</span>
             </button>
           ) : (
@@ -2695,7 +2710,7 @@ export default function EcommerceWorkspace({
                 <h3>{t.projects}</h3>
                 <div>
                   <button type="button" onClick={startNewProject}><Plus size={15} /> {t.newProject}</button>
-                  <button className="ecommerceProjectListCollapse" type="button" onClick={() => setProjectListCollapsed(true)} aria-label={t.collapseProjects} title={t.collapseProjects}><ChevronLeft size={17} /></button>
+                  <button className="ecommerceProjectListCollapse" type="button" onClick={() => updateProjectListCollapsed(true)} aria-label={t.collapseProjects} title={t.collapseProjects}><ChevronLeft size={17} /></button>
                 </div>
               </div>
               {status === 'loading' ? <LoaderCircle className="spin ecommerceListLoader" size={21} /> : null}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { clampFloatingPosition, normalizeFloatingPosition } from '../shared/floating-position.js';
+import { clampFloatingPosition, clampFloatingSize, normalizeFloatingPosition } from '../shared/floating-position.js';
 
 test('floating positions stay inside the viewport', () => {
   assert.deepEqual(
@@ -18,5 +18,24 @@ test('floating positions reject invalid stored values and handle narrow viewport
   assert.deepEqual(
     clampFloatingPosition({ x: 50, y: 60 }, { width: 360, height: 640 }, { width: 320, height: 600 }, 8),
     { x: 0, y: 0 }
+  );
+});
+
+test('floating sizes cannot shrink below the usable chat window boundary', () => {
+  assert.deepEqual(
+    clampFloatingSize(
+      { width: 80, height: 120 },
+      { width: 320, height: 420 },
+      { width: 720, height: 900 }
+    ),
+    { width: 320, height: 420 }
+  );
+  assert.deepEqual(
+    clampFloatingSize(
+      { width: 900, height: 1000 },
+      { width: 320, height: 420 },
+      { width: 680, height: 760 }
+    ),
+    { width: 680, height: 760 }
   );
 });

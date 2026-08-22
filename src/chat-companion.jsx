@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, ImagePlus, LoaderCircle, Send, Trash2, X } from 'lucide-react';
-import { clampFloatingPosition, normalizeFloatingPosition } from '../shared/floating-position.js';
+import { clampFloatingPosition, clampFloatingSize, normalizeFloatingPosition } from '../shared/floating-position.js';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -9,6 +9,8 @@ const POSITION_STORAGE_KEYS = Object.freeze({
   collapsed: 'pic365-chat-companion-position-collapsed',
   expanded: 'pic365-chat-companion-position-expanded'
 });
+const PANEL_SIZE_STORAGE_KEY = 'pic365-chat-companion-panel-size';
+const PANEL_MIN_SIZE = Object.freeze({ width: 320, height: 420 });
 
 function readStoredPosition(mode) {
   try {
@@ -23,6 +25,29 @@ function storePosition(mode, position) {
     globalThis.localStorage?.setItem(POSITION_STORAGE_KEYS[mode], JSON.stringify(position));
   } catch {
     // Position persistence is optional when storage is unavailable.
+  }
+}
+
+function readStoredPanelSize() {
+  try {
+    const value = JSON.parse(globalThis.localStorage?.getItem(PANEL_SIZE_STORAGE_KEY) || 'null');
+    const width = Number(value?.width);
+    const height = Number(value?.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+    return {
+      width: Math.max(PANEL_MIN_SIZE.width, width),
+      height: Math.max(PANEL_MIN_SIZE.height, height)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function storePanelSize(size) {
+  try {
+    globalThis.localStorage?.setItem(PANEL_SIZE_STORAGE_KEY, JSON.stringify(size));
+  } catch {
+    // Size persistence is optional when storage is unavailable.
   }
 }
 
@@ -103,12 +128,15 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     collapsed: readStoredPosition('collapsed'),
     expanded: readStoredPosition('expanded')
   }));
+  const [panelSize, setPanelSize] = useState(readStoredPanelSize);
   const [dragging, setDragging] = useState(false);
+  const [resizing, setResizing] = useState(false);
   const companionRef = useRef(null);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const transcriptRef = useRef(null);
   const dragRef = useRef(null);
+  const resizeRef = useRef(null);
   const suppressOrbClickRef = useRef(false);
   const t = useMemo(() => language === 'zh' ? {
     name: 'Pic365 小猫精灵',
@@ -131,6 +159,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     imageLimit: '最多 3 张，单张不超过 5 MB',
     thinking: '小猫正在思考…',
     drag: '拖动调整位置',
+    resize: '拖动调整精灵窗口大小',
     charged: (credits) => `本次 ${displayCredits(credits)} 积分`
   } : {
     name: 'Pic365 Cat Assistant',
@@ -153,6 +182,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     imageLimit: 'Up to 3 images, 5 MB each',
     thinking: 'Thinking…',
     drag: 'Drag to move',
+    resize: 'Drag to resize the chat window',
     charged: (credits) => `${displayCredits(credits)} credits`
   }, [language]);
 
@@ -174,6 +204,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
   }
 
   function startDrag(event) {
+    if (globalThis.innerWidth <= 760) return;
     if (event.button !== 0 || event.target.closest('button, input, textarea, select, a')) return;
     const rect = companionRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -258,14 +289,74 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     setDragging(false);
   }
 
+  function startResize(event) {
+    if (event.button !== 0) return;
+    const rect = companionRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    resizeRef.current = {
+      captureTarget: event.currentTarget,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      width: rect.width,
+      height: rect.height,
+      left: rect.left,
+      top: rect.top
+    };
+    setResizing(true);
+  }
+
+  function moveResize(event) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const margin = globalThis.innerWidth <= 760 ? 8 : 12;
+    const maximumSize = {
+      width: Math.max(PANEL_MIN_SIZE.width, viewportSize().width - resize.left - margin),
+      height: Math.max(PANEL_MIN_SIZE.height, viewportSize().height - resize.top - margin)
+    };
+    setPanelSize(clampFloatingSize({
+      width: resize.width + event.clientX - resize.startX,
+      height: resize.height + event.clientY - resize.startY
+    }, PANEL_MIN_SIZE, maximumSize));
+  }
+
+  function finishResize(event) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    resize.captureTarget?.releasePointerCapture?.(event.pointerId);
+    resizeRef.current = null;
+    setResizing(false);
+    setPanelSize((current) => {
+      if (current) storePanelSize(current);
+      return current;
+    });
+  }
+
+  function cancelResize(event) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    resizeRef.current = null;
+    setResizing(false);
+  }
+
   useEffect(() => {
     globalThis.addEventListener?.('pointermove', moveDrag, { passive: false });
     globalThis.addEventListener?.('pointerup', finishDrag);
     globalThis.addEventListener?.('pointercancel', cancelDrag);
+    globalThis.addEventListener?.('pointermove', moveResize, { passive: false });
+    globalThis.addEventListener?.('pointerup', finishResize);
+    globalThis.addEventListener?.('pointercancel', cancelResize);
     return () => {
       globalThis.removeEventListener?.('pointermove', moveDrag);
       globalThis.removeEventListener?.('pointerup', finishDrag);
       globalThis.removeEventListener?.('pointercancel', cancelDrag);
+      globalThis.removeEventListener?.('pointermove', moveResize);
+      globalThis.removeEventListener?.('pointerup', finishResize);
+      globalThis.removeEventListener?.('pointercancel', cancelResize);
     };
   }, []);
 
@@ -316,7 +407,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     keepInsideViewport();
     globalThis.addEventListener?.('resize', keepInsideViewport);
     return () => globalThis.removeEventListener?.('resize', keepInsideViewport);
-  }, [open, positionMode, positions[positionMode]?.x, positions[positionMode]?.y]);
+  }, [open, panelSize?.height, panelSize?.width, positionMode, positions[positionMode]?.x, positions[positionMode]?.y]);
 
   async function addFiles(files) {
     const available = MAX_IMAGES - attachments.length;
@@ -463,12 +554,19 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
   return (
     <aside
       ref={companionRef}
-      className={`chatCompanion ${open ? 'open' : ''} ${dragging ? 'dragging' : ''}`}
+      className={`chatCompanion ${open ? 'open' : ''} ${dragging ? 'dragging' : ''} ${resizing ? 'resizing' : ''}`}
       style={activePosition ? { left: `${activePosition.x}px`, top: `${activePosition.y}px`, right: 'auto', bottom: 'auto' } : undefined}
       aria-live="polite"
     >
       {open ? (
-        <section className="chatCompanionPanel" aria-label={t.name}>
+        <section
+          className="chatCompanionPanel"
+          aria-label={t.name}
+          style={panelSize ? {
+            '--chat-companion-width': `${panelSize.width}px`,
+            '--chat-companion-height': `${panelSize.height}px`
+          } : undefined}
+        >
           <header
             className="chatCompanionHeader"
             title={t.drag}
@@ -530,6 +628,13 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
               {message ? <div className="chatCompanionError">{message}{message === errorText('CREDITS_REQUIRED', language) ? <button type="button" onClick={onBilling}>{t.recharge}</button> : null}</div> : null}
             </div>
           )}
+          <button
+            className="chatCompanionResizeHandle"
+            type="button"
+            title={t.resize}
+            aria-label={t.resize}
+            onPointerDown={startResize}
+          ><span /><span /><span /></button>
         </section>
       ) : (
         <button

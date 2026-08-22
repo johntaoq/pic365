@@ -14918,9 +14918,50 @@ body *::-webkit-scrollbar-corner {
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.56), 0 0 32px rgba(70, 216, 226, 0.12);
   display: grid;
   grid-template-rows: auto minmax(180px, 1fr) auto;
-  height: min(680px, calc(100vh - 48px));
+  height: var(--chat-companion-height, min(680px, calc(100vh - 48px)));
+  max-height: calc(100vh - 24px);
+  max-width: min(720px, calc(100vw - 24px));
+  min-height: min(420px, calc(100vh - 24px));
+  min-width: min(320px, calc(100vw - 24px));
   overflow: hidden;
-  width: min(410px, calc(100vw - 32px));
+  position: relative;
+  width: var(--chat-companion-width, min(410px, calc(100vw - 32px)));
+}
+
+.chatCompanionResizeHandle {
+  align-items: flex-end;
+  background: transparent;
+  border: 0;
+  bottom: 3px;
+  cursor: nwse-resize;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 28px;
+  justify-content: flex-end;
+  padding: 5px;
+  position: absolute;
+  right: 3px;
+  touch-action: none;
+  width: 28px;
+  z-index: 3;
+}
+
+.chatCompanionResizeHandle span {
+  border-bottom: 1px solid rgba(168, 248, 220, 0.72);
+  display: block;
+  transform: rotate(-45deg);
+  transform-origin: right center;
+}
+
+.chatCompanionResizeHandle span:nth-child(1) { width: 7px; }
+.chatCompanionResizeHandle span:nth-child(2) { width: 12px; }
+.chatCompanionResizeHandle span:nth-child(3) { width: 17px; }
+
+.chatCompanion.resizing,
+.chatCompanion.resizing * {
+  cursor: nwse-resize !important;
+  user-select: none;
 }
 
 .chatCompanionHeader {
@@ -15389,6 +15430,13 @@ body *::-webkit-scrollbar-corner {
     right: 14px;
   }
 
+  .chatCompanion.open {
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    top: max(8px, env(safe-area-inset-top)) !important;
+  }
+
   .chatCompanionOrb {
     height: 66px;
     width: 66px;
@@ -15399,10 +15447,25 @@ body *::-webkit-scrollbar-corner {
     width: 54px;
   }
 
-  .chatCompanionPanel {
+  .chatCompanion.open .chatCompanionPanel {
     border-radius: 20px;
-    height: min(680px, calc(100vh - 28px));
-    width: calc(100vw - 28px);
+    height: 100%;
+    max-height: none;
+    max-width: none;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .chatCompanionHeader {
+    cursor: default;
+    min-height: 62px;
+    position: relative;
+    z-index: 4;
+  }
+
+  .chatCompanionResizeHandle {
+    display: none;
   }
 
   .adminChatProviderGrid,

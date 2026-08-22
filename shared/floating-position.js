@@ -21,3 +21,16 @@ export function clampFloatingPosition(position, elementSize, viewportSize, margi
     y: Math.min(maximumY, Math.max(minimumY, normalized.y))
   };
 }
+
+export function clampFloatingSize(size, minSize, maxSize) {
+  const minimumWidth = Math.max(0, Number(minSize?.width) || 0);
+  const minimumHeight = Math.max(0, Number(minSize?.height) || 0);
+  const maximumWidth = Math.max(minimumWidth, Number(maxSize?.width) || minimumWidth);
+  const maximumHeight = Math.max(minimumHeight, Number(maxSize?.height) || minimumHeight);
+  const width = Number(size?.width);
+  const height = Number(size?.height);
+  return {
+    width: Math.min(maximumWidth, Math.max(minimumWidth, Number.isFinite(width) ? width : minimumWidth)),
+    height: Math.min(maximumHeight, Math.max(minimumHeight, Number.isFinite(height) ? height : minimumHeight))
+  };
+}
