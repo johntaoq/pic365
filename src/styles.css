@@ -14814,15 +14814,20 @@ body *::-webkit-scrollbar-corner {
   border-radius: 50%;
   box-shadow: 0 18px 50px rgba(34, 211, 238, 0.34), inset 0 1px 1px rgba(255, 255, 255, 0.72);
   display: grid;
-  height: 78px;
+  height: 59px;
   isolation: isolate;
   justify-items: center;
   overflow: visible;
   padding: 7px;
   position: relative;
   transition: transform 180ms ease, box-shadow 180ms ease;
-  width: 78px;
+  width: 59px;
   touch-action: none;
+}
+
+.chatCompanionOrb .chatCompanionCat {
+  height: 47px;
+  width: 47px;
 }
 
 .chatCompanion.dragging .chatCompanionOrb {
@@ -15438,13 +15443,13 @@ body *::-webkit-scrollbar-corner {
   }
 
   .chatCompanionOrb {
-    height: 66px;
-    width: 66px;
+    height: 50px;
+    width: 50px;
   }
 
   .chatCompanionOrb .chatCompanionCat {
-    height: 54px;
-    width: 54px;
+    height: 41px;
+    width: 41px;
   }
 
   .chatCompanion.open .chatCompanionPanel {
