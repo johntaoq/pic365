@@ -99,6 +99,27 @@ test('MAI-Image-2.5 accepts PNG but rejects WebP reference inputs', async () => 
   );
 });
 
+test('Gemini image editing accepts JPEG, PNG, and WebP references up to the Pic365 limit', async () => {
+  assert.doesNotThrow(() => validateReferenceRequestsForModel(
+    Array.from({ length: 9 }, (_, index) => ({ generationId: `g-${index}` })),
+    'gemini-3.1-flash-image'
+  ));
+  assert.throws(() => validateReferenceRequestsForModel(
+    Array.from({ length: 10 }, (_, index) => ({ generationId: `g-${index}` })),
+    'gemini-3.1-flash-image'
+  ), /TOO_MANY_REFERENCE_IMAGES/);
+
+  const webpBytes = await sharp({
+    create: { width: 2, height: 2, channels: 4, background: '#22d3ee' }
+  }).webp().toBuffer();
+  const references = normalizeReferenceRequests([{
+    imageDataUrl: `data:image/webp;base64,${webpBytes.toString('base64')}`
+  }]);
+  const images = await loadReferenceImageInputs('unused-user', references, { model: 'gemini-3.1-flash-image' });
+  assert.equal(images.length, 1);
+  assert.match(images[0], /^data:image\/webp;base64,/);
+});
+
 test('reference prompt explains annotations without asking the model to reproduce them', () => {
   const references = [{ generationId: 'g-1', annotations: normalizeReferenceAnnotations([{ type: 'line' }]) }];
   const prompt = buildReferencePrompt('Replace the cup with a glass.', references);

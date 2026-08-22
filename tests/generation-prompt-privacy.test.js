@@ -18,7 +18,7 @@ after(() => {
   fs.rmSync(tempDirectory, { recursive: true, force: true });
 });
 
-function invoke(handler, { token, query = {} }) {
+function invoke(handler, { token, query = {}, method = 'GET', requestBody } = {}) {
   let statusCode = 200;
   let body;
   const headers = {};
@@ -40,9 +40,13 @@ function invoke(handler, { token, query = {} }) {
     }
   };
   return Promise.resolve(handler({
-    method: 'GET',
+    method,
     query,
-    headers: { authorization: `Bearer ${token}` }
+    body: requestBody,
+    headers: {
+      authorization: `Bearer ${token}`,
+      ...(requestBody === undefined ? {} : { 'content-type': 'application/json' })
+    }
   }, res)).then(() => ({ statusCode, headers, body }));
 }
 
@@ -111,4 +115,31 @@ test('ordinary users can see free prompts but not ecommerce system prompts', asy
   });
   assert.equal(adminOutputs.body.generations[0].prompt, 'SECRET SYSTEM ECOMMERCE PROMPT');
   assert.equal(adminOutputs.body.generations[0].promptHidden, false);
+
+  const deleteOne = await invoke(generationsHandler, {
+    token: session.token,
+    method: 'DELETE',
+    requestBody: { generationId: 'free-generation' }
+  });
+  assert.equal(deleteOne.statusCode, 200);
+  assert.equal(deleteOne.body.removed, 1);
+  assert.equal(localDb.getGeneration(user.id, 'free-generation').storage_path, 'private/free.png');
+  const historyAfterDelete = await invoke(generationsHandler, { token: session.token, query: { limit: 10 } });
+  assert.equal(historyAfterDelete.body.generations.some((item) => item.id === 'free-generation'), false);
+  assert.equal(historyAfterDelete.body.generations.some((item) => item.id === 'ecommerce-generation'), true);
+
+  const clearAll = await invoke(generationsHandler, {
+    token: session.token,
+    method: 'DELETE',
+    requestBody: { all: true }
+  });
+  assert.equal(clearAll.statusCode, 200);
+  assert.equal(clearAll.body.removed, 1);
+  const historyAfterClear = await invoke(generationsHandler, { token: session.token, query: { limit: 10 } });
+  assert.deepEqual(historyAfterClear.body.generations, []);
+  const outputsAfterClear = await invoke(ecommerceOutputsHandler, {
+    token: session.token,
+    query: { projectId: project.id }
+  });
+  assert.equal(outputsAfterClear.body.generations.some((item) => item.id === 'ecommerce-generation'), true);
 });

@@ -6,9 +6,14 @@ import {
   dimensionsForImageModelRatio,
   dimensionsForRatio,
   dimensionsFromLockedValue,
+  GEMINI_IMAGE_COMMON_SIZES,
+  GEMINI_IMAGE_RATIO_PRESETS,
   getImageModelConstraints,
   IMAGE_RATIO_PRESETS,
+  isGeminiImageModel,
   normalizeImageCount,
+  resolveReferenceImageSize,
+  resolveSourceImageSizeForModel,
   resolveProviderImageQuality,
   validateImageReferenceInputsForModel,
   validateImageSize,
@@ -51,6 +56,96 @@ test('MAI image models enforce 768 minimum sides and 1048576 maximum pixels', ()
     assert.equal(validateImageSizeForModel('1024x1040', model).error, 'MAI_MAX_PIXELS', model);
   }
   assert.equal(validateImageSizeForModel('2048x2048', 'gpt-image-2').valid, true);
+});
+
+test('Gemini image models expose their own ratios, references, and formats', () => {
+  for (const model of ['gemini-3.1-flash-image', 'gemini-3.1-flash-image-preview', 'nano-banana-2']) {
+    assert.equal(isGeminiImageModel(model), true, model);
+    const constraints = getImageModelConstraints(model);
+    assert.equal(constraints.isGeminiImage, true, model);
+    assert.equal(constraints.maxReferenceImages, 9, model);
+    assert.deepEqual(constraints.referenceMimeTypes, ['image/jpeg', 'image/png', 'image/webp'], model);
+  }
+  assert.deepEqual(
+    GEMINI_IMAGE_RATIO_PRESETS.map((preset) => preset.id),
+    ['1:1', '1:4', '1:8', '2:3', '3:2', '3:4', '4:1', '4:3', '4:5', '5:4', '8:1', '9:16', '16:9', '21:9']
+  );
+});
+
+test('Gemini image canvas accepts supported ratios and rejects arbitrary ratios', () => {
+  for (const size of GEMINI_IMAGE_COMMON_SIZES) {
+    assert.equal(validateImageSizeForModel(size, 'gemini-3.1-flash-image').valid, true, size);
+  }
+  assert.equal(validateImageSizeForModel('auto', 'gemini-3.1-flash-image').valid, true);
+  assert.equal(validateImageSizeForModel('512x512', 'gemini-3.1-flash-image').valid, true);
+  assert.equal(validateImageSizeForModel('496x1024', 'gemini-3.1-flash-image').error, 'GEMINI_MIN_SIDE');
+  assert.equal(validateImageSizeForModel('1024x2048', 'gemini-3.1-flash-image').error, 'GEMINI_ASPECT_RATIO');
+  assert.equal(validateImageSizeForModel('4112x512', 'gemini-3.1-flash-image').error, 'GEMINI_MAX_SIDE');
+});
+
+test('Gemini reference capability accepts JPEG, PNG, and WebP only', () => {
+  assert.equal(validateImageReferenceInputsForModel({
+    model: 'gemini-3.1-flash-image', count: 9, mimeTypes: Array(9).fill('image/jpeg')
+  }).valid, true);
+  assert.equal(validateImageReferenceInputsForModel({
+    model: 'gemini-3.1-flash-image', count: 10, mimeTypes: Array(10).fill('image/png')
+  }).error, 'TOO_MANY_REFERENCE_IMAGES');
+  assert.equal(validateImageReferenceInputsForModel({
+    model: 'gemini-3.1-flash-image', count: 1, mimeTypes: ['image/gif']
+  }).error, 'INVALID_REFERENCE_IMAGE_FORMAT');
+});
+
+test('first reference dimensions are preserved when supported and fall back when unsupported', () => {
+  assert.deepEqual(resolveReferenceImageSize({ width: 1536, height: 1024 }, 'gpt-image-2'), {
+    width: 1536,
+    height: 1024,
+    size: '1536x1024',
+    usedFallback: false
+  });
+  assert.deepEqual(resolveReferenceImageSize({ size: '1024x768' }, 'MAI-Image-2.5'), {
+    width: 1024,
+    height: 768,
+    size: '1024x768',
+    usedFallback: false
+  });
+  assert.deepEqual(resolveReferenceImageSize({ width: 1536, height: 1024 }, 'MAI-Image-2.5'), {
+    width: 1024,
+    height: 1024,
+    size: '1024x1024',
+    usedFallback: true
+  });
+  assert.equal(resolveReferenceImageSize({}, 'gpt-image-2').size, '1024x1024');
+});
+
+test('batch repair keeps each source ratio while aligning upward to the 16px GPT grid', () => {
+  const portrait = resolveSourceImageSizeForModel({ width: 1279, height: 2275 }, 'gpt-image-2');
+  assert.equal(portrait.valid, true);
+  assert.equal(portrait.sourceWidth, 1279);
+  assert.equal(portrait.sourceHeight, 2275);
+  assert.equal(portrait.width, 1280);
+  assert.equal(portrait.height, 2288);
+  assert.equal(portrait.size, '1280x2288');
+  assert.equal(portrait.usedStepAlignment, true);
+
+  const smallSquare = resolveSourceImageSizeForModel({ width: 500, height: 500 }, 'gpt-image-2');
+  assert.equal(smallSquare.valid, true);
+  assert.equal(smallSquare.size, '816x816');
+
+  const oversizedLandscape = resolveSourceImageSizeForModel({ width: 5000, height: 2000 }, 'gpt-image-2');
+  assert.equal(oversizedLandscape.valid, true);
+  assert.equal(oversizedLandscape.size, '3840x1536');
+});
+
+test('batch repair reports a provider source-size error when the original ratio cannot fit', () => {
+  const gptUnsupported = resolveSourceImageSizeForModel({ width: 5000, height: 1000 }, 'gpt-image-2');
+  assert.equal(gptUnsupported.valid, false);
+  assert.equal(gptUnsupported.error, 'PROVIDER_SOURCE_SIZE_UNSUPPORTED');
+  assert.equal(gptUnsupported.sourceWidth, 5000);
+  assert.equal(gptUnsupported.sourceHeight, 1000);
+
+  const maiUnsupported = resolveSourceImageSizeForModel({ width: 2000, height: 500 }, 'MAI-Image-2.5');
+  assert.equal(maiUnsupported.valid, false);
+  assert.equal(maiUnsupported.error, 'PROVIDER_SOURCE_SIZE_UNSUPPORTED');
 });
 
 test('MAI ratio helpers only expose ratios that fit the model canvas limits', () => {

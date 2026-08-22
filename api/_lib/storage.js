@@ -141,6 +141,7 @@ export async function persistImage({ userId, generationId, image }) {
     url: `/api/generated?id=${encodeURIComponent(generationId)}`,
     storagePath,
     contentType,
+    byteLength: bytes.length,
     backend: hasAzureStorage() ? 'azure-blob' : 'local-disk'
   };
 }

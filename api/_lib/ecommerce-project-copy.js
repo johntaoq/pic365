@@ -35,6 +35,7 @@ function projectValuesFromConfig(config, targetPlatformId, { projectName = '', u
     projectName: projectName || config.projectName || `${config.productName} · ${platform.nameZh}`,
     platformId: targetPlatformId,
     industryId: config.industryId,
+    subcategoryId: config.subcategoryId || '',
     productName: config.productName,
     brandName: config.brandName || '',
     coreUser,

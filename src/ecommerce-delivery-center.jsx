@@ -54,12 +54,12 @@ import { clampImagePanOffset } from './image-pan-zoom.js';
 
 const copy = {
   zh: {
-    title: '专业交付',
+    title: '精修交付',
     summaryEmpty: '等待加载',
     summaryReady: (ready, total) => `${ready}/${total} 通过参考检查`,
-    prepare: '一键加载',
+    prepare: '加载',
     preparing: '正在加载……',
-    sync: '重新加载',
+    sync: '加载',
     tabs: { editor: '单页精修', sequence: '详情页编排' },
     finishAction: '单页精修',
     steps: ['加载生成结果', '一键检查', '精修', '导出'],
@@ -211,12 +211,12 @@ const copy = {
     requiresSave: '修改后请先保存本图设置。'
   },
   en: {
-    title: 'Professional delivery',
+    title: 'Refinement & delivery',
     summaryEmpty: 'Not loaded',
     summaryReady: (ready, total) => `${ready}/${total} passed the advisory check`,
-    prepare: 'Load all',
+    prepare: 'Load',
     preparing: 'Loading...',
-    sync: 'Reload',
+    sync: 'Load',
     tabs: { editor: 'Single-page finishing', sequence: 'Detail-page order' },
     finishAction: 'Finish one image',
     steps: ['Load results', 'Check all', 'Finish', 'Export'],
@@ -939,9 +939,14 @@ export default function EcommerceDeliveryCenter({
   const selectedTextVisible = Boolean(selectedDocument && selectedDocument.advanced?.showText !== false);
   const selectedObjectVisible = selectedCanvasObject === 'mask' ? selectedMaskVisible : selectedTextVisible;
   const canEditTextObjects = Boolean(selectedDocument && selectedDocument.documentType !== 'comparison');
-  const readyCount = includedDocuments.filter((document) => document.validation?.ready).length;
   const exportCount = includedDocuments.length;
-  const hasOutputs = (outputs || []).some((output) => output.selectedGenerationId);
+  const succeededGenerationIds = useMemo(() => new Set(
+    (generations || [])
+      .filter((generation) => generation.status === 'succeeded' && generation.imageUrl)
+      .map((generation) => generation.id)
+  ), [generations]);
+  const generatedOutputCount = (outputs || []).filter((output) => succeededGenerationIds.has(output.selectedGenerationId)).length;
+  const hasOutputs = generatedOutputCount > 0;
   const workflowStep = getDeliveryWorkflowStep(documents, { dirty });
   const exportAvailability = getDeliveryExportAvailability(documents, { dirty });
   const canExportDelivery = exportAvailability.canExport;
@@ -996,7 +1001,9 @@ export default function EcommerceDeliveryCenter({
       ]);
       if (!documentResponse.ok || !documentPayload?.ok) throw new Error(documentPayload.error || 'LOAD_FAILED');
       let nextDocuments = documentPayload.documents || [];
-      if (!nextDocuments.length) nextDocuments = await prepareWorkspace(false);
+      const needsSourceSync = nextDocuments.length !== generatedOutputCount
+        || nextDocuments.some((document) => !succeededGenerationIds.has(document.sourceGenerationId));
+      if (needsSourceSync) nextDocuments = await prepareWorkspace(false);
       else setDocuments(nextDocuments);
       setTemplates(templateResponse.ok && templatePayload?.ok ? templatePayload.templates || [] : []);
       setSelectedDocumentId((current) => {
@@ -1499,23 +1506,14 @@ export default function EcommerceDeliveryCenter({
 
   return (
     <div className="deliveryCenter">
-      <header className="deliveryCenterHeader" aria-label={`${localized(platform, language)} · ${includedDocuments.length ? t.summaryReady(readyCount, includedDocuments.length) : t.summaryEmpty}`}>
+      <header className="deliveryCenterHeader" aria-label={`${localized(platform, language)} · ${includedDocuments.length}`}>
         <div className="deliveryHeaderActions">
-          <button className={activeWorkflowStage === 0 ? 'active' : workflowStep > 0 ? 'completed' : ''} type="button" aria-current={activeWorkflowStage === 0 ? 'step' : undefined} onClick={reloadDeliveryResults} disabled={status === 'preparing' || status === 'loading'}>
-            <i>{activeWorkflowStage !== 0 && workflowStep > 0 ? <Check size={11} /> : 1}</i>
+          <button className="active" type="button" onClick={reloadDeliveryResults} disabled={status === 'preparing' || status === 'loading'}>
             {status === 'preparing' || status === 'loading' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-            {documents.length ? t.sync : t.prepare}
+            {t.prepare}
           </button>
-          <button className={activeWorkflowStage === 1 ? 'active' : workflowStep > 1 ? 'completed' : ''} type="button" aria-current={activeWorkflowStage === 1 ? 'step' : undefined} onClick={() => checkDocuments()} disabled={status === 'checking' || !includedDocuments.length}>
-            <i>{activeWorkflowStage !== 1 && workflowStep > 1 ? <Check size={11} /> : 2}</i>
-            {status === 'checking' ? <LoaderCircle className="spin" size={15} /> : <FileCheck2 size={15} />}
-            {status === 'checking' ? t.checking : t.checkAll}
-          </button>
-          <button className={activeWorkflowStage === 2 ? 'active' : workflowStep > 2 ? 'completed' : ''} type="button" aria-current={activeWorkflowStage === 2 ? 'step' : undefined} onClick={openSinglePageRefinement} disabled={!selectedDocument?.sourceGenerationId}>
-            <i>{activeWorkflowStage !== 2 && workflowStep > 2 ? <Check size={11} /> : 3}</i><WandSparkles size={15} />{t.finishAction}
-          </button>
-          <button className={activeWorkflowStage === 3 ? 'active' : ''} type="button" aria-current={activeWorkflowStage === 3 ? 'step' : undefined} onClick={openDeliveryExport} disabled={!canExportDelivery}>
-            <i>4</i><FileArchive size={15} />{t.exportAll}
+          <button type="button" onClick={openDeliveryExport} disabled={!canExportDelivery}>
+            <FileArchive size={15} />{t.exportAll}
           </button>
         </div>
       </header>
@@ -1543,7 +1541,7 @@ export default function EcommerceDeliveryCenter({
                 <article className={`${document.id === selectedDocument?.id ? 'active' : ''} ${!document.sourceGenerationId ? 'missingSource' : ''}`} key={document.id}>
                   <button className="deliverySlotSelect" type="button" onClick={() => selectDocument(document.id)}>
                     <span>{generation?.imageUrl ? <img src={generation.imageUrl} alt="" /> : <FileImage size={20} />}</span>
-                    <div><strong>{localized(slot, language)}</strong><small>{document.targetWidth} × {document.targetHeight}</small><DeliveryStatusBadge document={document} t={t} /></div>
+                    <div><strong>{localized(slot, language)}</strong><small>{document.targetWidth} × {document.targetHeight}</small></div>
                   </button>
                   <button className="deliverySlotRemove" type="button" aria-label={`${t.removeFromDelivery}: ${localized(slot, language)}`} title={t.removeFromDelivery} onClick={() => setDocumentsInclusion([document.id], false)} disabled={selectionBusy}><CircleMinus size={14} /></button>
                 </article>
@@ -1614,9 +1612,6 @@ export default function EcommerceDeliveryCenter({
                   </div>
                 ) : null}
                 <div className="deliveryPreviewActions">
-                  <button type="button" onClick={() => checkDocuments(selectedDocument.id)} disabled={status === 'checking' || !selectedDocument.sourceGenerationId}>
-                    {status === 'checking' ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}{status === 'checking' ? t.checking : t.check}
-                  </button>
                   <button type="button" onClick={exportCurrentDocument} disabled={!selectedDocument.sourceGenerationId || status === 'exporting'}>
                     <Download size={14} /> {t.exportCurrent}
                   </button>
@@ -1627,8 +1622,8 @@ export default function EcommerceDeliveryCenter({
                 <header><div><span>{t.editorTitle}</span><strong>{localized(selectedSlot, language)}</strong></div><button type="button" onClick={restoreRecommended}><WandSparkles size={14} /> {t.smartReset}</button></header>
                 <label className="deliveryField"><span>{t.type}</span><select value={selectedDocument.documentType} onChange={(event) => changeDocumentType(event.target.value)}>{DELIVERY_TYPES.map((type) => <option value={type.id} key={type.id}>{localized(type, language)}</option>)}</select></label>
                 <div className="deliveryFieldGrid">
-                  <label className="deliveryField wide"><span>{t.headline}</span><input value={selectedDocument.content.headline || ''} onChange={(event) => updateContent('headline', event.target.value)} /></label>
-                  <label className="deliveryField wide"><span>{t.subtitle}</span><input value={selectedDocument.content.subtitle || ''} onChange={(event) => updateContent('subtitle', event.target.value)} /></label>
+                  <label className="deliveryField wide"><span>{t.headline}</span><textarea className="compact" rows="2" maxLength="160" value={selectedDocument.content.headline || ''} onChange={(event) => updateContent('headline', event.target.value)} /></label>
+                  <label className="deliveryField wide"><span>{t.subtitle}</span><textarea className="compact" rows="3" maxLength="240" value={selectedDocument.content.subtitle || ''} onChange={(event) => updateContent('subtitle', event.target.value)} /></label>
                   {['benefit', 'campaign', 'video-cover', 'detail-module'].includes(selectedDocument.documentType) ? <><label className="deliveryField"><span>{t.price}</span><input value={selectedDocument.content.price || ''} onChange={(event) => updateContent('price', event.target.value)} /></label><label className="deliveryField"><span>{t.badge}</span><input value={selectedDocument.content.badge || ''} onChange={(event) => updateContent('badge', event.target.value)} /></label></> : null}
                   <label className="deliveryField wide"><span>{t.bullets}</span><textarea value={listToText(selectedDocument.content.bullets)} onChange={(event) => updateContent('bullets', textToList(event.target.value, 5))} /></label>
                   {selectedDocument.documentType === 'dimensions' ? (
@@ -1671,7 +1666,6 @@ export default function EcommerceDeliveryCenter({
                 <div className="deliveryInspectorActions">
                   <button className="primary" type="button" onClick={() => saveDocument()} disabled={!dirty || status === 'saving'}>{status === 'saving' ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}{status === 'saving' ? t.saving : t.save}</button>
                 </div>
-                <section className="deliveryValidationPanel"><header><span>{t.platformRules}</span>{selectedDocument.validation?.score != null ? <strong>{selectedDocument.validation.score}/100</strong> : null}</header><ValidationPanel document={selectedDocument} language={language} t={t} /></section>
               </aside>
             </>
           ) : <div className="deliveryNoIncluded"><CircleMinus size={28} /><strong>{t.noIncludedTitle}</strong><span>{t.noIncludedText}</span></div>}
@@ -1681,7 +1675,7 @@ export default function EcommerceDeliveryCenter({
       {activeTab === 'sequence' ? (
         <div className="deliverySequenceWorkspace">
           <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div><div><button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button></div></header>
-          <div className="deliverySequenceStats"><span><BadgeCheck size={15} /> {t.checkSummary(readyCount, includedDocuments.length)}</span><span><Layers3 size={15} /> {t.selectedCount(exportCount)}</span><label><input type="checkbox" checked={includeDetailPage} onChange={(event) => setIncludeDetailPage(event.target.checked)} />{t.includeDetailPage}</label></div>
+          <div className="deliverySequenceStats"><span><Layers3 size={15} /> {t.selectedCount(exportCount)}</span><label><input type="checkbox" checked={includeDetailPage} onChange={(event) => setIncludeDetailPage(event.target.checked)} />{t.includeDetailPage}</label></div>
           <div className="deliverySequenceGrid">
             <div className="deliverySequenceList">
               {includedDocuments.length ? includedDocuments.map((document, index) => {
@@ -1690,7 +1684,7 @@ export default function EcommerceDeliveryCenter({
                 return (
                   <article className={document.includeInExport ? 'included' : ''} key={document.id}>
                     <span>{generation?.imageUrl ? <img src={generation.imageUrl} alt="" /> : <FileImage size={21} />}</span>
-                    <div><strong>{index + 1}. {localized(slot, language)}</strong><small>{localized(DELIVERY_TYPES.find((type) => type.id === document.documentType), language)} · {document.targetWidth}×{document.targetHeight}</small><DeliveryStatusBadge document={document} t={t} /></div>
+                    <div><strong>{index + 1}. {localized(slot, language)}</strong><small>{localized(DELIVERY_TYPES.find((type) => type.id === document.documentType), language)} · {document.targetWidth}×{document.targetHeight}</small></div>
                     <label><input type="checkbox" checked={document.includeInExport} onChange={(event) => toggleInclude(document.id, event.target.checked)} /><span>{t.includeExport}</span></label>
                     <div className="deliveryOrderButtons"><button type="button" aria-label={t.moveUp} onClick={() => moveDocument(document.id, -1)} disabled={index === 0}><ArrowUp size={14} /></button><button type="button" aria-label={t.moveDown} onClick={() => moveDocument(document.id, 1)} disabled={index === includedDocuments.length - 1}><ArrowDown size={14} /></button></div>
                   </article>

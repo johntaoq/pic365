@@ -7,7 +7,42 @@ function json(res, status, payload) {
 }
 
 function safeDownloadName(value) {
-  return String(value || 'asset').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').slice(0, 160) || 'asset';
+  return String(value || 'asset')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 160) || 'asset';
+}
+
+const MIME_EXTENSIONS = Object.freeze({
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+  'image/svg+xml': 'svg',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'application/pdf': 'pdf'
+});
+
+function extensionFromStoragePath(value) {
+  const match = String(value || '').split(/[?#]/, 1)[0].match(/\.([a-z0-9]{1,10})$/i);
+  return match?.[1]?.toLowerCase() || '';
+}
+
+export function assetDownloadName(asset = {}, variant = {}, contentType = '') {
+  const name = safeDownloadName(asset.name);
+  if (/\.[a-z0-9]{1,10}$/i.test(name)) return name;
+  const normalizedMime = String(contentType || variant.mimeType || asset.mimeType || '')
+    .split(';', 1)[0]
+    .trim()
+    .toLowerCase();
+  const extension = MIME_EXTENSIONS[normalizedMime] || extensionFromStoragePath(variant.storagePath);
+  return extension ? `${name}.${extension}` : name;
 }
 
 export function parseByteRange(value, total) {
@@ -55,7 +90,17 @@ export default async function handler(req, res) {
       ? 'private, max-age=3600'
       : 'private, max-age=86400, stale-while-revalidate=604800');
     if (req.query?.download === '1') {
-      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeDownloadName(record.asset.name))}`);
+      const downloadName = assetDownloadName(
+        record.asset,
+        record.variant,
+        stored.contentType || record.variant.mimeType || record.asset.mimeType
+      );
+      const fallbackExtension = extensionFromStoragePath(downloadName);
+      const fallbackName = `asset${fallbackExtension ? `.${fallbackExtension}` : ''}`;
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+      );
     }
     recordAssetUsage(auth.user.id, assetId, req.query?.download === '1' ? 'download' : 'view', 'variant', requestedVariant);
     if (range) {

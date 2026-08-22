@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { resolveProviderImageQuality } from '../../shared/image-generation.js';
+import {
+  GEMINI_IMAGE_RATIO_PRESETS,
+  isGeminiImageModel,
+  parseImageSize,
+  resolveProviderImageQuality
+} from '../../shared/image-generation.js';
 
 const DEFAULT_BASE_URL = 'https://www.unikeyx.com';
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
@@ -116,6 +121,87 @@ function parseImageResult(payload) {
   return null;
 }
 
+function parseGeminiChatImageResult(payload) {
+  const message = payload?.choices?.[0]?.message || {};
+  const content = typeof message.content === 'string'
+    ? message.content
+    : Array.isArray(message.content)
+      ? message.content.map((item) => item?.text || item?.image_url?.url || '').join('\n')
+      : '';
+  const dataMatch = content.match(/data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)/i);
+  if (dataMatch) {
+    return {
+      image: `data:${dataMatch[1]};base64,${dataMatch[2].replace(/\s+/g, '')}`,
+      contentType: dataMatch[1].toLowerCase()
+    };
+  }
+  const messageImage = Array.isArray(message.images)
+    ? message.images.find((item) => item?.image_url?.url || item?.url)
+    : null;
+  const imageUrl = messageImage?.image_url?.url || messageImage?.url
+    || content.match(/!\[[^\]]*\]\((https?:\/\/[^)]+)\)/i)?.[1];
+  return imageUrl ? {
+    image: imageUrl,
+    contentType: String(imageUrl).startsWith('data:') ? getContentTypeFromDataUrl(imageUrl) : ''
+  } : null;
+}
+
+function geminiAspectRatioForSize(size) {
+  const parsed = parseImageSize(size);
+  if (!parsed || parsed.auto) return '';
+  const exact = GEMINI_IMAGE_RATIO_PRESETS.find((preset) => parsed.width * preset.height === parsed.height * preset.width);
+  if (exact) return exact.id;
+  const requested = parsed.width / parsed.height;
+  return [...GEMINI_IMAGE_RATIO_PRESETS].sort((left, right) => {
+    const leftError = Math.abs(Math.log((left.width / left.height) / requested));
+    const rightError = Math.abs(Math.log((right.width / right.height) / requested));
+    return leftError - rightError;
+  })[0]?.id || '1:1';
+}
+
+function geminiImageSizeForQuality(quality) {
+  const normalized = resolveProviderImageQuality(quality);
+  if (normalized === 'high') return '4K';
+  if (normalized === 'medium') return '2K';
+  return '1K';
+}
+
+export function buildGeminiImageChatRequest({ prompt, images = [], model, size = '1024x1024', quality = 'low' }) {
+  const content = [{ type: 'text', text: prompt }];
+  for (const image of images.filter(Boolean).slice(0, 9)) {
+    content.push({ type: 'image_url', image_url: { url: image } });
+  }
+  const imageConfig = { image_size: geminiImageSizeForQuality(quality) };
+  const aspectRatio = geminiAspectRatioForSize(size);
+  if (aspectRatio) imageConfig.aspect_ratio = aspectRatio;
+  return {
+    model,
+    stream: false,
+    messages: [{ role: 'user', content }],
+    extra_body: { google: { image_config: imageConfig } }
+  };
+}
+
+async function requestGeminiChatImage({ prompt, images = [], model, size, quality, signal, providerConfig }) {
+  const { response, payload, requestId } = await requestProvider(
+    'chat/completions',
+    buildGeminiImageChatRequest({ prompt, images, model, size, quality }),
+    { timeoutMs: IMAGE_REQUEST_TIMEOUT_MS, providerConfig, signal }
+  );
+  const result = parseGeminiChatImageResult(payload);
+  if (!response.ok || !result?.image) {
+    const message = payload?.error?.message || payload?.message
+      || `Gemini image request failed with status ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.code = payload?.error?.code || payload?.code;
+    error.type = payload?.error?.type || payload?.type;
+    error.providerRequestId = requestId;
+    throw error;
+  }
+  return { ...result, model, providerRequestId: requestId };
+}
+
 async function requestProvider(pathname, body, { accept = 'application/json', signal, timeoutMs = REQUEST_TIMEOUT_MS, providerConfig } = {}) {
   const { apiKey } = providerConfig || getProviderConfig();
   if (!apiKey) throw new Error('AI_PROVIDER_NOT_CONFIGURED');
@@ -151,6 +237,16 @@ async function requestProvider(pathname, body, { accept = 'application/json', si
 export async function generateImage({ prompt, model, size = '1024x1024', quality = 'low', format = 'png', providerConfig, signal }) {
   const config = providerConfig || getProviderConfig();
   const imageModel = resolveImageModel(config, model);
+  if (isGeminiImageModel(imageModel)) {
+    return requestGeminiChatImage({
+      prompt,
+      model: imageModel,
+      size,
+      quality,
+      signal,
+      providerConfig: config
+    });
+  }
   const { response, payload, requestId } = await requestProvider('images/generations', {
     model: imageModel,
     prompt,
@@ -190,6 +286,19 @@ export async function editImage({
 }) {
   const config = providerConfig || getProviderConfig();
   const imageModel = resolveImageModel(config, model);
+  if (isGeminiImageModel(imageModel)) {
+    const geminiImages = (Array.isArray(images) ? images : []).filter(Boolean).slice(0, 9);
+    if (!geminiImages.length) throw new Error('IMAGE_INPUT_REQUIRED');
+    return requestGeminiChatImage({
+      prompt,
+      images: geminiImages,
+      model: imageModel,
+      size,
+      quality,
+      signal,
+      providerConfig: config
+    });
+  }
   const imageInputs = (Array.isArray(images) ? images : [])
     .filter(Boolean)
     .slice(0, 9)

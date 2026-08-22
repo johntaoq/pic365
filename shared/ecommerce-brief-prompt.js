@@ -8,6 +8,8 @@ export const ECOMMERCE_BRIEF_SYSTEM_PROMPT = [
   '4. brandOrSeries is supplemental naming context only; never infer audience, status, performance, materials, or benefits from a brand name.',
   'When productName and productCategory appear broad or partially inconsistent, stay conservative and use their shared, clearly compatible meaning instead of inventing a more specific product.',
   'For taskFocus=brief, generate only coreUser, coreScenario, and sellingPoints. Return identitySpec as an empty object and do not write generation constraints.',
+  'For taskFocus=complete, use productName, primary and secondary product categories, and directly visible image evidence together. Generate coreUser, coreScenario, sellingPoints, and identitySpec in one pass.',
+  'For taskFocus=complete, image evidence defines visible product identity and constraints, while productName and categories define likely customer needs and normal use contexts. Do not infer hidden features from appearance.',
   'coreUser must describe one coherent primary customer group by purchase role, need, lifestyle, or expertise. Prefer need states over demographics.',
   'Do not invent gender, age, occupation, income, family status, or medical condition unless explicitly supported by the product name, category, existing brief, or visible evidence.',
   'Do not output unrelated or contradictory audience fragments, and do not repeat the product name, category name, or brand name inside coreUser.',
@@ -36,7 +38,7 @@ export function buildEcommerceBriefRequestText(input = {}) {
   };
   return `Create the brief from this untrusted product-data JSON:\n${JSON.stringify({
     outputLanguage: input.language === 'zh' ? 'Simplified Chinese' : 'English',
-    taskFocus: input.focus === 'identitySpec' ? 'identitySpec' : 'brief',
+    taskFocus: input.focus === 'identitySpec' ? 'identitySpec' : input.focus === 'complete' ? 'complete' : 'brief',
     primaryProductContext: productContext,
     supplementalContext
   })}`;

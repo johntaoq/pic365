@@ -46,6 +46,8 @@ const copy = {
     shared: 'Shared',
     favorite: 'Favorites',
     linked: 'In project',
+    tooLarge: 'Over 5 MB',
+    unsupported: 'Unsupported format',
     selected: (count, max) => `${count}/${max} selected`,
     empty: 'No available images found',
     loadMore: 'Load more',
@@ -77,7 +79,9 @@ export default function EcommerceAssetLibraryPicker({
   session,
   assetTypeLabel,
   linkedAssetIds = [],
-  maxSelectable = 30,
+  maxSelectable = 9,
+  maxFileBytes = Number.POSITIVE_INFINITY,
+  allowedMimeTypes = [],
   onClose,
   onConfirm
 }) {
@@ -94,6 +98,7 @@ export default function EcommerceAssetLibraryPicker({
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState('');
   const linkedSet = useMemo(() => new Set(linkedAssetIds.filter(Boolean)), [linkedAssetIds]);
+  const allowedMimeTypeSet = useMemo(() => new Set(allowedMimeTypes), [allowedMimeTypes.join('|')]);
   const selectableLimit = Math.max(0, Number(maxSelectable) || 0);
 
   const loadAssets = useCallback(async ({ append = false } = {}) => {
@@ -153,8 +158,10 @@ export default function EcommerceAssetLibraryPicker({
     return () => globalThis.removeEventListener?.('keydown', onKeyDown);
   }, [confirming, onClose, open]);
 
-  function toggleAsset(assetId) {
-    if (linkedSet.has(assetId)) return;
+  function toggleAsset(asset) {
+    const assetId = asset.id;
+    const unsupported = allowedMimeTypeSet.size > 0 && !allowedMimeTypeSet.has(asset.mimeType);
+    if (linkedSet.has(assetId) || Number(asset.fileSize || 0) > maxFileBytes || unsupported) return;
     setSelectedIds((current) => {
       if (current.includes(assetId)) return current.filter((id) => id !== assetId);
       if (current.length >= selectableLimit) return current;
@@ -199,10 +206,12 @@ export default function EcommerceAssetLibraryPicker({
         <div className="ecommerceAssetLibraryGrid">
           {assets.map((asset) => {
             const linked = linkedSet.has(asset.id);
+            const tooLarge = Number(asset.fileSize || 0) > maxFileBytes;
+            const unsupported = allowedMimeTypeSet.size > 0 && !allowedMimeTypeSet.has(asset.mimeType);
             const selected = selectedIds.includes(asset.id);
             return (
-              <button className={`${selected ? 'selected' : ''} ${linked ? 'linked' : ''}`.trim()} type="button" disabled={linked} aria-pressed={selected} onClick={() => toggleAsset(asset.id)} key={asset.id}>
-                <span className="ecommerceAssetLibraryThumb"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} loading="lazy" decoding="async" />{selected ? <i><Check size={15} /></i> : null}{linked ? <b>{t.linked}</b> : null}</span>
+              <button className={`${selected ? 'selected' : ''} ${linked ? 'linked' : ''} ${tooLarge || unsupported ? 'unavailable' : ''}`.trim()} type="button" disabled={linked || tooLarge || unsupported} aria-pressed={selected} onClick={() => toggleAsset(asset)} key={asset.id}>
+                <span className="ecommerceAssetLibraryThumb"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} loading="lazy" decoding="async" />{selected ? <i><Check size={15} /></i> : null}{linked ? <b>{t.linked}</b> : tooLarge ? <b>{t.tooLarge || (language === 'zh' ? '超过 5 MB' : 'Over 5 MB')}</b> : unsupported ? <b>{t.unsupported || (language === 'zh' ? '格式不支持' : 'Unsupported format')}</b> : null}</span>
                 <strong title={asset.name}>{asset.name}</strong>
                 <small>{asset.collectionName || (asset.shared ? t.shared : asset.sourceType === 'generated' ? t.generated : t.uploads)}</small>
               </button>

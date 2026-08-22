@@ -23,7 +23,18 @@ if (-not $SkipBuild) {
   }
 }
 
-$requiredPaths = @('package.json', 'package-lock.json', 'dist', 'server', 'api', 'shared', 'deploy/pic365')
+$requiredPaths = @(
+  'package.json',
+  'package-lock.json',
+  'dist',
+  'server',
+  'api',
+  'shared',
+  'deploy/pic365',
+  'scripts/create-sqlite-backup.mjs',
+  'scripts/check-sqlite.mjs',
+  'scripts/inspect-production-db-safety.mjs'
+)
 foreach ($relativePath in $requiredPaths) {
   if (-not (Test-Path (Join-Path $repoRoot $relativePath))) {
     throw "Missing release path: $relativePath"

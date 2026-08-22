@@ -2,18 +2,27 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { createRoot } from 'react-dom/client';
 import {
   defaultImagePricingConfigForModel,
+  GEMINI_IMAGE_PRICING_TIERS,
   getImageGenerationPricing,
   IMAGE_PRICING_PIXEL_STEP,
   IMAGE_PRICING_STRATEGIES,
   normalizeImagePricingConfig
 } from '../shared/image-pricing.js';
+import { isGeminiImageModel } from '../shared/image-generation.js';
 import { buildSafePromptFallback } from '../shared/prompt-safety.js';
+import {
+  calculateRechargeCredits,
+  normalizeRechargeConfig,
+  quoteCustomRecharge
+} from '../shared/recharge-config.js';
+import { formatStoragePriceYuan, normalizeStorageBillingConfig } from '../shared/storage-billing.js';
 import { getClientImagePricing, ImageCreditPrice, refreshImagePromotion, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
 import {
   ArrowUpRight,
   BarChart3,
   Bell,
   Calculator,
+  Cat,
   ChevronDown,
   Check,
   Coins,
@@ -24,7 +33,6 @@ import {
   HardDrive,
   ImageIcon,
   KeyRound,
-  Layers3,
   LoaderCircle,
   LogIn,
   LogOut,
@@ -36,7 +44,6 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Star,
   Tags,
   TrendingUp,
   Trash2,
@@ -51,6 +58,19 @@ import { authClient } from './authClient';
 import CreateWorkspace from './create-workspace';
 import { fetchImageGeneration } from './image-generation-client.js';
 import { SITE_NOTICE_EXAMPLES } from '../shared/site-notice.js';
+import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
+import AdminChatProvider from './admin-chat-provider.jsx';
+import ChatCompanion from './chat-companion.jsx';
+import {
+  AuditEventsPanel,
+  CreditAdjustmentDialog,
+  FinancialReportsPanel,
+  GlobalMenuSettingsPanel,
+  PersonalMenuSettings,
+  RedeemCodeCard,
+  RedemptionCodesPanel,
+  UserEditDialog
+} from './admin-governance.jsx';
 
 const SiteNoticeContent = lazy(() => import('./site-notice-content.jsx'));
 const MediaAssetCenter = lazy(() => import('./media-asset-center.jsx'));
@@ -63,14 +83,19 @@ const copy = {
   en: {
     loading: 'Loading GPT-Image2 cases...',
     brand: 'GPT-Image2 Gallery',
-    navCreate: 'Create Canvas',
-    navTemplates: 'Industry Templates',
-    navCases: 'Showcase',
+    navTemplates: 'Templates',
+    navCases: 'Examples',
     navAssets: 'Assets',
+    navCooperation: 'Cooperation',
     ecommerceMode: 'Product image sets',
     freeMode: 'Free Drawing Workshop',
     api: 'API',
-    creationMode: 'Creation mode',
+    cooperationTitle: 'Support & Cooperation',
+    cooperationTechnical: 'Technical support',
+    cooperationCustomer: 'Customer service / Business cooperation',
+    cooperationRecharge: 'Online recharge is not available yet. Contact customer service to recharge.',
+    qq: 'QQ',
+    wechat: 'WeChat',
     eyebrow: 'Live GPT-Image2 prompt gallery',
     title: 'From viral images to reusable prompts.',
     subtitle:
@@ -132,19 +157,36 @@ const copy = {
     generationTimeout: 'Generation exceeded the 300-second wait limit. Please try again.',
     promptRequired: 'Prompt is required and must stay under 6000 characters.',
     serverUnavailable: 'Generation service is not configured yet.',
-    checkoutUnavailable: 'Checkout is not configured yet.',
+    checkoutUnavailable: 'The recharge plan is ready. Online payment will be connected later.',
     checkoutFailed: 'Checkout failed. Please try again later.',
-    billingSuccess: 'Payment is processing. Credits will appear after Stripe confirms it.',
-    billingCancelled: 'Checkout cancelled. You can choose another pack anytime.',
+    billingSuccess: 'Payment is processing. Credits will appear after confirmation.',
+    billingCancelled: 'Payment was cancelled. You can choose another pack anytime.',
     authRequired: 'Sign in to generate a test image.',
     signIn: 'Sign in',
-    signInTitle: 'Sign in to generate test images',
-    signInSubtitle: 'Create an account or sign in to unlock image generation and credit features.',
+    signInTitle: 'Sign in to continue creating',
+    signInSubtitle: 'Create an account or sign in to save projects, upload images, and use generation credits.',
     authLoginMode: 'Sign in',
     authRegisterMode: 'Create account',
+    authForgotPassword: 'Forgot password?',
+    authResetTitle: 'Reset password',
+    authResetSubtitle: 'Enter your account email, email code, and a new password.',
+    authBackToLogin: 'Back to sign in',
     authEmail: 'Email',
     authPassword: 'Password',
+    authNewPassword: 'New password',
+    authConfirmPassword: 'Confirm new password',
+    authPasswordMismatch: 'The two passwords do not match.',
+    authResetSubmit: 'Reset password',
+    authResetSuccess: 'Password reset. Sign in with your new password.',
+    authResetCodeSent: 'If this email is registered, a 6-digit reset code has been sent.',
     authName: 'Display name',
+    authVerificationCode: 'Email code',
+    authSendCode: 'Send code',
+    authSendingCode: 'Sending…',
+    authResendCode: 'Resend code',
+    authResendIn: 'Resend in {seconds}s',
+    authCodeSent: 'A 6-digit code was sent to your email.',
+    authPreviewCode: 'Local preview code: {code}',
     authSubmitLogin: 'Sign in',
     authSubmitRegister: 'Create account',
     authPasswordHint: 'Use at least 8 characters.',
@@ -152,6 +194,14 @@ const copy = {
     authEmailRegistered: 'This email is already registered.',
     authInvalidEmail: 'Enter a valid email address.',
     authInvalidPassword: 'Password must be at least 8 characters.',
+    authCodeRequired: 'Enter the 6-digit email code.',
+    authCodeInvalid: 'The email code is incorrect.',
+    authCodeExpired: 'The email code expired. Request a new one.',
+    authCodeLocked: 'Too many incorrect attempts. Request a new code.',
+    authCodeCooldown: 'Please wait before requesting another code.',
+    authEmailSendFailed: 'The verification email could not be sent. Try again later.',
+    authEmailNotConfigured: 'Email delivery is not configured yet.',
+    authDomainBlocked: 'This email domain is not allowed to register.',
     authRateLimited: 'Too many login attempts. Please wait a bit, then try again.',
     googleNotConfigured: 'Google sign-in is not enabled yet.',
     continueWithGoogle: 'Continue with Google',
@@ -183,18 +233,18 @@ const copy = {
     creditCenter: 'Credit center',
     superAdmin: 'Super admin',
     credits: 'credits',
-    buyCredits: 'Buy credits',
-    creditPacks: 'Credit packs',
+    buyCredits: 'Recharge',
+    creditPacks: 'Recharge packs',
     packCredits: (count) => `${count} credits`,
-    billingTitle: 'Credit packs',
-    billingSubtitle: 'Buy credits anytime to run more GPT-Image2 tests.',
+    billingTitle: 'Recharge credits',
+    billingSubtitle: 'Choose a fixed pack or preview a custom amount. Online payment will be added later.',
     balanceTitle: 'Current balance',
     transactionHistory: 'Credit history',
     noTransactions: 'No credit history yet.',
     loadBilling: 'Loading billing...',
     openBilling: 'Open credit center',
-    paymentReady: 'Secure checkout via Stripe.',
-    billingNotReady: 'Stripe checkout is not configured yet.',
+    paymentReady: 'Online recharge is available.',
+    billingNotReady: 'Recharge interface coming soon.',
     adminAdjust: 'Adjust credits',
     editUser: 'Edit user',
     creditAmount: 'Amount',
@@ -295,18 +345,23 @@ const copy = {
   zh: {
     loading: '正在加载 GPT-Image2 案例...',
     brand: 'GPT-Image2 画廊',
-    navCreate: '创作画板',
-    navTemplates: '行业模板',
-    navCases: '范例美图',
+    navTemplates: '模板',
+    navCases: '范例',
     navAssets: '资产库',
+    navCooperation: '合作',
     ecommerceMode: '电商套图',
     freeMode: '自由画坊',
     api: 'API',
-    creationMode: '创作模式',
+    cooperationTitle: '合作与支持',
+    cooperationTechnical: '技术支持',
+    cooperationCustomer: '客服 / 商务合作',
+    cooperationRecharge: '目前暂不支持线上充值，充值请联系客服。',
+    qq: 'QQ',
+    wechat: '微信',
     eyebrow: '实时更新的 GPT-Image2 提示词画廊',
-    title: '从爆款图片，到可复用 Prompt。',
+    title: '从爆款图片，复用提示词',
     subtitle:
-      '一个面向 GPT-Image2 创作的可视化工作台：浏览真实案例、复制 Prompt、在线测试生图、查看工业级模板。',
+      '一个面向图像创作的可视化工作台：浏览真实案例、复制 Prompt、在线测试生图、查看工业级模板。',
     explore: '浏览案例',
     cases: '个案例',
     categories: '个分类',
@@ -314,9 +369,9 @@ const copy = {
     sectionEyebrow: '复制、筛选、复用',
     sectionTitle: '爆款案例和 Prompt，一键可取。',
     templateEyebrow: '20+ 套工业级提示词模板',
-    templateTitle: '先用成熟模板起稿，再从案例库里继续 remix。',
+    templateTitle: '从成熟模板起稿',
     templateSubtitle:
-      '每套模板都从真实 GPT-Image2 案例里提炼，包含结构、约束和防坑经验，适合生产流程直接复用。',
+      '每套模板都从真实 GPT 案例里提炼，包含结构、约束和防坑经验，适合生产流程直接复用。',
     templateKind: '提示词模板',
     search: '搜索案例、来源、Prompt...',
     category: '分类',
@@ -364,19 +419,36 @@ const copy = {
     generationTimeout: '生图等待超过 300 秒，请重新尝试。',
     promptRequired: 'Prompt 不能为空，并且不能超过 6000 字符。',
     serverUnavailable: '生成服务还没有完成配置。',
-    checkoutUnavailable: '支付功能还没有完成配置。',
+    checkoutUnavailable: '充值方案已配置，在线支付接口后续接入。',
     checkoutFailed: '创建支付失败，请稍后再试。',
-    billingSuccess: '支付正在处理中，Stripe 确认后积分会自动到账。',
+    billingSuccess: '支付正在处理中，确认后积分会自动到账。',
     billingCancelled: '已取消支付，你可以随时购买积分包。',
     authRequired: '登录后即可生成测试图。',
     signIn: '登录',
-    signInTitle: '登录后生成测试图',
-    signInSubtitle: '注册或登录账户，解锁生图测试和积分能力。',
+    signInTitle: '登录后继续创作',
+    signInSubtitle: '注册或登录账户，即可保存项目、上传图片并使用生图积分。',
     authLoginMode: '登录',
     authRegisterMode: '注册账户',
+    authForgotPassword: '忘记密码？',
+    authResetTitle: '找回密码',
+    authResetSubtitle: '输入注册邮箱、邮箱验证码和新密码。',
+    authBackToLogin: '返回登录',
     authEmail: '邮箱',
     authPassword: '密码',
+    authNewPassword: '新密码',
+    authConfirmPassword: '确认新密码',
+    authPasswordMismatch: '两次输入的密码不一致。',
+    authResetSubmit: '重置密码',
+    authResetSuccess: '密码已重置，请使用新密码登录。',
+    authResetCodeSent: '如果该邮箱已注册，6 位重置验证码已发送。',
     authName: '显示名称',
+    authVerificationCode: '邮箱验证码',
+    authSendCode: '发送验证码',
+    authSendingCode: '发送中…',
+    authResendCode: '重新发送',
+    authResendIn: '{seconds} 秒后重发',
+    authCodeSent: '6 位验证码已发送到你的邮箱。',
+    authPreviewCode: '本地预览验证码：{code}',
     authSubmitLogin: '登录',
     authSubmitRegister: '创建账户',
     authPasswordHint: '密码至少需要 8 个字符。',
@@ -384,6 +456,14 @@ const copy = {
     authEmailRegistered: '该邮箱已经注册。',
     authInvalidEmail: '请输入有效邮箱地址。',
     authInvalidPassword: '密码至少需要 8 个字符。',
+    authCodeRequired: '请输入 6 位邮箱验证码。',
+    authCodeInvalid: '邮箱验证码不正确。',
+    authCodeExpired: '邮箱验证码已失效，请重新发送。',
+    authCodeLocked: '验证码错误次数过多，请重新发送。',
+    authCodeCooldown: '请稍后再重新发送验证码。',
+    authEmailSendFailed: '验证码邮件发送失败，请稍后重试。',
+    authEmailNotConfigured: '邮件发送服务尚未配置。',
+    authDomainBlocked: '该邮箱域名暂不允许注册。',
     authRateLimited: '登录尝试过于频繁，请稍后再试。',
     googleNotConfigured: 'Google 登录还没有启用。',
     continueWithGoogle: '使用 Google 登录',
@@ -411,22 +491,22 @@ const copy = {
     openCase: '查看案例',
     sourceCase: '关联案例',
     noGenerationTransactions: '暂无生图消耗记录。',
-    adminPanel: '管理后台',
+    adminPanel: '后台',
     creditCenter: '积分中心',
     superAdmin: '超级管理员',
     credits: '积分',
-    buyCredits: '购买积分',
-    creditPacks: '积分包',
+    buyCredits: '充值',
+    creditPacks: '充值套餐',
     packCredits: (count) => `${count} 积分`,
-    billingTitle: '积分包',
-    billingSubtitle: '随时购买积分，继续测试更多 GPT-Image2 案例。',
+    billingTitle: '积分充值',
+    billingSubtitle: '可选择固定套餐或预览自定义金额，在线支付接口后续接入。',
     balanceTitle: '当前余额',
     transactionHistory: '积分流水',
     noTransactions: '暂无积分流水。',
     loadBilling: '正在加载积分中心...',
     openBilling: '打开积分中心',
-    paymentReady: '使用 Stripe 安全支付。',
-    billingNotReady: 'Stripe 支付还没有完成配置。',
+    paymentReady: '在线充值已开放。',
+    billingNotReady: '充值接口即将开放。',
     adminAdjust: '调整积分',
     editUser: '编辑用户',
     creditAmount: '数量',
@@ -619,6 +699,7 @@ const PAGE_HASHES = {
   templates: 'templates',
   create: 'create',
   assets: 'assets',
+  cooperation: 'cooperation',
   admin: 'admin'
 };
 
@@ -627,6 +708,7 @@ function pageFromHash(hash = '') {
   if (value === PAGE_HASHES.templates) return 'templates';
   if (value === PAGE_HASHES.cases) return 'cases';
   if (value === PAGE_HASHES.assets) return 'assets';
+  if (value === PAGE_HASHES.cooperation) return 'cooperation';
   if (value === PAGE_HASHES.admin) return 'admin';
   return 'create';
 }
@@ -942,6 +1024,63 @@ function promotionDraftFromValue(value = {}) {
   };
 }
 
+function amountInputValue(amountCents) {
+  const amount = Number(amountCents || 0) / 100;
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function createRechargeDraft(value = {}) {
+  const normalized = normalizeRechargeConfig(value);
+  return {
+    signupBonusCredits: String(normalized.signupBonusCredits),
+    creditsPerYuan: normalized.creditsPerYuan,
+    packs: normalized.packs.map((pack) => ({
+      id: pack.id,
+      amountYuan: amountInputValue(pack.amountCents),
+      bonusPercent: String(pack.bonusPercent),
+      enabled: pack.enabled !== false
+    })),
+    custom: {
+      enabled: normalized.custom.enabled !== false,
+      minimumAmountYuan: amountInputValue(normalized.custom.minimumAmountCents),
+      bonusThresholdYuan: amountInputValue(normalized.custom.bonusThresholdCents),
+      bonusPercent: String(normalized.custom.bonusPercent),
+      maximumSelfServiceAmountYuan: amountInputValue(normalized.custom.maximumSelfServiceAmountCents),
+      contactMessageZh: normalized.custom.contactMessageZh,
+      contactMessageEn: normalized.custom.contactMessageEn
+    }
+  };
+}
+
+function rechargePayloadFromDraft(draft) {
+  return {
+    signupBonusCredits: Number(draft.signupBonusCredits),
+    packs: draft.packs.map((pack) => ({
+      id: pack.id,
+      amountCents: Math.round(Number(pack.amountYuan) * 100),
+      bonusPercent: Number(pack.bonusPercent),
+      enabled: pack.enabled !== false
+    })),
+    custom: {
+      enabled: draft.custom.enabled !== false,
+      minimumAmountCents: Math.round(Number(draft.custom.minimumAmountYuan) * 100),
+      bonusThresholdCents: Math.round(Number(draft.custom.bonusThresholdYuan) * 100),
+      bonusPercent: Number(draft.custom.bonusPercent),
+      maximumSelfServiceAmountCents: Math.round(Number(draft.custom.maximumSelfServiceAmountYuan) * 100),
+      contactMessageZh: draft.custom.contactMessageZh,
+      contactMessageEn: draft.custom.contactMessageEn
+    }
+  };
+}
+
+function rechargePackPreview(pack, creditsPerYuan = 100) {
+  return calculateRechargeCredits(
+    Math.round(Number(pack.amountYuan || 0) * 100),
+    Number(pack.bonusPercent || 0),
+    creditsPerYuan
+  );
+}
+
 function getAuthHeaders(session) {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
@@ -967,9 +1106,19 @@ function productText(value, language) {
   return value[language] || value.en || value.zh || '';
 }
 
+function formatStorageBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / (1024 ** 2)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${Math.round(bytes)} B`;
+}
+
 function transactionLabel(transaction, language) {
   const typeMap = {
+    storage: language === 'zh' ? '存储消耗' : 'Storage usage',
     grant: language === 'zh' ? '赠送' : 'Grant',
+    signup_bonus: language === 'zh' ? '注册赠送' : 'Sign-up bonus',
     purchase: language === 'zh' ? '购买' : 'Purchase',
     generation: language === 'zh' ? '生图消耗' : 'Generation',
     refund: language === 'zh' ? '失败返还' : 'Refund',
@@ -1269,7 +1418,12 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [codeCooldown, setCodeCooldown] = useState(0);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState('');
   useBodyScrollLock(open);
 
   useEffect(() => {
@@ -1284,34 +1438,111 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
     setMode('login');
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setFullName('');
+    setVerificationCode('');
+    setCodeCooldown(0);
+    setSendingCode(false);
+    setVerifiedEmail('');
   }, [open, initialErrorCode, language]);
+
+  useEffect(() => {
+    if (!open || codeCooldown <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setCodeCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [open, codeCooldown > 0]);
 
   if (!open) return null;
 
   const isLoading = status === 'loading';
 
+  function changeMode(nextMode) {
+    setMode(nextMode);
+    setStatus('idle');
+    setMessage('');
+    setPassword('');
+    setConfirmPassword('');
+    setVerificationCode('');
+    setVerifiedEmail('');
+    setCodeCooldown(0);
+  }
+
+  function authErrorMessage(code) {
+    return code === 'INVALID_CREDENTIALS' ? t.authInvalidCredentials
+      : code === 'EMAIL_ALREADY_REGISTERED' ? t.authEmailRegistered
+        : code === 'INVALID_EMAIL' ? t.authInvalidEmail
+          : code === 'INVALID_PASSWORD' ? t.authInvalidPassword
+            : code === 'VERIFICATION_CODE_REQUIRED' ? t.authCodeRequired
+              : code === 'INVALID_VERIFICATION_CODE' ? t.authCodeInvalid
+                : code === 'VERIFICATION_CODE_EXPIRED' ? t.authCodeExpired
+                  : code === 'VERIFICATION_CODE_ATTEMPTS_EXCEEDED' ? t.authCodeLocked
+                    : code === 'VERIFICATION_CODE_COOLDOWN' ? t.authCodeCooldown
+                      : code === 'RATE_LIMITED' ? (mode === 'register' ? t.authCodeCooldown : t.authRateLimited)
+                      : code === 'EMAIL_SEND_FAILED' ? t.authEmailSendFailed
+                        : code === 'EMAIL_NOT_CONFIGURED' ? t.authEmailNotConfigured
+                          : code === 'EMAIL_DOMAIN_BLOCKED' || code === 'EMAIL_DOMAIN_NOT_ALLOWED' ? t.authDomainBlocked
+                            : t.authError;
+  }
+
+  async function handleSendCode() {
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setStatus('error');
+      setMessage(t.authInvalidEmail);
+      return;
+    }
+    setSendingCode(true);
+    setMessage('');
+    try {
+      const result = mode === 'reset'
+        ? await authClient.sendPasswordResetCode(email, language)
+        : await authClient.sendRegistrationCode(email, language);
+      setVerifiedEmail(email.trim().toLowerCase());
+      setCodeCooldown(Math.max(1, Number(result.resendAfterSeconds || 60)));
+      setStatus('sent');
+      setMessage(result.previewCode
+        ? t.authPreviewCode.replace('{code}', result.previewCode)
+        : mode === 'reset' ? t.authResetCodeSent : t.authCodeSent);
+    } catch (error) {
+      setStatus('error');
+      setMessage(authErrorMessage(error?.code || ''));
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
+    if (mode === 'reset' && password !== confirmPassword) {
+      setStatus('error');
+      setMessage(t.authPasswordMismatch);
+      return;
+    }
     setStatus('loading');
     setMessage('');
     try {
       if (mode === 'register') {
-        await authClient.signUp(email, password, fullName);
+        await authClient.signUp(email, password, fullName, verificationCode);
+      } else if (mode === 'reset') {
+        await authClient.resetPassword(email, verificationCode, password);
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
+        setVerificationCode('');
+        setVerifiedEmail('');
+        setCodeCooldown(0);
+        setStatus('sent');
+        setMessage(t.authResetSuccess);
+        return;
       } else {
         await authClient.signIn(email, password);
       }
       onClose();
     } catch (error) {
       const code = error?.code || '';
-      const nextMessage =
-        code === 'INVALID_CREDENTIALS' ? t.authInvalidCredentials
-          : code === 'EMAIL_ALREADY_REGISTERED' ? t.authEmailRegistered
-            : code === 'INVALID_EMAIL' ? t.authInvalidEmail
-              : code === 'INVALID_PASSWORD' ? t.authInvalidPassword
-                : t.authError;
       setStatus('error');
-      setMessage(nextMessage);
+      setMessage(authErrorMessage(code));
     }
   }
 
@@ -1330,16 +1561,22 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
         <div className="authIcon">
           <UserCircle size={28} />
         </div>
-        <h2 id="auth-title">{mode === 'login' ? t.signInTitle : t.authRegisterMode}</h2>
-        <p>{t.signInSubtitle}</p>
-        <div className="authModeSwitch" role="tablist" aria-label={t.signInTitle}>
-          <button type="button" className={cx(mode === 'login' && 'active')} onClick={() => setMode('login')}>
-            {t.authLoginMode}
+        <h2 id="auth-title">{mode === 'reset' ? t.authResetTitle : mode === 'login' ? t.signInTitle : t.authRegisterMode}</h2>
+        <p>{mode === 'reset' ? t.authResetSubtitle : t.signInSubtitle}</p>
+        {mode === 'reset' ? (
+          <button className="authBackButton" type="button" onClick={() => changeMode('login')}>
+            {t.authBackToLogin}
           </button>
-          <button type="button" className={cx(mode === 'register' && 'active')} onClick={() => setMode('register')}>
-            {t.authRegisterMode}
-          </button>
-        </div>
+        ) : (
+          <div className="authModeSwitch" role="tablist" aria-label={t.signInTitle}>
+            <button type="button" className={cx(mode === 'login' && 'active')} onClick={() => changeMode('login')}>
+              {t.authLoginMode}
+            </button>
+            <button type="button" className={cx(mode === 'register' && 'active')} onClick={() => changeMode('register')}>
+              {t.authRegisterMode}
+            </button>
+          </div>
+        )}
         <form className="localAuthForm" onSubmit={handleSubmit}>
           {mode === 'register' ? (
             <label>
@@ -1349,16 +1586,59 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
           ) : null}
           <label>
             <span>{t.authEmail}</span>
-            <input type="email" value={email} autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
+            <input type="email" value={email} autoComplete="email" onChange={(event) => {
+              setEmail(event.target.value);
+              if (event.target.value.trim().toLowerCase() !== verifiedEmail) {
+                setVerificationCode('');
+                setVerifiedEmail('');
+                setMessage('');
+              }
+            }} required />
           </label>
+          {mode !== 'login' ? (
+            <div className="authVerificationField">
+              <label htmlFor="auth-verification-code">{t.authVerificationCode}</label>
+              <div className="authVerificationRow">
+                <input
+                  id="auth-verification-code"
+                  aria-label={t.authVerificationCode}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={verificationCode}
+                  maxLength={6}
+                  pattern="[0-9]{6}"
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  required
+                />
+                <button type="button" onClick={handleSendCode} disabled={sendingCode || codeCooldown > 0}>
+                  {sendingCode
+                    ? t.authSendingCode
+                    : codeCooldown > 0
+                      ? t.authResendIn.replace('{seconds}', codeCooldown)
+                      : verifiedEmail ? t.authResendCode : t.authSendCode}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <label>
-            <span>{t.authPassword}</span>
+            <span>{mode === 'reset' ? t.authNewPassword : t.authPassword}</span>
             <input type="password" value={password} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
           </label>
-          {mode === 'register' ? <small>{t.authPasswordHint}</small> : null}
+          {mode === 'reset' ? (
+            <label>
+              <span>{t.authConfirmPassword}</span>
+              <input type="password" value={confirmPassword} autoComplete="new-password" onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
+            </label>
+          ) : null}
+          {mode !== 'login' ? <small>{t.authPasswordHint}</small> : null}
+          {mode === 'login' ? (
+            <button className="authForgotButton" type="button" onClick={() => changeMode('reset')}>
+              {t.authForgotPassword}
+            </button>
+          ) : null}
           <button className="localAuthSubmit" type="submit" disabled={isLoading}>
-            {isLoading ? <LoaderCircle className="spinIcon" size={18} /> : <LogIn size={18} />}
-            {mode === 'login' ? t.authSubmitLogin : t.authSubmitRegister}
+            {isLoading ? <LoaderCircle className="spinIcon" size={18} /> : mode === 'reset' ? <KeyRound size={18} /> : <LogIn size={18} />}
+            {mode === 'reset' ? t.authResetSubmit : mode === 'login' ? t.authSubmitLogin : t.authSubmitRegister}
           </button>
         </form>
         {message ? (
@@ -1386,7 +1666,8 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, 
   }
 
   const email = profile?.email || session.user?.email || t.account;
-  const displayName = profile?.fullName || session.user?.user_metadata?.name || email;
+  const emailUserName = String(email).split('@')[0] || t.account;
+  const displayName = profile?.fullName || session.user?.user_metadata?.name || emailUserName;
   const avatarUrl = profile?.avatarUrl || session.user?.user_metadata?.avatar_url || session.user?.user_metadata?.picture || '';
   const totalSpent = Number(profile?.usage?.totalGenerationCredits || 0);
 
@@ -1395,7 +1676,7 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, 
       <button
         className={cx('userTrigger', open && 'open')}
         type="button"
-        aria-label={t.account}
+        aria-label={`${t.account}: ${displayName}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
@@ -1403,6 +1684,7 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, 
         <span className="avatarBadge">
           {avatarUrl ? <img src={avatarUrl} alt="" /> : <UserCircle size={18} />}
         </span>
+        <span className="userTriggerName" title={displayName}>{displayName}</span>
         <ChevronDown size={15} />
       </button>
       {open ? (
@@ -1496,6 +1778,7 @@ function AccountPanel({
   onClose,
   onBilling,
   onProfileChange,
+  onMenuChanged,
   onOpenCase
 }) {
   const t = copy[language];
@@ -1526,7 +1809,7 @@ function AccountPanel({
   const avatarUrl = profile?.avatarUrl || session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture || '';
   const usage = profile?.usage || {};
   const recentTransactions = profile?.recentTransactions || [];
-  const generationTransactions = recentTransactions.filter((transaction) => ['generation', 'refund'].includes(transaction.type));
+  const generationTransactions = recentTransactions.filter((transaction) => ['generation', 'refund', 'storage'].includes(transaction.type));
   const favoriteCases = normalizeFavoriteRows(favoriteRows)
     .map((favorite) => ({
       ...favorite,
@@ -1641,6 +1924,12 @@ function AccountPanel({
             </button>
           </section>
         </div>
+
+        <PersonalMenuSettings
+          language={language}
+          profile={profile}
+          onMenuChanged={onMenuChanged}
+        />
 
         <section className="transactionSection favoritesSection" ref={favoritesRef}>
           <h3>
@@ -2009,9 +2298,10 @@ function RichSiteNoticeContent({ body, format, className = '' }) {
   );
 }
 
-function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOpenCase, onSiteNoticeUpdated }) {
+function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteNoticeUpdated, onMenuSettingsChanged }) {
   const t = copy[language];
-  const [activeSection, setActiveSection] = useState('pricing');
+  const can = useCallback((permission) => profile?.adminPermissions?.includes(permission) === true, [profile?.adminPermissions]);
+  const [activeSection, setActiveSection] = useState(() => profile?.role === 'operations' ? 'channels' : profile?.role === 'accountant' ? 'credits' : 'pricing');
   const [users, setUsers] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [range, setRange] = useState('7d');
@@ -2019,15 +2309,29 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
   const [customEnd, setCustomEnd] = useState(() => dateInputValue());
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
-  const [adjustment, setAdjustment] = useState(null);
-  const [adjustStatus, setAdjustStatus] = useState('idle');
+  const [editingUser, setEditingUser] = useState(null);
+  const [creditUser, setCreditUser] = useState(null);
   const [promotion, setPromotion] = useState(null);
   const [promotionDraft, setPromotionDraft] = useState(() => promotionDraftFromValue());
   const [promotionStatus, setPromotionStatus] = useState('idle');
   const [promotionMessage, setPromotionMessage] = useState('');
+  const [recharge, setRecharge] = useState(() => normalizeRechargeConfig());
+  const [rechargeDraft, setRechargeDraft] = useState(() => createRechargeDraft());
+  const [rechargeStatus, setRechargeStatus] = useState('idle');
+  const [rechargeMessage, setRechargeMessage] = useState('');
+  const [storageBilling, setStorageBilling] = useState(() => normalizeStorageBillingConfig());
+  const [storageBillingDraft, setStorageBillingDraft] = useState(() => ({ enabled: true, unitPriceYuanPerGb: '3.00' }));
+  const [storageBillingSummary, setStorageBillingSummary] = useState(null);
+  const [storageBillingStatus, setStorageBillingStatus] = useState('idle');
+  const [storageBillingMessage, setStorageBillingMessage] = useState('');
   const [providers, setProviders] = useState([]);
   const [providerDraft, setProviderDraft] = useState(() => createProviderDraft());
+  const [providerEditorMode, setProviderEditorMode] = useState('auto');
   const [providerMessage, setProviderMessage] = useState('');
+  const [promptLogging, setPromptLogging] = useState({ enabled: false, updatedAt: null });
+  const [promptLogs, setPromptLogs] = useState([]);
+  const [promptLoggingStatus, setPromptLoggingStatus] = useState('idle');
+  const [promptLoggingMessage, setPromptLoggingMessage] = useState('');
   const [notificationDraft, setNotificationDraft] = useState(() => createNotificationDraft());
   const [notificationStatus, setNotificationStatus] = useState('idle');
   const [notificationMessage, setNotificationMessage] = useState('');
@@ -2045,15 +2349,157 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
     }
   }
 
-  async function loadProviders() {
+  async function loadRecharge() {
     try {
-      const response = await fetch('/api/admin/image-providers', { headers: getAuthHeaders(session), cache: 'no-store' });
+      const response = await fetch('/api/admin/recharge', { headers: getAuthHeaders(session), cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PROVIDER_LOAD_FAILED');
-      setProviders(payload.providers || []);
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'RECHARGE_CONFIG_FAILED');
+      const next = normalizeRechargeConfig(payload.recharge);
+      setRecharge(next);
+      setRechargeDraft(createRechargeDraft(next));
+      setRechargeStatus('idle');
+      setRechargeMessage('');
     } catch {
-      setProviderMessage(language === 'zh' ? '生图服务配置加载失败' : 'Image service configuration failed to load.');
+      setRechargeStatus('error');
+      setRechargeMessage(language === 'zh' ? '充值配置加载失败。' : 'Recharge configuration failed to load.');
     }
+  }
+
+  function updateRechargePack(index, patch) {
+    setRechargeDraft((current) => ({
+      ...current,
+      packs: current.packs.map((pack, packIndex) => packIndex === index ? { ...pack, ...patch } : pack)
+    }));
+  }
+
+  function addRechargePack() {
+    setRechargeDraft((current) => ({
+      ...current,
+      packs: [
+        ...current.packs,
+        { id: `recharge-${Date.now()}`, amountYuan: '10', bonusPercent: '0', enabled: true }
+      ]
+    }));
+  }
+
+  function removeRechargePack(index) {
+    setRechargeDraft((current) => ({
+      ...current,
+      packs: current.packs.filter((_, packIndex) => packIndex !== index)
+    }));
+  }
+
+  async function saveRecharge(event) {
+    event.preventDefault();
+    const payload = rechargePayloadFromDraft(rechargeDraft);
+    const invalidPack = payload.packs.some((pack) => !Number.isFinite(pack.amountCents) || pack.amountCents < 100 || !Number.isFinite(pack.bonusPercent) || pack.bonusPercent < 0);
+    const invalidCustom = !Number.isFinite(payload.custom.minimumAmountCents)
+      || payload.custom.minimumAmountCents < 100
+      || !Number.isFinite(payload.custom.bonusThresholdCents)
+      || !Number.isFinite(payload.custom.maximumSelfServiceAmountCents);
+    if (!payload.packs.length || invalidPack || invalidCustom) {
+      setRechargeStatus('error');
+      setRechargeMessage(language === 'zh' ? '请填写有效的充值金额和赠送比例。' : 'Enter valid recharge amounts and bonus percentages.');
+      return;
+    }
+    setRechargeStatus('loading');
+    setRechargeMessage('');
+    try {
+      const response = await fetch('/api/admin/recharge', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || 'RECHARGE_CONFIG_FAILED');
+      const next = normalizeRechargeConfig(result.recharge);
+      setRecharge(next);
+      setRechargeDraft(createRechargeDraft(next));
+      setRechargeStatus('success');
+      setRechargeMessage(language === 'zh' ? '充值配置已保存。' : 'Recharge configuration saved.');
+    } catch {
+      setRechargeStatus('error');
+      setRechargeMessage(language === 'zh' ? '充值配置保存失败。' : 'Recharge configuration could not be saved.');
+    }
+  }
+
+  async function loadStorageBilling() {
+    try {
+      const response = await fetch('/api/admin/storage-billing', {
+        headers: getAuthHeaders(session),
+        cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'STORAGE_BILLING_CONFIG_FAILED');
+      const next = normalizeStorageBillingConfig(payload.storageBilling);
+      setStorageBilling(next);
+      setStorageBillingDraft({
+        enabled: next.enabled,
+        unitPriceYuanPerGb: formatStoragePriceYuan(next.unitPriceCentsPerGb)
+      });
+      setStorageBillingSummary(payload.summary || null);
+      setStorageBillingStatus('idle');
+      setStorageBillingMessage('');
+    } catch {
+      setStorageBillingStatus('error');
+      setStorageBillingMessage(language === 'zh' ? '存储计费配置加载失败。' : 'Storage billing settings failed to load.');
+    }
+  }
+
+  async function saveStorageBilling(event) {
+    event.preventDefault();
+    const unitPriceYuan = Number(storageBillingDraft.unitPriceYuanPerGb);
+    if (!Number.isFinite(unitPriceYuan) || unitPriceYuan < 0.01) {
+      setStorageBillingStatus('error');
+      setStorageBillingMessage(language === 'zh' ? '请输入有效的每 GB 月费。' : 'Enter a valid monthly price per GB.');
+      return;
+    }
+    setStorageBillingStatus('loading');
+    setStorageBillingMessage('');
+    try {
+      const response = await fetch('/api/admin/storage-billing', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+        body: JSON.stringify({
+          enabled: storageBillingDraft.enabled,
+          unitPriceCentsPerGb: Math.round(unitPriceYuan * 100)
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'STORAGE_BILLING_CONFIG_FAILED');
+      const next = normalizeStorageBillingConfig(payload.storageBilling);
+      setStorageBilling(next);
+      setStorageBillingDraft({
+        enabled: next.enabled,
+        unitPriceYuanPerGb: formatStoragePriceYuan(next.unitPriceCentsPerGb)
+      });
+      setStorageBillingSummary(payload.summary || null);
+      setStorageBillingStatus('success');
+      setStorageBillingMessage(language === 'zh' ? '存储计费配置已保存。' : 'Storage billing settings saved.');
+    } catch {
+      setStorageBillingStatus('error');
+      setStorageBillingMessage(language === 'zh' ? '存储计费配置保存失败。' : 'Storage billing settings could not be saved.');
+    }
+  }
+
+  async function loadProviders() {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch('/api/admin/image-providers', { headers: getAuthHeaders(session), cache: 'no-store' });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.providers)) {
+          throw new Error(payload?.error || 'PROVIDER_LOAD_FAILED');
+        }
+        setProviders(payload.providers);
+        return true;
+      } catch {
+        if (attempt < 2) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, 400 * (attempt + 1)));
+        }
+      }
+    }
+    setProviderMessage(language === 'zh' ? '生图服务配置加载失败，请稍后重试。' : 'Image service configuration failed to load. Try again shortly.');
+    return false;
   }
 
   async function loadNotifications() {
@@ -2068,6 +2514,48 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
     } catch {
       setNotificationStatus('error');
       setNotificationMessage(language === 'zh' ? '通知配置加载失败。' : 'Notification configuration failed to load.');
+    }
+  }
+
+  async function loadPromptLogging() {
+    setPromptLoggingStatus('loading');
+    setPromptLoggingMessage('');
+    try {
+      const response = await fetch('/api/admin/prompt-logging?limit=100', {
+        headers: getAuthHeaders(session),
+        cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PROMPT_LOGGING_LOAD_FAILED');
+      setPromptLogging(payload.config || { enabled: false, updatedAt: null });
+      setPromptLogs(Array.isArray(payload.logs) ? payload.logs : []);
+      setPromptLoggingStatus('idle');
+    } catch {
+      setPromptLoggingStatus('error');
+      setPromptLoggingMessage(language === 'zh' ? '提示词记录加载失败。' : 'Prompt logging failed to load.');
+    }
+  }
+
+  async function savePromptLogging(enabled) {
+    setPromptLoggingStatus('loading');
+    setPromptLoggingMessage('');
+    try {
+      const response = await fetch('/api/admin/prompt-logging', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+        body: JSON.stringify({ enabled })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PROMPT_LOGGING_UPDATE_FAILED');
+      setPromptLogging(payload.config || { enabled, updatedAt: null });
+      setPromptLogs(Array.isArray(payload.logs) ? payload.logs : []);
+      setPromptLoggingStatus('success');
+      setPromptLoggingMessage(language === 'zh'
+        ? enabled ? '已开启提示词记录。' : '已关闭提示词记录，后续请求不再新增记录。'
+        : enabled ? 'Prompt logging is enabled.' : 'Prompt logging is disabled for future requests.');
+    } catch {
+      setPromptLoggingStatus('error');
+      setPromptLoggingMessage(language === 'zh' ? '提示词记录设置保存失败。' : 'Prompt logging settings could not be saved.');
     }
   }
 
@@ -2109,6 +2597,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
   }
 
   function editProvider(provider) {
+    setProviderEditorMode('edit');
     setProviderDraft({
       ...provider,
       apiKey: '',
@@ -2122,6 +2611,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
   }
 
   function resetProviderDraft() {
+    setProviderEditorMode('new');
     setProviderDraft(createProviderDraft());
   }
 
@@ -2265,20 +2755,27 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
         params.set('start', nextStart);
         params.set('end', nextEnd);
       }
-      const [usersResponse, metricsResponse] = await Promise.all([
-        fetch('/api/admin/users', { headers }),
-        fetch(`/api/admin/metrics?${params.toString()}`, { headers })
-      ]);
-      const usersPayload = await usersResponse.json().catch(() => ({}));
-      const metricsPayload = await metricsResponse.json().catch(() => ({}));
-      if (!usersResponse.ok || !usersPayload.ok) {
-        throw new Error(usersPayload.error || 'SERVER_NOT_CONFIGURED');
+      const usersPromise = can(ADMIN_PERMISSIONS.VIEW_USERS) || can(ADMIN_PERMISSIONS.ADJUST_CREDITS)
+        ? fetch('/api/admin/users', { headers })
+        : Promise.resolve(null);
+      const metricsPromise = can(ADMIN_PERMISSIONS.VIEW_METRICS)
+        ? fetch(`/api/admin/metrics?${params.toString()}`, { headers })
+        : Promise.resolve(null);
+      const [usersResponse, metricsResponse] = await Promise.all([usersPromise, metricsPromise]);
+      if (usersResponse) {
+        const usersPayload = await usersResponse.json().catch(() => ({}));
+        if (!usersResponse.ok || !usersPayload.ok) throw new Error(usersPayload.error || 'SERVER_NOT_CONFIGURED');
+        setUsers(usersPayload.users || []);
+      } else {
+        setUsers([]);
       }
-      if (!metricsResponse.ok || !metricsPayload.ok) {
-        throw new Error(metricsPayload.error || 'SERVER_NOT_CONFIGURED');
+      if (metricsResponse) {
+        const metricsPayload = await metricsResponse.json().catch(() => ({}));
+        if (!metricsResponse.ok || !metricsPayload.ok) throw new Error(metricsPayload.error || 'SERVER_NOT_CONFIGURED');
+        setMetrics(metricsPayload);
+      } else {
+        setMetrics(null);
       }
-      setUsers(usersPayload.users || []);
-      setMetrics(metricsPayload);
       setStatus('ready');
     } catch (error) {
       setStatus('error');
@@ -2296,39 +2793,6 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
       return;
     }
     loadAdminData('custom', customStart, customEnd);
-  }
-
-  async function handleAdjustCredits(event) {
-    event.preventDefault();
-    if (!adjustment?.userId) return;
-    setAdjustStatus('loading');
-    setMessage('');
-
-    try {
-      const response = await fetch('/api/admin/credits/adjust', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(session)
-        },
-        body: JSON.stringify({
-          userId: adjustment.userId,
-          amount: Number(adjustment.amount),
-          reason: adjustment.reason,
-          password: adjustment.password
-        })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'CREDIT_ADJUSTMENT_FAILED');
-      }
-      setAdjustment(null);
-      setAdjustStatus('idle');
-      await loadAdminData();
-    } catch (error) {
-      setAdjustStatus('error');
-      setMessage(error.message === 'INVALID_PASSWORD' ? t.authInvalidPassword : generationErrorMessage(error.message, language));
-    }
   }
 
   async function handleSavePromotion(event) {
@@ -2364,16 +2828,31 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
   }
 
   useEffect(() => {
-    loadAdminData(range);
-    loadPromotion();
-    loadProviders();
-    loadNotifications();
-  }, [isAuthenticatedSession(session), range]);
+    if (!isAuthenticatedSession(session)) return;
+    if (can(ADMIN_PERMISSIONS.VIEW_USERS) || can(ADMIN_PERMISSIONS.ADJUST_CREDITS) || can(ADMIN_PERMISSIONS.VIEW_METRICS)) loadAdminData(range);
+    if (can(ADMIN_PERMISSIONS.MANAGE_PROMOTIONS)) loadPromotion();
+    if (can(ADMIN_PERMISSIONS.MANAGE_RECHARGE)) loadRecharge();
+    if (can(ADMIN_PERMISSIONS.MANAGE_PRICING)) loadStorageBilling();
+    if (can(ADMIN_PERMISSIONS.MANAGE_NOTIFICATIONS)) loadNotifications();
+  }, [isAuthenticatedSession(session), range, profile?.role]);
 
   useEffect(() => {
-    if (activeSection !== 'pricing' || providerDraft.id || !providers.length) return;
+    if (!isAuthenticatedSession(session)) return;
+    if (activeSection !== 'pricing' && activeSection !== 'channels') return;
+    if (activeSection === 'pricing' && !can(ADMIN_PERMISSIONS.MANAGE_PRICING)) return;
+    if (activeSection === 'channels' && !can(ADMIN_PERMISSIONS.MANAGE_CHANNELS)) return;
+    loadProviders();
+  }, [activeSection, isAuthenticatedSession(session), profile?.role]);
+
+  useEffect(() => {
+    if (!isAuthenticatedSession(session) || activeSection !== 'prompt-records' || !profile?.isSuperAdmin) return;
+    loadPromptLogging();
+  }, [activeSection, isAuthenticatedSession(session), profile?.isSuperAdmin]);
+
+  useEffect(() => {
+    if (!['pricing', 'channels'].includes(activeSection) || providerEditorMode === 'new' || providerDraft.id || !providers.length) return;
     editProvider(providers.find((provider) => provider.isDefault) || providers[0]);
-  }, [activeSection, providerDraft.id, providers]);
+  }, [activeSection, providerDraft.id, providerEditorMode, providers]);
   const traffic = metrics?.traffic || {};
   const business = metrics?.business || {};
   const trafficTotals = traffic.totals || {};
@@ -2402,17 +2881,30 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
     { size: '1024x1024', quality: 'medium' },
     { ...promotionDraft, enabled: true, startsAt: null, endsAt: null }
   );
-  const providerPricingPreviewRows = [
+  const geminiProviderPricing = isGeminiImageModel(providerDraft.model);
+  const providerPricingMaximumPixels = providerDraft.pricingConfig?.maximumPixels || 8_294_400;
+  const providerPricingQualityLabels = geminiProviderPricing
+    ? {
+        low: `Low / ${GEMINI_IMAGE_PRICING_TIERS.low.resolution}`,
+        medium: `Medium / ${GEMINI_IMAGE_PRICING_TIERS.medium.resolution}`,
+        high: `High / ${GEMINI_IMAGE_PRICING_TIERS.high.resolution}`
+      }
+    : { low: 'Low', medium: 'Medium', high: 'High' };
+  const providerPricingPreviewRows = (geminiProviderPricing ? [
+    ['1K · 1024×1024', '1024x1024'],
+    ['2K · 2048×2048', '2048x2048'],
+    ['4K · 4096×4096', '4096x4096']
+  ] : [
     ['640×1024', '640x1024'],
     ['816×816', '816x816'],
     ['1024×1536', '1024x1536'],
     ['2048×2048', '2048x2048'],
     ['2880×2880', '2880x2880']
-  ].map(([label, size]) => ({
+  ]).map(([label, size]) => ({
     label,
-    low: getImageGenerationPricing({ size, quality: 'low' }, providerDraft.pricingConfig),
-    medium: getImageGenerationPricing({ size, quality: 'medium' }, providerDraft.pricingConfig),
-    high: getImageGenerationPricing({ size, quality: 'high' }, providerDraft.pricingConfig)
+    low: getImageGenerationPricing({ size, quality: 'low', model: providerDraft.model }, providerDraft.pricingConfig),
+    medium: getImageGenerationPricing({ size, quality: 'medium', model: providerDraft.model }, providerDraft.pricingConfig),
+    high: getImageGenerationPricing({ size, quality: 'high', model: providerDraft.model }, providerDraft.pricingConfig)
   }));
   const promotionStateLabel = promotion?.active
     ? t.promotionActive
@@ -2422,23 +2914,26 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
         ? t.promotionExpired
         : t.promotionInactive;
   const adminSections = [
-    { id: 'pricing', label: language === 'zh' ? '计费' : 'Pricing', Icon: Calculator },
-    { id: 'credits', label: language === 'zh' ? '积分' : 'Credits', Icon: Coins },
-    { id: 'users', label: language === 'zh' ? '用户' : 'Users', Icon: Users },
-    { id: 'account', label: language === 'zh' ? '账户设置' : 'Account', Icon: UserCircle },
-    { id: 'promotion', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
-    { id: 'notifications', label: language === 'zh' ? '通知' : 'Notifications', Icon: Bell },
-    { id: 'channels', label: language === 'zh' ? '渠道配置' : 'Channels', Icon: KeyRound }
-  ];
+    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && { id: 'pricing', label: language === 'zh' ? '计费' : 'Pricing', Icon: Calculator },
+    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'chat-assistant', label: language === 'zh' ? '聊天精灵' : 'Chat assistant', Icon: Cat },
+    can(ADMIN_PERMISSIONS.ADJUST_CREDITS) && { id: 'credits', label: language === 'zh' ? '积分' : 'Credits', Icon: Coins },
+    can(ADMIN_PERMISSIONS.MANAGE_RECHARGE) && { id: 'recharge', label: language === 'zh' ? '充值设置' : 'Recharge', Icon: CreditCard },
+    can(ADMIN_PERMISSIONS.VIEW_USERS) && { id: 'users', label: language === 'zh' ? '用户管理' : 'Users', Icon: Users },
+    can(ADMIN_PERMISSIONS.CREATE_REDEMPTION_CODES) && { id: 'redemption', label: language === 'zh' ? '兑换码管理' : 'Redemption', Icon: KeyRound },
+    can(ADMIN_PERMISSIONS.VIEW_CREDIT_REPORTS) && { id: 'finance', label: language === 'zh' ? '财务报表' : 'Reports', Icon: ReceiptText },
+    can(ADMIN_PERMISSIONS.MANAGE_PROMOTIONS) && { id: 'promotion', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
+    can(ADMIN_PERMISSIONS.MANAGE_NOTIFICATIONS) && { id: 'notifications', label: language === 'zh' ? '通知' : 'Notifications', Icon: Bell },
+    profile?.isSuperAdmin && { id: 'prompt-records', label: language === 'zh' ? '提示词记录' : 'Prompt logs', Icon: ReceiptText },
+    can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'channels', label: language === 'zh' ? '渠道配置' : 'Channels', Icon: KeyRound },
+    can(ADMIN_PERMISSIONS.MANAGE_GLOBAL_SETTINGS) && { id: 'global-settings', label: language === 'zh' ? '全局设置' : 'Global settings', Icon: Settings },
+    (can(ADMIN_PERMISSIONS.VIEW_ALL_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_FINANCE_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_OPERATIONS_AUDIT)) && { id: 'audit', label: language === 'zh' ? '审计记录' : 'Audit', Icon: ShieldCheck }
+  ].filter(Boolean);
   const activeAdminSection = adminSections.find((item) => item.id === activeSection) || adminSections[0];
 
-  const openUserAdjustment = (user) => setAdjustment({
-    userId: user.id,
-    email: user.email,
-    amount: 10,
-    reason: '',
-    password: ''
-  });
+  useEffect(() => {
+    if (adminSections.some((item) => item.id === activeSection)) return;
+    if (adminSections[0]) setActiveSection(adminSections[0].id);
+  }, [activeSection, profile?.role]);
   const providerPricingStrategy = providerDraft.pricingStrategy || providerDraft.pricingConfig?.strategy;
   const formulaPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_FORMULA;
   const matrixPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX;
@@ -2465,7 +2960,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
         <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '价格阶梯（元）' : 'Price step (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.priceStepRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ priceStepRmb: value })} /></label>
         <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最低收费（元）' : 'Minimum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.minimumChargeRmb} min={0} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ minimumChargeRmb: value })} /></label>
         <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最高收费（元）' : 'Maximum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.maximumChargeRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ maximumChargeRmb: value })} /></label>
-        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? 'Auto 计费像素' : 'Auto billed pixels'}</span><PricingNumberInput value={providerDraft.pricingConfig.autoSizePixels} min={655360} max={8294400} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ autoSizePixels: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? 'Auto 计费像素' : 'Auto billed pixels'}</span><PricingNumberInput value={providerDraft.pricingConfig.autoSizePixels} min={655360} max={providerPricingMaximumPixels} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ autoSizePixels: value })} /></label>
         <label className="isPricingDisabled"><span>{language === 'zh' ? 'Auto 计费质量' : 'Auto billed quality'}</span><select value="medium" disabled><option value="medium">Medium</option></select></label>
         <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.pricingConfig.promotionEligible !== false} onChange={(event) => updateProviderPricingConfig({ promotionEligible: event.target.checked })} /><span>{language === 'zh' ? '允许参与促销' : 'Promotion eligible'}</span></label>
       </div>
@@ -2481,7 +2976,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
       ) : null}
       {fixedQualityPricingActive ? (
         <div className="adminProviderPricingGrid formula">
-          {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{qualityName.toUpperCase()} {language === 'zh' ? '单张价格（元）' : 'price (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.qualityPricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ qualityPricesRmb: { ...providerDraft.pricingConfig.qualityPricesRmb, [qualityName]: value } })} /></label>)}
+          {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{providerPricingQualityLabels[qualityName]} {language === 'zh' ? '单张价格（元）' : 'price (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.qualityPricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ qualityPricesRmb: { ...providerDraft.pricingConfig.qualityPricesRmb, [qualityName]: value } })} /></label>)}
           <label className="isPricingDisabled"><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.actualCostRatio} min={0} step="0.01" disabled /></label>
         </div>
       ) : null}
@@ -2495,7 +2990,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
         <div className="adminProviderMatrix">
           <div className="adminProviderMatrixHeader"><span>{language === 'zh' ? '像素上限' : 'Max pixels'}</span><span>Low</span><span>Medium</span><span>High</span><span /></div>
           {(providerDraft.pricingConfig.bands || []).map((band, index) => <div className="adminProviderMatrixRow" key={`${band.id}-${index}`}>
-            <PricingNumberInput value={band.maxPixels} min={655360} max={8294400} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} onCommit={(value) => updateProviderMatrixBand(index, { maxPixels: value })} />
+            <PricingNumberInput value={band.maxPixels} min={655360} max={providerPricingMaximumPixels} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} onCommit={(value) => updateProviderMatrixBand(index, { maxPixels: value })} />
             {['low', 'medium', 'high'].map((qualityName) => <PricingNumberInput value={band.pricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderMatrixBand(index, { pricesRmb: { ...band.pricesRmb, [qualityName]: value } })} key={qualityName} />)}
             <button type="button" onClick={() => removeProviderMatrixBand(index)} aria-label={language === 'zh' ? '删除档位' : 'Remove band'}><Trash2 size={14} /></button>
           </div>)}
@@ -2504,7 +2999,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
       ) : null}
       <div className="adminProviderPricingPreview">
         <strong>{language === 'zh' ? '原价预览（100积分＝1元）' : 'List-price preview (100 credits = RMB 1)'}</strong>
-        <div><span>{language === 'zh' ? '尺寸' : 'Size'}</span><span>Low</span><span>Medium</span><span>High</span></div>
+        <div><span>{language === 'zh' ? '尺寸' : 'Size'}</span><span>{providerPricingQualityLabels.low}</span><span>{providerPricingQualityLabels.medium}</span><span>{providerPricingQualityLabels.high}</span></div>
         {providerPricingPreviewRows.map((row) => <div key={row.label}><span>{row.label}</span><b>{row.low.credits}</b><b>{row.medium.credits}</b><b>{row.high.credits}</b></div>)}
       </div>
     </section>
@@ -2521,7 +3016,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
         <span className="adminEnvironmentBadge">{import.meta.env.DEV ? (language === 'zh' ? '本地环境' : 'Local environment') : (language === 'zh' ? '生产环境' : 'Production')}</span>
       </div>
 
-      <nav className="adminWorkspaceNav" aria-label={language === 'zh' ? '管理后台子菜单' : 'Admin sections'}>
+      <nav className="adminWorkspaceNav" style={{ '--admin-nav-columns': Math.min(adminSections.length, 6) }} aria-label={language === 'zh' ? '管理后台子菜单' : 'Admin sections'}>
         {adminSections.map(({ id, label, Icon }) => (
           <button className={activeSection === id ? 'active' : ''} type="button" onClick={() => setActiveSection(id)} key={id}>
             <Icon size={16} /><span>{label}</span>
@@ -2532,12 +3027,12 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
       <div className="adminWorkspaceContent">
         {['credits', 'users'].includes(activeSection) ? (
           <div className="adminWorkspaceToolbar">
-            <div className="adminRangeToggle" role="group" aria-label={t.adminMetrics}>
+            {can(ADMIN_PERMISSIONS.VIEW_METRICS) ? <div className="adminRangeToggle" role="group" aria-label={t.adminMetrics}>
               {[["today", t.rangeToday], ["7d", t.range7d], ["30d", t.range30d], ["90d", t.range90d], ["custom", t.customRange]].map(([value, label]) => (
                 <button className={cx(range === value && 'active')} type="button" onClick={() => setRange(value)} key={value}>{label}</button>
               ))}
-            </div>
-            {range === 'custom' ? (
+            </div> : null}
+            {can(ADMIN_PERMISSIONS.VIEW_METRICS) && range === 'custom' ? (
               <div className="adminCustomRange">
                 <label><span>{t.startDate}</span><input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label>
                 <label><span>{t.endDate}</span><input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} /></label>
@@ -2549,6 +3044,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
         ) : null}
 
         {activeSection === 'pricing' ? (
+          <>
           <section className="adminBlock adminProviderBlock">
             <div className="adminSectionHeading">
               <div><h3><Calculator size={18} />{language === 'zh' ? '计费规则' : 'Pricing rules'}</h3><p>{language === 'zh' ? '每个生图渠道拥有独立规则，便于以后接入 Banana、Grok 和千问。' : 'Each image channel has its own rule for future providers.'}</p></div>
@@ -2562,6 +3058,27 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
             ) : <div className="adminState"><KeyRound size={20} />{language === 'zh' ? '请先在“渠道配置”中添加生图服务。' : 'Add an image service in Channels first.'}</div>}
             {providerMessage ? <p className="adminNotice">{providerMessage}</p> : null}
           </section>
+          <form className="adminBlock adminStorageBilling" onSubmit={saveStorageBilling}>
+            <div className="adminSectionHeading">
+              <div>
+                <h3><HardDrive size={18} />{language === 'zh' ? '资产存储计费' : 'Asset storage billing'}</h3>
+                <p>{language === 'zh' ? '只统计用户自己拥有的文件，分享资产不计费；按北京时间每日 00:00 记录并按本月最高占用增量扣费。' : 'Only owner storage is billed. Shared assets are excluded. Usage is measured daily at 00:00 China time and charged against the monthly peak.'}</p>
+              </div>
+              <span className="adminRechargeStatus">{language === 'zh' ? '100 积分 = 1 元' : '100 credits = RMB 1'}</span>
+            </div>
+            <div className="adminStorageBillingGrid">
+              <label className="adminRechargeSwitch"><input type="checkbox" checked={storageBillingDraft.enabled} onChange={(event) => setStorageBillingDraft((current) => ({ ...current, enabled: event.target.checked }))} /><span>{language === 'zh' ? '启用每日跑批' : 'Enable daily billing'}</span></label>
+              <label><span>{language === 'zh' ? '每 GB 月费（元）' : 'Monthly price per GB (RMB)'}</span><input type="number" min="0.01" step="0.01" value={storageBillingDraft.unitPriceYuanPerGb} onChange={(event) => setStorageBillingDraft((current) => ({ ...current, unitPriceYuanPerGb: event.target.value }))} /></label>
+              <div><span>{language === 'zh' ? '执行时间' : 'Schedule'}</span><strong>00:00 · Asia/Shanghai</strong></div>
+              <div><span>{language === 'zh' ? '本月已扣' : 'Charged this month'}</span><strong>{formatNumber(storageBillingSummary?.chargedCredits || 0)} {language === 'zh' ? '积分' : 'credits'}</strong></div>
+              <div><span>{language === 'zh' ? '本月计费峰值' : 'Billed peak this month'}</span><strong>{formatStorageBytes(storageBillingSummary?.billedPeakBytes || 0)}</strong></div>
+              <div><span>{language === 'zh' ? '最近跑批' : 'Latest batch'}</span><strong>{storageBillingSummary?.latestBatch?.runDate || (language === 'zh' ? '尚未执行' : 'Not run yet')}</strong></div>
+            </div>
+            <p className="adminStorageBillingNote">{language === 'zh' ? '月内首次测量会锁定当月单价；修改后的价格从下一个自然月开始应用。单次不足 1 积分时不扣费，也不推进已计费峰值。' : 'The first measurement locks the monthly price. Changes apply next calendar month. Amounts below one credit are neither charged nor added to the billed peak.'}</p>
+            <button className="adminProviderAction adminProviderSave" type="submit" disabled={storageBillingStatus === 'loading'}>{storageBillingStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <HardDrive size={16} />}{language === 'zh' ? '保存存储计费配置' : 'Save storage billing settings'}</button>
+            {storageBillingMessage ? <p className="adminNotice">{storageBillingMessage}</p> : null}
+          </form>
+          </>
         ) : null}
 
         {activeSection === 'credits' ? (
@@ -2578,9 +3095,64 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
             </section> : null}
             <section className="adminBlock">
               <h3><Users size={18} />{language === 'zh' ? '用户积分' : 'User credits'}</h3>
-              <div className="adminTableWrap"><table className="adminTable adminCreditTable"><thead><tr><th>{t.users}</th><th>{t.creditBalance}</th><th>{t.spentCredits}</th><th>{t.purchased}</th><th>{t.adminAdjust}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong>{user.fullName ? <span>{user.fullName}</span> : null}</div></div></td><td>{formatNumber(user.creditBalance)}</td><td>{formatNumber(user.usage?.totalGenerationCredits)}</td><td>{formatNumber(user.usage?.purchasedCredits)}</td><td><button className="tableAction" type="button" onClick={() => openUserAdjustment(user)}><Coins size={15} />{t.adminAdjust}</button></td></tr>)}</tbody></table></div>
+               <div className="adminTableWrap"><table className="adminTable adminCreditTable"><thead><tr><th>{t.users}</th><th>{language === 'zh' ? '备注名' : 'Admin note'}</th><th>{t.creditBalance}</th><th>{t.spentCredits}</th><th>{t.purchased}</th><th>{t.adminAdjust}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong>{user.fullName ? <span>{user.fullName}</span> : null}</div></div></td><td>{user.adminNote || '-'}</td><td>{formatNumber(user.creditBalance)}</td><td>{formatNumber(user.usage?.totalGenerationCredits)}</td><td>{formatNumber(user.usage?.purchasedCredits)}</td><td><button className="tableAction" type="button" onClick={() => setCreditUser(user)} disabled={user.id === profile?.id || (profile?.role === 'accountant' && user.role !== 'user')}><Coins size={15} />{t.adminAdjust}</button></td></tr>)}</tbody></table></div>
             </section>
           </div>
+        ) : null}
+
+        {activeSection === 'recharge' ? (
+          <form className="adminBlock adminRechargeForm" onSubmit={saveRecharge}>
+            <div className="adminSectionHeading">
+              <div>
+                <h3><CreditCard size={18} />{language === 'zh' ? '充值方案配置' : 'Recharge configuration'}</h3>
+                <p>{language === 'zh' ? '充值金额和赠送比例由管理员维护；支付接口暂不开放。' : 'Administrators maintain amounts and bonuses. Payment integration is not enabled yet.'}</p>
+              </div>
+              <span className="adminRechargeStatus">{language === 'zh' ? '100 积分 = 1 元' : '100 credits = ¥1'}</span>
+            </div>
+
+            <div className="adminRechargeBaseGrid">
+              <label><span>{language === 'zh' ? '新用户注册赠送' : 'New-user sign-up bonus'}</span><div className="adminRechargeUnitInput"><input type="number" min="0" step="1" value={rechargeDraft.signupBonusCredits} onChange={(event) => setRechargeDraft((current) => ({ ...current, signupBonusCredits: event.target.value }))} /><b>{language === 'zh' ? '积分' : 'credits'}</b></div></label>
+              <label className="isPricingReadonly"><span>{language === 'zh' ? '基础兑换率' : 'Base conversion rate'}</span><div className="adminRechargeUnitInput"><input value={rechargeDraft.creditsPerYuan} readOnly /><b>{language === 'zh' ? '积分/元' : 'credits/¥'}</b></div></label>
+              <div className="adminRechargePolicy"><strong>{language === 'zh' ? '发放规则' : 'Grant rule'}</strong><span>{language === 'zh' ? '只在首次注册成功时发放一次，普通登录不会重复赠送。' : 'Granted once after the first successful registration; normal sign-ins never grant it again.'}</span></div>
+            </div>
+
+            <section className="adminRechargeSection">
+              <header><div><strong>{language === 'zh' ? '固定充值套餐' : 'Fixed recharge packs'}</strong><span>{language === 'zh' ? '总积分 = 金额 × 100 + 赠送积分' : 'Total credits = amount × 100 + bonus credits'}</span></div><button className="adminProviderAction adminProviderCancel" type="button" onClick={addRechargePack}><Plus size={15} />{language === 'zh' ? '增加套餐' : 'Add pack'}</button></header>
+              <div className="adminRechargePackList">
+                <div className="adminRechargePackHeader"><span>{language === 'zh' ? '启用' : 'On'}</span><span>{language === 'zh' ? '金额（元）' : 'Amount (¥)'}</span><span>{language === 'zh' ? '赠送比例' : 'Bonus'}</span><span>{language === 'zh' ? '基础积分' : 'Base'}</span><span>{language === 'zh' ? '赠送积分' : 'Bonus credits'}</span><span>{language === 'zh' ? '到账积分' : 'Total'}</span><span /></div>
+                {rechargeDraft.packs.map((pack, index) => {
+                  const preview = rechargePackPreview(pack, rechargeDraft.creditsPerYuan);
+                  return <div className="adminRechargePackRow" key={pack.id}>
+                    <label className="adminRechargeEnabled"><input type="checkbox" checked={pack.enabled} onChange={(event) => updateRechargePack(index, { enabled: event.target.checked })} /><span>{pack.enabled ? (language === 'zh' ? '是' : 'Yes') : (language === 'zh' ? '否' : 'No')}</span></label>
+                    <input type="number" min="1" step="0.01" value={pack.amountYuan} onChange={(event) => updateRechargePack(index, { amountYuan: event.target.value })} />
+                    <div className="adminRechargeUnitInput compact"><input type="number" min="0" step="0.000001" value={pack.bonusPercent} onChange={(event) => updateRechargePack(index, { bonusPercent: event.target.value })} /><b>%</b></div>
+                    <b>{formatNumber(preview.baseCredits)}</b>
+                    <b className="bonus">+{formatNumber(preview.bonusCredits)}</b>
+                    <strong>{formatNumber(preview.credits)}</strong>
+                    <button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeRechargePack(index)} disabled={rechargeDraft.packs.length <= 1} aria-label={language === 'zh' ? '删除套餐' : 'Remove pack'}><Trash2 size={15} /></button>
+                  </div>;
+                })}
+              </div>
+            </section>
+
+            <section className="adminRechargeSection">
+              <header><div><strong>{language === 'zh' ? '自定义充值' : 'Custom recharge'}</strong><span>{language === 'zh' ? '超过自助上限时只提示联系客服和销售，不进入支付。' : 'Amounts above the self-service limit only show the contact-sales notice.'}</span></div><label className="adminRechargeSwitch"><input type="checkbox" checked={rechargeDraft.custom.enabled} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, enabled: event.target.checked } }))} /><span>{language === 'zh' ? '启用' : 'Enabled'}</span></label></header>
+              <div className="adminRechargeCustomGrid">
+                <label><span>{language === 'zh' ? '最低金额（元）' : 'Minimum amount (¥)'}</span><input type="number" min="1" step="0.01" value={rechargeDraft.custom.minimumAmountYuan} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, minimumAmountYuan: event.target.value } }))} /></label>
+                <label><span>{language === 'zh' ? '赠送起始金额（元）' : 'Bonus starts at (¥)'}</span><input type="number" min="1" step="0.01" value={rechargeDraft.custom.bonusThresholdYuan} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, bonusThresholdYuan: event.target.value } }))} /></label>
+                <label><span>{language === 'zh' ? '赠送比例' : 'Bonus percentage'}</span><div className="adminRechargeUnitInput"><input type="number" min="0" step="0.01" value={rechargeDraft.custom.bonusPercent} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, bonusPercent: event.target.value } }))} /><b>%</b></div></label>
+                <label><span>{language === 'zh' ? '自助充值上限（元）' : 'Self-service maximum (¥)'}</span><input type="number" min="1" step="0.01" value={rechargeDraft.custom.maximumSelfServiceAmountYuan} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, maximumSelfServiceAmountYuan: event.target.value } }))} /></label>
+                <label className="wide"><span>{language === 'zh' ? '超过上限提示（中文）' : 'Over-limit message (Chinese)'}</span><input value={rechargeDraft.custom.contactMessageZh} maxLength={240} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, contactMessageZh: event.target.value } }))} /></label>
+                <label className="wide"><span>{language === 'zh' ? '超过上限提示（英文）' : 'Over-limit message (English)'}</span><input value={rechargeDraft.custom.contactMessageEn} maxLength={240} onChange={(event) => setRechargeDraft((current) => ({ ...current, custom: { ...current.custom, contactMessageEn: event.target.value } }))} /></label>
+              </div>
+            </section>
+
+            <div className="adminRechargeFooter">
+              <span>{recharge.updatedAt ? `${language === 'zh' ? '最近更新' : 'Last updated'}：${new Date(recharge.updatedAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}` : (language === 'zh' ? '当前使用系统默认方案' : 'Using the system default plan')}</span>
+              <button className="adminProviderAction adminProviderSave" type="submit" disabled={rechargeStatus === 'loading'}>{rechargeStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <CreditCard size={16} />}{language === 'zh' ? '保存充值配置' : 'Save recharge settings'}</button>
+            </div>
+            {rechargeMessage ? <p className={`adminNotice ${rechargeStatus === 'error' ? 'error' : ''}`}>{rechargeMessage}</p> : null}
+          </form>
         ) : null}
 
         {activeSection === 'users' ? (
@@ -2596,19 +3168,15 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
               {status === 'loading' ? <div className="adminState"><LoaderCircle className="spinIcon" size={20} />{t.loadingUsers}</div> : null}
               {status === 'error' ? <p className="authMessage error">{message || t.adminOnly}</p> : null}
               {status !== 'loading' && !users.length && status !== 'error' ? <div className="adminState"><Users size={20} />{t.noUsers}</div> : null}
-              {users.length ? <div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{t.users}</th><th>{t.role}</th><th>{t.creditBalance}</th><th>{t.freeGeneration}</th><th>{t.totalGenerations}</th><th>{t.spentCredits}</th><th>{t.purchased}</th><th>{t.lastGeneration}</th><th>{t.createdAt}</th><th>{t.adminAdjust}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong>{user.fullName ? <span>{user.fullName}</span> : null}</div></div></td><td><span className="roleBadge">{user.role}</span></td><td>{user.creditBalance}</td><td>{user.freeUsed == null ? '-' : user.freeUsed ? t.freeUsedShort : t.freeReady}</td><td>{formatNumber(user.usage?.totalGenerations)}</td><td>{formatNumber(user.usage?.totalGenerationCredits)}</td><td>{formatNumber(user.usage?.purchasedCredits)}</td><td>{user.usage?.lastGenerationCaseId ? <button className="tableAction compactAction" type="button" onClick={() => { const caseItem = casesById?.get(user.usage.lastGenerationCaseId); if (caseItem) onOpenCase?.(caseItem); }} disabled={!casesById?.has(user.usage.lastGenerationCaseId)}><ImageIcon size={14} />#{user.usage.lastGenerationCaseId}</button> : '-'}</td><td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'}</td><td><button className="tableAction" type="button" onClick={() => openUserAdjustment(user)}><Coins size={15} />{t.adminAdjust}</button></td></tr>)}</tbody></table></div> : null}
+              {users.length ? <div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{language === 'zh' ? '登录邮箱 / 用户名' : 'Email / username'}</th><th>{language === 'zh' ? '管理员备注名' : 'Admin note'}</th><th>{t.role}</th><th>{language === 'zh' ? '状态' : 'Status'}</th><th>{t.creditBalance}</th><th>{language === 'zh' ? '最后登录' : 'Last login'}</th><th>{language === 'zh' ? '操作' : 'Actions'}</th></tr></thead><tbody>{users.map((user) => { const accountantTargetBlocked = profile?.role === 'accountant' && user.role !== 'user'; return <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong><span>{user.fullName || '-'}</span></div></div></td><td>{user.adminNote || '-'}</td><td><span className="roleBadge">{user.role}</span></td><td>{user.status}</td><td>{formatNumber(user.creditBalance)}</td><td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'}</td><td><div className="tableActionGroup"><button className="tableAction" type="button" onClick={() => setEditingUser(user)} disabled={accountantTargetBlocked}><Settings size={15} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="tableAction" type="button" onClick={() => setCreditUser(user)} disabled={user.id === profile?.id || accountantTargetBlocked}><Coins size={15} />{t.adminAdjust}</button></div></td></tr>; })}</tbody></table></div> : null}
             </section>
           </div>
         ) : null}
 
-        {activeSection === 'account' ? (
-          <section className="adminBlock adminAccountBlock">
-            <div className="adminAccountAvatar">{profile?.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <UserCircle size={34} />}</div>
-            <div><span>{language === 'zh' ? '当前管理员' : 'Current administrator'}</span><h3>{profile?.fullName || profile?.email || '-'}</h3><p>{profile?.email || '-'} · {profile?.role || 'super_admin'}</p></div>
-            <div className="adminAccountStats"><span>{language === 'zh' ? '积分余额' : 'Credit balance'}</span><strong>{formatNumber(profile?.creditBalance)}</strong></div>
-            <button className="adminProviderAction adminProviderSave" type="button" onClick={() => onOpenAccount?.()}><Settings size={16} />{language === 'zh' ? '打开账户设置' : 'Open account settings'}</button>
-          </section>
-        ) : null}
+        {activeSection === 'redemption' ? <RedemptionCodesPanel language={language} profile={profile} /> : null}
+        {activeSection === 'finance' ? <FinancialReportsPanel language={language} /> : null}
+        {activeSection === 'global-settings' ? <GlobalMenuSettingsPanel language={language} onChanged={onMenuSettingsChanged} /> : null}
+        {activeSection === 'audit' ? <AuditEventsPanel language={language} profile={profile} /> : null}
 
         {activeSection === 'promotion' ? (
           <section className="adminBlock adminPromotionBlock">
@@ -2675,6 +3243,68 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
           </form>
         ) : null}
 
+        {activeSection === 'prompt-records' ? (
+          <section className="adminBlock adminPromptLogBlock">
+            <div className="adminSectionHeading">
+              <div>
+                <h3><ReceiptText size={18} />{language === 'zh' ? '提示词记录' : 'Prompt logs'}</h3>
+                <p>{language === 'zh'
+                  ? '仅记录自由画坊的单图创作与批量 AI 修图请求；关闭后不再新增记录。'
+                  : 'Records Free Drawing Workshop single and batch-repair requests only. Disabling stops new records.'}</p>
+              </div>
+              <label className="adminPromptLoggingSwitch">
+                <input
+                  type="checkbox"
+                  checked={Boolean(promptLogging.enabled)}
+                  disabled={promptLoggingStatus === 'loading'}
+                  onChange={(event) => savePromptLogging(event.target.checked)}
+                />
+                <span>{promptLogging.enabled
+                  ? language === 'zh' ? '记录中' : 'Recording'
+                  : language === 'zh' ? '已关闭' : 'Disabled'}</span>
+              </label>
+            </div>
+            {promptLoggingMessage ? <p className={`adminNotice ${promptLoggingStatus === 'error' ? 'error' : ''}`}>{promptLoggingMessage}</p> : null}
+            <div className="adminPromptLogList">
+              {promptLoggingStatus === 'loading' && !promptLogs.length ? (
+                <div className="adminState"><LoaderCircle className="spinIcon" size={20} />{language === 'zh' ? '正在加载提示词记录…' : 'Loading prompt logs…'}</div>
+              ) : promptLogs.length ? promptLogs.map((item) => (
+                <article key={item.id}>
+                  <header>
+                    <div>
+                      <strong>{item.userEmail || item.userId || (language === 'zh' ? '未知用户' : 'Unknown user')}</strong>
+                      <span>{item.taskMode === 'batch-repair'
+                        ? language === 'zh' ? '批量 AI 修图' : 'Batch AI repair'
+                        : language === 'zh' ? '单图创作' : 'Single image'}</span>
+                    </div>
+                    <time>{item.createdAt ? new Date(item.createdAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : ''}</time>
+                  </header>
+                  <div className="adminPromptLogFacts">
+                    <span>{item.providerName || '-'}</span>
+                    <span>{item.model || '-'}</span>
+                    <span>{item.width && item.height ? `${item.width}×${item.height}` : item.size || '-'}</span>
+                    <span>{language === 'zh' ? '质量' : 'Quality'}：{item.quality || '-'}</span>
+                    <span>{language === 'zh' ? '参考图' : 'References'}：{item.referenceCount || 0}</span>
+                    {item.sourceName ? <span>{item.sourceName}</span> : null}
+                  </div>
+                  <details>
+                    <summary>{language === 'zh' ? '查看完整提示词' : 'View full prompt'}</summary>
+                    <pre>{item.effectivePrompt || item.userPrompt}</pre>
+                    {item.effectivePrompt && item.effectivePrompt !== item.userPrompt ? (
+                      <div className="adminPromptUserText">
+                        <strong>{language === 'zh' ? '用户输入' : 'User input'}</strong>
+                        <p>{item.userPrompt}</p>
+                      </div>
+                    ) : null}
+                  </details>
+                </article>
+              )) : (
+                <div className="adminState"><ReceiptText size={20} />{language === 'zh' ? '暂无提示词记录。' : 'No prompt logs yet.'}</div>
+              )}
+            </div>
+          </section>
+        ) : null}
+
         {activeSection === 'channels' ? (
           <section className="adminBlock adminProviderBlock">
             <div className="adminSectionHeading"><div><h3><KeyRound size={18} />{language === 'zh' ? '渠道配置' : 'Channel configuration'}</h3><p>{language === 'zh' ? '显示名称会成为用户看到的生图服务名称；API Key 加密保存。' : 'The display name is shown to users. API keys are encrypted at rest.'}</p></div></div>
@@ -2693,24 +3323,29 @@ function AdminPanel({ language, session, profile, casesById, onOpenAccount, onOp
               <button className="adminProviderAction adminProviderSave" type="submit"><Settings size={16} />{providerDraft.id ? (language === 'zh' ? '保存渠道' : 'Save channel') : (language === 'zh' ? '新增渠道' : 'Add channel')}</button>
               {providerDraft.id ? <button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><X size={16} />{language === 'zh' ? '取消编辑' : 'Cancel edit'}</button> : null}
             </form>
-            <div className="adminProviderList">{providers.map((provider) => <article key={provider.id}><div><strong>{provider.name}</strong><span>{provider.model} · {providerPricingLabel(provider, language)} · {provider.apiKeyMasked || (language === 'zh' ? '未配置' : 'Not configured')} {provider.isDefault ? `· ${language === 'zh' ? '默认' : 'Default'}` : ''}</span></div><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除服务' : 'Delete service'}><Trash2 size={15} /></button></article>)}</div>
+            <div className="adminProviderList">{providers.map((provider) => <article key={provider.id}><div><strong>{provider.name}</strong><span>{provider.model} · {provider.baseUrl} · {providerPricingLabel(provider, language)} · {provider.apiKeyMasked || (language === 'zh' ? '未配置' : 'Not configured')} {provider.isDefault ? `· ${language === 'zh' ? '默认' : 'Default'}` : ''}</span></div><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除服务' : 'Delete service'}><Trash2 size={15} /></button></article>)}</div>
             {providerMessage ? <p className="adminNotice">{providerMessage}</p> : null}
           </section>
         ) : null}
+
+        {activeSection === 'chat-assistant' ? <AdminChatProvider language={language} session={session} /> : null}
       </div>
 
-      {adjustment ? (
-        <div className="adminUserEditBackdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && adjustStatus !== 'loading') setAdjustment(null); }}>
-          <form className="adminAdjustForm" onSubmit={handleAdjustCredits} role="dialog" aria-modal="true" aria-label={t.editUser}>
-            <header><div><span>{t.editUser}</span><strong>{adjustment.email}</strong></div><button className="adminEditClose" type="button" onClick={() => setAdjustment(null)} disabled={adjustStatus === 'loading'} aria-label={t.cancel}><X size={18} /></button></header>
-            <label>{t.creditAmount}<input type="number" step="1" value={adjustment.amount} onChange={(event) => setAdjustment((current) => ({ ...current, amount: event.target.value }))} /></label>
-            <label>{t.reason}<input value={adjustment.reason} maxLength={240} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value }))} /></label>
-            <label className="adminPasswordField">{t.newPassword}<input type="password" autoComplete="new-password" minLength={8} maxLength={128} value={adjustment.password} onChange={(event) => setAdjustment((current) => ({ ...current, password: event.target.value }))} /><small>{t.newPasswordHint}</small></label>
-            {adjustStatus === 'error' ? <p className="authMessage error">{message}</p> : null}
-            <footer><button className="secondary" type="button" onClick={() => setAdjustment(null)} disabled={adjustStatus === 'loading'}>{t.cancel}</button><button type="submit" disabled={adjustStatus === 'loading' || (!Number(adjustment.amount) && !adjustment.password)}>{adjustStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <Coins size={16} />}{t.applyAdjustment}</button></footer>
-          </form>
-        </div>
-      ) : null}
+      <UserEditDialog
+        key={editingUser?.id || 'user-editor-empty'}
+        language={language}
+        profile={profile}
+        user={editingUser}
+        onClose={() => setEditingUser(null)}
+        onSaved={(updatedUser) => setUsers((current) => current.map((user) => user.id === updatedUser.id ? { ...user, ...updatedUser } : user))}
+      />
+      <CreditAdjustmentDialog
+        key={creditUser?.id || 'credit-editor-empty'}
+        language={language}
+        user={creditUser}
+        onClose={() => setCreditUser(null)}
+        onSaved={(updatedUser) => setUsers((current) => current.map((user) => user.id === updatedUser.id ? { ...user, ...updatedUser } : user))}
+      />
     </section>
   );
 }
@@ -2730,6 +3365,8 @@ function CreditPanel({
   const t = copy[language];
   const [packs, setPacks] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [rechargeConfig, setRechargeConfig] = useState(() => normalizeRechargeConfig());
+  const [customAmount, setCustomAmount] = useState('10');
   const [checkoutAvailable, setCheckoutAvailable] = useState(false);
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
@@ -2754,6 +3391,9 @@ function CreditPanel({
       }
 
       setPacks(catalogPayload.packs || []);
+      const nextRecharge = normalizeRechargeConfig(catalogPayload.recharge);
+      setRechargeConfig(nextRecharge);
+      setCustomAmount((current) => current || amountInputValue(nextRecharge.custom.minimumAmountCents));
       setCheckoutAvailable(Boolean(catalogPayload.checkoutAvailable));
       if (catalogPayload.user) onProfileChange(catalogPayload.user);
 
@@ -2773,9 +3413,34 @@ function CreditPanel({
     }
   }
 
+  async function refreshTransactionsAfterRedemption() {
+    if (!isAuthenticatedSession(session)) return;
+    const response = await fetch('/api/billing/history', {
+      headers: getAuthHeaders(session),
+      cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload.ok) setTransactions(payload.transactions || []);
+  }
+
   useEffect(() => {
     if (open) loadBilling();
   }, [open, isAuthenticatedSession(session)]);
+
+  const customQuote = useMemo(() => quoteCustomRecharge(
+    Math.round(Number(customAmount || 0) * 100),
+    rechargeConfig
+  ), [customAmount, rechargeConfig]);
+
+  const customRechargeMessage = customQuote.requiresContact
+    ? productText({ zh: rechargeConfig.custom.contactMessageZh, en: rechargeConfig.custom.contactMessageEn }, language)
+    : customQuote.belowMinimum
+      ? (language === 'zh'
+          ? `自定义充值不能低于 ¥${amountInputValue(rechargeConfig.custom.minimumAmountCents)}。`
+          : `Custom recharge cannot be below ¥${amountInputValue(rechargeConfig.custom.minimumAmountCents)}.`)
+      : (language === 'zh'
+          ? `预计到账 ${formatNumber(customQuote.credits)} 积分，其中赠送 ${formatNumber(customQuote.bonusCredits)} 积分。`
+          : `Estimated total: ${formatNumber(customQuote.credits)} credits, including ${formatNumber(customQuote.bonusCredits)} bonus credits.`);
 
   async function handleCheckout(product) {
     if (!isAuthenticatedSession(session)) {
@@ -2847,6 +3512,11 @@ function CreditPanel({
             <strong>{profile?.freeUsed ? t.freeUsedShort : t.freeReady}</strong>
             <em>{checkoutAvailable ? t.paymentReady : t.billingNotReady}</em>
           </div>
+          <div>
+            <span>{language === 'zh' ? '新用户赠送' : 'New-user bonus'}</span>
+            <strong>{formatNumber(rechargeConfig.signupBonusCredits)}</strong>
+            <em>{language === 'zh' ? '首次注册成功后一次性到账' : 'Granted once after first registration'}</em>
+          </div>
         </div>
 
         {!isAuthenticatedSession(session) ? (
@@ -2870,13 +3540,13 @@ function CreditPanel({
           <p className={cx('authMessage', status === 'error' && 'error')}>{message}</p>
         ) : null}
 
-        <div className="billingSections">
+        <div className="billingSections rechargeBillingSections">
           <section>
             <h3>
               <Coins size={18} />
               {t.creditPacks}
             </h3>
-            <div className="billingCards">
+            <div className="billingCards rechargePackGrid">
               {packs.map((pack) => {
                 const busy = busyProduct === `${pack.type}:${pack.id}`;
                 return (
@@ -2887,13 +3557,44 @@ function CreditPanel({
                     <div className="billingCredits">{t.packCredits(pack.credits)}</div>
                     <button type="button" disabled={busy} onClick={() => handleCheckout(pack)}>
                       {busy ? <LoaderCircle className="spinIcon" size={16} /> : <Coins size={16} />}
-                      {t.buyCredits}
+                      {checkoutAvailable ? t.buyCredits : (language === 'zh' ? '接口待接入' : 'Coming soon')}
                     </button>
                   </article>
                 );
               })}
             </div>
           </section>
+
+          {rechargeConfig.custom.enabled ? (
+            <section className="customRechargeSection">
+              <h3><CreditCard size={18} />{language === 'zh' ? '自定义充值' : 'Custom recharge'}</h3>
+              <div className="customRechargeCard">
+                <label>
+                  <span>{language === 'zh' ? '充值金额' : 'Recharge amount'}</span>
+                  <div className="customRechargeAmount"><b>¥</b><input type="number" min={rechargeConfig.custom.minimumAmountCents / 100} step="0.01" value={customAmount} onChange={(event) => setCustomAmount(event.target.value)} /></div>
+                </label>
+                <div className="customRechargeQuote">
+                  <span>{language === 'zh' ? '基础积分' : 'Base credits'}<b>{formatNumber(customQuote.baseCredits)}</b></span>
+                  <span>{language === 'zh' ? '赠送积分' : 'Bonus credits'}<b>+{formatNumber(customQuote.bonusCredits)}</b></span>
+                  <strong>{language === 'zh' ? '预计到账' : 'Estimated total'}<em>{formatNumber(customQuote.credits)}</em></strong>
+                </div>
+                <p className={customQuote.valid ? '' : 'warning'}>{customRechargeMessage}</p>
+                <button type="button" disabled={!customQuote.valid} onClick={() => setMessage(t.checkoutUnavailable)}><CreditCard size={16} />{checkoutAvailable ? t.buyCredits : (language === 'zh' ? '接口待接入' : 'Coming soon')}</button>
+              </div>
+            </section>
+          ) : null}
+
+          {isAuthenticatedSession(session) ? (
+            <section className="billingRedeemSection">
+              <RedeemCodeCard
+                language={language}
+                profile={profile}
+                onProfileChanged={onProfileChange}
+                onRedeemed={refreshTransactionsAfterRedemption}
+                className="billingRedeemCard"
+              />
+            </section>
+          ) : null}
         </div>
 
         <section className="transactionSection">
@@ -3508,6 +4209,29 @@ function PreviewDialog({
   );
 }
 
+function CooperationPage({ language }) {
+  const t = copy[language];
+  return (
+    <section className="cooperationPage" aria-labelledby="cooperation-page-title">
+      <header>
+        <span>PIC365</span>
+        <h1 id="cooperation-page-title">{t.cooperationTitle}</h1>
+      </header>
+      <div className="cooperationContactGrid">
+        <article>
+          <span>{t.cooperationTechnical}</span>
+          <div><em>{t.qq}</em><strong>2655485</strong></div>
+        </article>
+        <article>
+          <span>{t.cooperationCustomer}</span>
+          <div><em>{t.wechat}</em><strong>tzy20191024</strong></div>
+        </article>
+      </div>
+      <p className="cooperationRechargeNotice">{t.cooperationRecharge}</p>
+    </section>
+  );
+}
+
 function App() {
   useGaPageViews();
   const [siteData, setSiteData] = useState(EMPTY_SITE_DATA);
@@ -3517,7 +4241,6 @@ function App() {
   const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'en');
   const [activePage, setActivePage] = useState(() => pageFromHash(window.location.hash));
   const [workspaceMode, setWorkspaceMode] = useState('single');
-  const [workspaceModeMenuOpen, setWorkspaceModeMenuOpen] = useState(false);
   const [pendingReferenceAsset, setPendingReferenceAsset] = useState(null);
   const [pendingEcommerceProjectId, setPendingEcommerceProjectId] = useState('');
   const [query, setQuery] = useState('');
@@ -3539,6 +4262,11 @@ function App() {
   const [billingNotice, setBillingNotice] = useState('');
   const [siteNotice, setSiteNotice] = useState(null);
   const [siteNoticeDismissed, setSiteNoticeDismissed] = useState(false);
+  const [menuSettings, setMenuSettings] = useState({
+    global: { templates: true, cases: true, api: true },
+    personal: { hideEcommerce: false, hideTemplates: false, hideCases: false, hideApi: false },
+    effective: { ecommerce: true, templates: true, cases: true, api: true }
+  });
   const lastSiteNoticeVersionRef = useRef('');
   const fullCaseDataPromiseRef = useRef(null);
   const gallerySentinelRef = useRef(null);
@@ -3628,13 +4356,33 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticatedSession(session)) return;
-    if (window.location.hash === '#admin' || window.location.hash === '#assets') return;
+    if (
+      window.location.hash === '#admin'
+      || window.location.hash === '#assets'
+      || window.location.hash === '#cooperation'
+    ) return;
     setWorkspaceMode('single');
     setActivePage('create');
     if (window.location.hash !== '#create') {
       window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#create`);
     }
   }, [isAuthenticatedSession(session)]);
+
+  const refreshMenuSettings = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/menu-settings?t=${Date.now()}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'MENU_SETTINGS_FAILED');
+      setMenuSettings(payload.menu);
+      return payload.menu;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMenuSettings();
+  }, [refreshMenuSettings, session?.user?.id]);
 
   const refreshSiteNotice = useCallback(async () => {
     try {
@@ -3707,9 +4455,20 @@ function App() {
   }, [isAuthenticatedSession(session)]);
 
   useEffect(() => {
-    if (activePage !== 'admin' || profile == null || profile.isSuperAdmin) return;
+    if (activePage !== 'admin' || profile == null || profile.canAccessAdmin) return;
     handlePageChange('create');
-  }, [activePage, profile?.isSuperAdmin]);
+  }, [activePage, profile?.canAccessAdmin]);
+
+  useEffect(() => {
+    const hidden = (activePage === 'templates' && !menuSettings.effective.templates)
+      || (activePage === 'cases' && !menuSettings.effective.cases);
+    if (hidden) handlePageChange('create');
+  }, [activePage, menuSettings.effective.templates, menuSettings.effective.cases]);
+
+  useEffect(() => {
+    if (menuSettings.effective.ecommerce || workspaceMode !== 'ecommerce') return;
+    setWorkspaceMode('single');
+  }, [menuSettings.effective.ecommerce, workspaceMode]);
 
   async function loadFavorites({ silent = true } = {}) {
     if (!isAuthenticatedSession(session)) {
@@ -3765,7 +4524,10 @@ function App() {
   }, []);
 
   function handlePageChange(nextPage) {
-    const page = PAGE_HASHES[nextPage] ? nextPage : 'cases';
+    let page = PAGE_HASHES[nextPage] ? nextPage : 'create';
+    if (page === 'templates' && !menuSettings.effective.templates) page = 'create';
+    if (page === 'cases' && !menuSettings.effective.cases) page = 'create';
+    if (page === 'admin' && !profile?.canAccessAdmin) page = 'create';
     setActivePage(page);
     const nextHash = `#${hashForPage(page)}`;
     if (window.location.hash !== nextHash) {
@@ -3917,10 +4679,17 @@ function App() {
     setFavoriteRows([]);
     setAccountOpen(false);
     setBillingOpen(false);
+    setWorkspaceMode('single');
+    handlePageChange('create');
   }
 
   function handleProfileChange(nextProfile) {
     if (nextProfile) setProfile(nextProfile);
+  }
+
+  function handleMenuSettingsChanged(nextMenu) {
+    if (nextMenu) setMenuSettings(nextMenu);
+    else refreshMenuSettings();
   }
 
   function openCasePreview(caseItem) {
@@ -4048,95 +4817,75 @@ function App() {
 
   return (
     <main>
-      <header className={cx('topbar', `topbarPage-${activePage}`, workspaceModeMenuOpen && 'withWorkspaceModes')}>
+      <header className={cx('topbar', `topbarPage-${activePage}`)}>
         <a className="brand pic365Brand" href="#" aria-label="pic365">
           <img className="pic365BrandLogo" src="/images/pic365-logo.png" alt="pic365" />
         </a>
         <div className="topbarControls">
-          <nav className={cx('pageTabs', profile?.isSuperAdmin && 'withAdminTab')} aria-label={language === 'zh' ? '主页面' : 'Main pages'}>
-            <div
-              className={cx('pageTabDock', workspaceModeMenuOpen && 'modeMenuOpen')}
-              onMouseEnter={() => setWorkspaceModeMenuOpen(true)}
-              onMouseLeave={() => setWorkspaceModeMenuOpen(false)}
-              onFocusCapture={() => setWorkspaceModeMenuOpen(true)}
-              onBlurCapture={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) setWorkspaceModeMenuOpen(false);
+          <nav className={cx('pageTabs', profile?.canAccessAdmin && 'withAdminTab')} aria-label={language === 'zh' ? '主页面' : 'Main pages'}>
+            <button
+              className={cx('pageTab', activePage === 'create' && workspaceMode === 'single' && 'active')}
+              type="button"
+              onClick={() => {
+                setWorkspaceMode('single');
+                handlePageChange('create');
               }}
             >
-              <button
-                className={cx('pageTab', activePage === 'create' && 'active')}
-                type="button"
-                aria-haspopup="true"
-                aria-expanded={workspaceModeMenuOpen}
-                onClick={() => {
-                  handlePageChange('create');
-                  setWorkspaceModeMenuOpen(true);
-                }}
-              >
-                {t.navCreate}
-              </button>
-              {workspaceModeMenuOpen ? (
-                <div className="workspaceModeRail" role="tablist" aria-label={t.creationMode}>
-                  {[
-                    { id: 'single', label: t.freeMode, Icon: WandSparkles },
-                    { id: 'ecommerce', label: t.ecommerceMode, Icon: Layers3 }
-                  ].map(({ id, label, Icon }) => (
-                    <button
-                      className={workspaceMode === id ? 'active' : ''}
-                      type="button"
-                      role="tab"
-                      aria-selected={workspaceMode === id}
-                      onClick={() => {
-                        setWorkspaceMode(id);
-                        handlePageChange('create');
-                      }}
-                      key={id}
-                    >
-                      <Icon size={15} />
-                      <span>{label}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <button
-              className={cx('pageTab', activePage === 'templates' && 'active')}
-              type="button"
-              onClick={() => handlePageChange('templates')}
-            >
-              {t.navTemplates}
+              {t.freeMode}
             </button>
-            <button
-              className={cx('pageTab', activePage === 'cases' && 'active')}
+            {menuSettings.effective.ecommerce ? <button
+              className={cx('pageTab', activePage === 'create' && workspaceMode === 'ecommerce' && 'active')}
               type="button"
-              onClick={() => handlePageChange('cases')}
+              onClick={() => {
+                setWorkspaceMode('ecommerce');
+                handlePageChange('create');
+              }}
             >
-              {t.navCases}
-            </button>
+              {t.ecommerceMode}
+            </button> : null}
             <button
               className={cx('pageTab', activePage === 'assets' && 'active')}
               type="button"
               onClick={() => handlePageChange('assets')}
             >
-              <HardDrive size={14} />
               {t.navAssets}
             </button>
+            {menuSettings.effective.templates ? <button
+              className={cx('pageTab', activePage === 'templates' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('templates')}
+            >
+              {t.navTemplates}
+            </button> : null}
+            {menuSettings.effective.cases ? <button
+              className={cx('pageTab', activePage === 'cases' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('cases')}
+            >
+              {t.navCases}
+            </button> : null}
             <button
+              className={cx('pageTab', activePage === 'cooperation' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('cooperation')}
+            >
+              {t.navCooperation}
+            </button>
+            {menuSettings.effective.api ? <button
               className="pageTab apiPageTab"
               type="button"
               onClick={() => window.open(import.meta.env.VITE_API_PORTAL_URL || 'https://www.unikeyx.com', '_blank', 'noopener,noreferrer')}
               title={t.api}
             >
-              <Star size={14} fill="currentColor" aria-hidden="true" />
+              <Heart size={14} fill="currentColor" aria-hidden="true" />
               {t.api}
-            </button>
-            {profile?.isSuperAdmin ? (
+            </button> : null}
+            {profile?.canAccessAdmin ? (
               <button
                 className={cx('pageTab', 'adminPageTab', activePage === 'admin' && 'active')}
                 type="button"
                 onClick={() => handlePageChange('admin')}
               >
-                <ShieldCheck size={15} />
                 {t.adminPanel}
               </button>
             ) : null}
@@ -4175,6 +4924,7 @@ function App() {
             <button type="button" onClick={() => setSiteNoticeDismissed(true)} aria-label={language === 'zh' ? '关闭通知' : 'Dismiss notice'}><X size={17} /></button>
           </section>
         </div>
+
       ) : null}
       {favoriteMessage ? <div className="toastNotice">{favoriteMessage}</div> : null}
 
@@ -4331,7 +5081,6 @@ function App() {
           onReferenceAssetConsumed={() => setPendingReferenceAsset(null)}
           pendingEcommerceProjectId={pendingEcommerceProjectId}
           onEcommerceProjectConsumed={() => setPendingEcommerceProjectId('')}
-          suspendFloatingControls={Boolean(preview || authOpen || accountOpen || billingOpen)}
         />
       ) : null}
       {activePage === 'assets' ? (
@@ -4346,15 +5095,11 @@ function App() {
               setWorkspaceMode('single');
               handlePageChange('create');
             }}
-            onOpenEcommerceProject={(projectId) => {
-              setPendingEcommerceProjectId(projectId);
-              setWorkspaceMode('ecommerce');
-              handlePageChange('create');
-            }}
           />
         </Suspense>
       ) : null}
-      {activePage === 'admin' && profile?.isSuperAdmin ? (
+      {activePage === 'cooperation' ? <CooperationPage language={language} /> : null}
+      {activePage === 'admin' && profile?.canAccessAdmin ? (
         <AdminPanel
           language={language}
           session={session}
@@ -4363,6 +5108,7 @@ function App() {
           onOpenAccount={() => handleOpenAccount('overview')}
           onOpenCase={handleOpenCaseFromAdmin}
           onSiteNoticeUpdated={refreshSiteNotice}
+          onMenuSettingsChanged={handleMenuSettingsChanged}
         />
       ) : null}
       <PreviewDialog
@@ -4403,6 +5149,7 @@ function App() {
         initialSection={accountInitialSection}
         onClose={handleCloseAccount}
         onProfileChange={handleProfileChange}
+        onMenuChanged={handleMenuSettingsChanged}
         onOpenCase={handleOpenCaseFromAccount}
         onBilling={() => {
           setAccountOpen(false);
@@ -4421,6 +5168,17 @@ function App() {
         onAuthRequired={openAuth}
         onProfileChange={handleProfileChange}
         onOpenCase={handleOpenCaseFromAccount}
+      />
+      <ChatCompanion
+        language={language}
+        session={session}
+        profile={profile}
+        onSignIn={openAuth}
+        onBilling={() => {
+          setBillingNotice(t.creditsRequired);
+          setBillingOpen(true);
+        }}
+        onProfileChange={handleProfileChange}
       />
     </main>
   );

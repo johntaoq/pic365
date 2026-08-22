@@ -45,10 +45,31 @@ export const authClient = {
     return session;
   },
 
-  async signUp(email, password, fullName) {
+  async sendRegistrationCode(email, language = 'zh') {
+    return request('/api/auth/send-verification-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, language })
+    });
+  },
+
+  async sendPasswordResetCode(email, language = 'zh') {
+    return request('/api/auth/send-password-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, language })
+    });
+  },
+
+  async resetPassword(email, verificationCode, password) {
+    return request('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, verificationCode, password })
+    });
+  },
+
+  async signUp(email, password, fullName, verificationCode) {
     const payload = await request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, fullName })
+      body: JSON.stringify({ email, password, fullName, verificationCode })
     });
     const session = { user: payload.user };
     notify('SIGNED_IN', session);

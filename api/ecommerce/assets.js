@@ -19,11 +19,13 @@ import {
   inspectImageDataUrl,
   persistProjectAsset
 } from '../_lib/storage.js';
+import {
+  ECOMMERCE_PROJECT_ASSET_LIMIT,
+  ECOMMERCE_PROJECT_ASSET_MAX_BYTES,
+  isSupportedEcommerceAssetMimeType
+} from '../../shared/ecommerce-assets.js';
 
 const ALLOWED_TYPES = new Set(['product', 'packaging', 'logo', 'reference']);
-const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
-const MAX_ASSET_BYTES = 10 * 1024 * 1024;
-const MAX_PROJECT_ASSETS = 30;
 const ALLOWED_PURPOSES = new Set([
   '', 'identity', 'angle', 'packaging', 'brand', 'material', 'detail', 'composition', 'lighting', 'scene'
 ]);
@@ -157,7 +159,7 @@ export default async function handler(req, res) {
   if (!project) {
     return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
   }
-  if (listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true }).length >= MAX_PROJECT_ASSETS) {
+  if (listEcommerceProjectAssets(auth.user.id, projectId, { includeUnavailable: true }).length >= ECOMMERCE_PROJECT_ASSET_LIMIT) {
     return json(res, 400, { ok: false, error: 'ASSET_LIMIT_REACHED' });
   }
 
@@ -165,14 +167,14 @@ export default async function handler(req, res) {
   const purpose = ALLOWED_PURPOSES.has(body.purpose) ? body.purpose : '';
   const fileName = cleanText(body.fileName, 180) || 'product-image';
   const dataUrl = String(body.dataUrl || '');
-  if (!dataUrl || dataUrl.length > MAX_ASSET_BYTES * 1.5) {
+  if (!dataUrl || dataUrl.length > ECOMMERCE_PROJECT_ASSET_MAX_BYTES * 1.5) {
     return json(res, 400, { ok: false, error: 'ASSET_TOO_LARGE' });
   }
   const inspected = inspectImageDataUrl(dataUrl);
-  if (!inspected || !ALLOWED_MIME_TYPES.has(inspected.contentType)) {
+  if (!inspected || !isSupportedEcommerceAssetMimeType(inspected.contentType)) {
     return json(res, 400, { ok: false, error: 'INVALID_ASSET_TYPE' });
   }
-  if (inspected.byteLength <= 0 || inspected.byteLength > MAX_ASSET_BYTES) {
+  if (inspected.byteLength <= 0 || inspected.byteLength > ECOMMERCE_PROJECT_ASSET_MAX_BYTES) {
     return json(res, 400, { ok: false, error: 'ASSET_TOO_LARGE' });
   }
 

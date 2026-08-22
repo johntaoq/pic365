@@ -1,4 +1,4 @@
-import { getUserByEmail, verifyPassword } from '../_lib/local-db.js';
+import { getDb, getUserByEmail, verifyPassword } from '../_lib/local-db.js';
 import { createLoginSession, jsonUser, validEmail, validPassword } from '../_lib/local-auth.js';
 import { readJsonBody } from '../_lib/request.js';
 import { applyRateLimitHeaders, checkRateLimit } from '../_lib/rate-limit.js';
@@ -34,5 +34,6 @@ export default async function handler(req, res) {
   }
 
   createLoginSession(req, res, user.id);
+  getDb().prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(new Date().toISOString(), new Date().toISOString(), user.id);
   return json(res, 200, { ok: true, user: jsonUser(user) });
 }

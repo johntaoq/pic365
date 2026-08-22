@@ -165,6 +165,30 @@ sudo docker build \
   --file "$release_dir/deploy/pic365/Dockerfile" \
   --tag "$image" \
   "$release_dir"
+
+# Validate the live database with the new runtime before switching code. This
+# fails closed when queued/running generation work exists, so no user task is
+# interrupted by a release.
+sudo docker run --rm \
+  --env-file "$env_file" \
+  --volume "$shared_dir/data:/app/data" \
+  "$image" \
+  node scripts/inspect-production-db-safety.mjs /app/data/app.sqlite
+
+# Create an online-consistent SQLite snapshot after the image build and as
+# close as possible to the container switch. The snapshot is integrity-checked
+# before any symlink or Compose state is changed.
+database_backup="/app/data/backups/app-before-$release.sqlite"
+sudo docker run --rm \
+  --volume "$shared_dir/data:/app/data" \
+  "$image" \
+  node scripts/create-sqlite-backup.mjs /app/data/app.sqlite "$database_backup"
+sudo docker run --rm \
+  --volume "$shared_dir/data:/app/data" \
+  "$image" \
+  node scripts/check-sqlite.mjs "$database_backup"
+sudo test -s "$shared_dir/data/backups/app-before-$release.sqlite"
+
 storage_connection="$(read_env_value "$storage_env" AZURE_STORAGE_CONNECTION_STRING)"
 if [[ "$storage_connection" == 'UseDevelopmentStorage=true' || "$storage_connection" == *devstoreaccount1* ]]; then
   sudo docker pull mcr.microsoft.com/azure-storage/azurite:3.36.0

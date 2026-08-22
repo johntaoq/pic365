@@ -16,6 +16,7 @@ import {
 } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
 import { buildEcommerceSlotPrompt, selectEcommerceAssetsForSlot } from '../_lib/ecommerce-prompt.js';
+import { getEcommerceGenerationSystemPromptSettings } from '../_lib/ecommerce-generation-settings.js';
 import {
   claimEcommerceGenerationTask,
   completeEcommerceGenerationTask,
@@ -134,7 +135,7 @@ export default async function handler(req, res) {
       role: REFINEMENT_ROLES.has(input?.role) ? input.role : 'detail'
     }))
     .filter((input, index, items) => input.assetId && items.findIndex((item) => item.assetId === input.assetId) === index);
-  const quality = task.quality === 'low' ? 'low' : 'medium';
+  const quality = ['low', 'medium', 'high'].includes(task.quality) ? task.quality : 'low';
   const taskController = registerGenerationTask(auth.user.id, taskId);
   const cancellationWatcher = setInterval(() => {
     try {
@@ -257,6 +258,7 @@ export default async function handler(req, res) {
       platform,
       slot,
       assets,
+      systemPrompt: getEcommerceGenerationSystemPromptSettings().prompt,
       revisionRequest,
       targetArea,
       refinementInputs: referenceInputs,
@@ -267,7 +269,7 @@ export default async function handler(req, res) {
       ? resolveEcommerceRefinementSize(baseGeneration, slot)
       : resolveEcommerceSlotGenerationSize(slot);
     const pricing = applyImagePromotion(
-      getImageGenerationPricing({ size, quality }, providerConfig.pricingConfig),
+      getImageGenerationPricing({ size, quality, model: providerConfig.model }, providerConfig.pricingConfig),
       getImagePromotionConfig()
     );
 
@@ -354,6 +356,8 @@ export default async function handler(req, res) {
         provider_request_id: providerResult.providerRequestId,
         storage_path: storedImage.storagePath,
         output_url: storedImage.url,
+        file_size: storedImage.byteLength,
+        mime_type: storedImage.contentType,
         completed_at: new Date().toISOString()
       });
       completeCreditReservation(reservation.reservationId);

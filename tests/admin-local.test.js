@@ -8,10 +8,11 @@ const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'awesome-gpt-image-a
 process.env.APP_DB_PATH = path.join(tempDirectory, 'app.sqlite');
 process.env.SUPER_ADMIN_EMAILS = 'admin@example.com';
 
-const [localDb, { default: usersHandler }, { default: adjustHandler }, { default: metricsHandler }, { default: notificationsHandler }, { default: siteNoticeHandler }] = await Promise.all([
+const [localDb, { default: usersHandler }, { default: adjustHandler }, { default: editUserHandler }, { default: metricsHandler }, { default: notificationsHandler }, { default: siteNoticeHandler }] = await Promise.all([
   import('../api/_lib/local-db.js'),
   import('../api/admin/users.js'),
   import('../api/admin/credits/adjust.js'),
+  import('../api/admin/users/edit.js'),
   import('../api/admin/metrics.js'),
   import('../api/admin/notifications.js'),
   import('../api/site-notice.js')
@@ -178,17 +179,23 @@ test('local admin APIs authorize sessions and no longer depend on Supabase', asy
   const adjustResult = await invoke(adjustHandler, {
     method: 'POST',
     headers: adminHeaders,
-    body: { userId: member.id, amount: 25, reason: 'API test' }
+    body: {
+      userId: member.id,
+      amount: 25,
+      reasonCode: 'manual_plus',
+      details: 'API test adjustment',
+      requestId: 'admin-local-api-adjustment'
+    }
   });
   assert.equal(adjustResult.statusCode, 200);
   assert.equal(adjustResult.payload.user.creditBalance, 1055);
   const passwordHashBefore = localDb.getUserByEmail('member@example.com').password_hash;
   assert.equal(localDb.verifyPassword('testing-1234', passwordHashBefore), true);
 
-  const passwordResult = await invoke(adjustHandler, {
-    method: 'POST',
+  const passwordResult = await invoke(editUserHandler, {
+    method: 'PATCH',
     headers: adminHeaders,
-    body: { userId: member.id, amount: 0, reason: '', password: 'replacement-1234' }
+    body: { userId: member.id, password: 'replacement-1234' }
   });
   assert.equal(passwordResult.statusCode, 200);
   assert.equal(passwordResult.payload.user.creditBalance, 1055);
@@ -198,10 +205,10 @@ test('local admin APIs authorize sessions and no longer depend on Supabase', asy
   assert.equal(localDb.verifyPassword('replacement-1234', passwordHashAfter), true);
   assert.equal(localDb.getUserBySessionToken(memberSession.token), null);
 
-  const invalidPasswordResult = await invoke(adjustHandler, {
-    method: 'POST',
+  const invalidPasswordResult = await invoke(editUserHandler, {
+    method: 'PATCH',
     headers: adminHeaders,
-    body: { userId: member.id, amount: 0, password: 'short' }
+    body: { userId: member.id, password: 'short' }
   });
   assert.equal(invalidPasswordResult.statusCode, 400);
   assert.equal(invalidPasswordResult.payload.error, 'INVALID_PASSWORD');

@@ -1,4 +1,6 @@
 import { authenticateRequest } from '../_lib/local-auth.js';
+import { requirePermission } from '../_lib/governance.js';
+import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
 import { getAdminBusinessMetrics, listAdminBusinessDailyMetrics } from '../_lib/local-db.js';
 import { getGa4Traffic, isGa4Configured } from '../_lib/ga4.js';
 
@@ -171,7 +173,9 @@ export default async function handler(req, res) {
     return json(res, auth.status || 401, { ok: false, error: auth.error });
   }
 
-  if (!auth.profile?.isSuperAdmin) {
+  try {
+    requirePermission(auth.user, ADMIN_PERMISSIONS.VIEW_METRICS);
+  } catch {
     return json(res, 403, { ok: false, error: 'FORBIDDEN' });
   }
 

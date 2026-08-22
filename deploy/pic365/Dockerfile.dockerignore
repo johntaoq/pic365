@@ -6,7 +6,10 @@ src
 tests
 docs
 agents
-scripts
+scripts/*
+!scripts/create-sqlite-backup.mjs
+!scripts/check-sqlite.mjs
+!scripts/inspect-production-db-safety.mjs
 supabase
 data
 .env*

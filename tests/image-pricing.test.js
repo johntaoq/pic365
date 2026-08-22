@@ -6,6 +6,8 @@ import {
   applyImagePromotion,
   defaultImagePricingConfigForModel,
   estimateDiscountedImageCostRmb,
+  GEMINI_IMAGE_MAX_PRICING_PIXELS,
+  GEMINI_IMAGE_PRICING_TIERS,
   getImageGenerationPricing,
   IMAGE_OBSERVED_COST_RMB,
   IMAGE_PRICING_STRATEGIES,
@@ -64,6 +66,32 @@ test('auto quality is billed as medium and auto size uses the 2048x2048 basis', 
   assert.equal(pricing.billedPixels, 2048 * 2048);
   assert.equal(pricing.billedQuality, 'medium');
   assert.equal(pricing.credits, 80);
+});
+
+test('Gemini maps low, medium and high pricing to 1K, 2K and 4K', () => {
+  const config = {
+    ...defaultImagePricingConfigForModel('gemini-3.1-flash-image'),
+    qualityPricesRmb: { low: 0.1, medium: 0.15, high: 0.2 }
+  };
+  assert.equal(config.maximumPixels, 4096 * 4096);
+  assert.equal(config.maximumPixels, GEMINI_IMAGE_MAX_PRICING_PIXELS);
+  assert.equal(config.autoSizePixels, 2048 * 2048);
+
+  const cases = [
+    ['low', '1K', GEMINI_IMAGE_PRICING_TIERS.low.pixels, 10],
+    ['medium', '2K', GEMINI_IMAGE_PRICING_TIERS.medium.pixels, 15],
+    ['high', '4K', GEMINI_IMAGE_PRICING_TIERS.high.pixels, 20],
+    ['auto', '2K', GEMINI_IMAGE_PRICING_TIERS.medium.pixels, 15]
+  ];
+  for (const [quality, resolutionTier, billedPixels, credits] of cases) {
+    const pricing = getImageGenerationPricing(
+      { size: '1024x1024', quality, model: 'gemini-3.1-flash-image' },
+      config
+    );
+    assert.equal(pricing.resolutionTier, resolutionTier);
+    assert.equal(pricing.billedPixels, billedPixels);
+    assert.equal(pricing.credits, credits);
+  }
 });
 
 test('missing size and quality use the public fallback quote', () => {

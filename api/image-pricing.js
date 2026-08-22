@@ -1,4 +1,6 @@
 import { authenticateRequest } from './_lib/local-auth.js';
+import { requirePermission } from './_lib/governance.js';
+import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import { readJsonBody } from './_lib/billing.js';
 import { getImagePromotionConfig, getImageProviderConfig, updateImagePromotionConfig } from './_lib/local-db.js';
 import { normalizeImageQuality, validateImageSizeForModel } from '../shared/image-generation.js';
@@ -40,7 +42,7 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
   const quality = normalizeImageQuality(input.quality, 'low');
   const count = Math.max(1, Math.min(50, Math.round(Number(input.count) || 1)));
   const pricing = applyImagePromotion(
-    getImageGenerationPricing({ size, quality }, provider.pricingConfig),
+    getImageGenerationPricing({ size, quality, model: provider.model }, provider.pricingConfig),
     promotionConfig
   );
   return {
@@ -118,7 +120,11 @@ export default async function handler(req, res) {
 
   const auth = authenticateRequest(req);
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
-  if (!auth.profile?.isSuperAdmin) return json(res, 403, { ok: false, error: 'FORBIDDEN' });
+  try {
+    requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_PROMOTIONS);
+  } catch {
+    return json(res, 403, { ok: false, error: 'FORBIDDEN' });
+  }
 
   try {
     const body = await readJsonBody(req);

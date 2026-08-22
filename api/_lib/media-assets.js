@@ -5,21 +5,27 @@ import {
   getDb,
   getEcommerceProject,
   getUserByEmail,
+  getUserById,
   listEcommerceProjectAssets
 } from './local-db.js';
 import { processMediaAsset } from './media-processor.js';
 import {
   deleteStoredFile,
+  getStoredFileInfo,
   persistMediaAsset,
   persistStoredImage,
   readStoredFile
 } from './storage.js';
+import {
+  ECOMMERCE_PROJECT_ASSET_LIMIT,
+  ECOMMERCE_PROJECT_ASSET_MAX_BYTES,
+  isSupportedEcommerceAssetMimeType
+} from '../../shared/ecommerce-assets.js';
 
 export const MEDIA_TYPES = new Set(['image', 'video', 'audio']);
 export const ASSET_SOURCE_TYPES = new Set(['upload', 'generated', 'imported']);
 export const ASSET_VISIBILITIES = new Set(['private', 'team', 'public']);
 const ECOMMERCE_ASSET_TYPES = new Set(['product', 'packaging', 'logo', 'reference']);
-const MAX_ECOMMERCE_PROJECT_ASSETS = 30;
 
 const ALLOWED_MIME_TYPES = new Map([
   ['image/jpeg', 'image'],
@@ -95,18 +101,21 @@ function assetFileUrl(assetId, variant = 'original', download = false) {
   return `/api/assets/file?${params.toString()}`;
 }
 
-function normalizeAsset(row, { tags = [], variants = [], isSuperAdmin = false } = {}) {
+function normalizeAsset(row, { tags = [], variants = [], collections = [], isSuperAdmin = false } = {}) {
   if (!row) return null;
   const metadata = parseJson(row.metadata_json, {});
   const systemPrompt = Boolean(metadata.projectId && row.source_type === 'generated');
   const variantMap = Object.fromEntries(variants.map((variant) => [variant.type, variant]));
+  const primaryCollection = collections[0] || null;
   return {
     id: row.id,
     ownerUserId: row.owner_user_id,
     ownerName: row.owner_name || '',
-    collectionId: row.collection_id || '',
-    collectionName: row.collection_name || '',
-    collectionType: row.collection_type || '',
+    collectionId: primaryCollection?.id || '',
+    collectionName: primaryCollection?.name || '',
+    collectionType: primaryCollection?.type || '',
+    collectionIds: collections.map((collection) => collection.id),
+    collections,
     name: row.name || '',
     mediaType: row.media_type,
     sourceType: row.source_type,
@@ -119,7 +128,7 @@ function normalizeAsset(row, { tags = [], variants = [], isSuperAdmin = false } 
     checksum: row.checksum || '',
     prompt: systemPrompt && !isSuperAdmin ? '' : (row.prompt || ''),
     promptHidden: systemPrompt && !isSuperAdmin,
-    favorite: Boolean(row.favorite),
+    favorite: Boolean(row.user_favorite ?? row.favorite),
     visibility: row.visibility || 'private',
     sourceTable: row.source_table || '',
     sourceId: row.source_id || '',
@@ -139,14 +148,14 @@ function normalizeAsset(row, { tags = [], variants = [], isSuperAdmin = false } 
   };
 }
 
-function accessibleAssetSql(alias = 'a') {
+function accessibleAssetSql(alias = 'a', userIdSql = '@user_id') {
   return `(
-    ${alias}.owner_user_id = @user_id
+    ${alias}.owner_user_id = ${userIdSql}
     OR EXISTS (
       SELECT 1 FROM asset_permissions permission
       WHERE permission.asset_id = ${alias}.id
         AND permission.principal_type = 'user'
-        AND permission.principal_id = @user_id
+        AND permission.principal_id = ${userIdSql}
     )
     OR EXISTS (
       SELECT 1
@@ -154,9 +163,17 @@ function accessibleAssetSql(alias = 'a') {
       JOIN team_members member ON member.team_id = permission.principal_id
       WHERE permission.asset_id = ${alias}.id
         AND permission.principal_type = 'team'
-        AND member.user_id = @user_id
+        AND member.user_id = ${userIdSql}
     )
   )`;
+}
+
+function userFavoriteSql(assetAlias = 'a', metadataAlias = 'user_metadata') {
+  return `(CASE
+    WHEN ${metadataAlias}.user_id IS NOT NULL THEN ${metadataAlias}.favorite
+    WHEN ${assetAlias}.owner_user_id = @user_id THEN ${assetAlias}.favorite
+    ELSE 0
+  END)`;
 }
 
 function canEditAsset(db, userId, assetId) {
@@ -186,6 +203,32 @@ function canEditAsset(db, userId, assetId) {
   `).get({ user_id: userId, asset_id: assetId }));
 }
 
+function listAssetCollections(db, userId, assetIds) {
+  const collectionsByAsset = new Map();
+  if (!assetIds.length) return collectionsByAsset;
+  const placeholders = assetIds.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT membership.asset_id, collection.id, collection.name,
+      collection.collection_type, collection.color, membership.created_at
+    FROM asset_collection_memberships membership
+    JOIN asset_collections collection ON collection.id = membership.collection_id
+    WHERE membership.user_id = ? AND membership.asset_id IN (${placeholders})
+    ORDER BY membership.created_at ASC, collection.name COLLATE NOCASE ASC
+  `).all(userId, ...assetIds);
+  for (const row of rows) {
+    const values = collectionsByAsset.get(row.asset_id) || [];
+    values.push({
+      id: row.id,
+      name: row.name,
+      type: row.collection_type,
+      color: row.color,
+      createdAt: row.created_at
+    });
+    collectionsByAsset.set(row.asset_id, values);
+  }
+  return collectionsByAsset;
+}
+
 function listTagsAndVariants(db, assetIds) {
   if (!assetIds.length) return { tagsByAsset: new Map(), variantsByAsset: new Map() };
   const placeholders = assetIds.map(() => '?').join(',');
@@ -206,26 +249,90 @@ function listTagsAndVariants(db, assetIds) {
 
 export function getAccessibleAsset(userId, assetId, { includeDeleted = true, isSuperAdmin = false } = {}) {
   const db = getDb();
+  const effectiveFavorite = userFavoriteSql('a', 'user_metadata');
   const row = db.prepare(`
-    SELECT a.*, owner.full_name AS owner_name, collection.name AS collection_name,
-      collection.collection_type, @user_id AS requesting_user_id
+    SELECT a.*, owner.full_name AS owner_name, ${effectiveFavorite} AS user_favorite,
+      @user_id AS requesting_user_id
     FROM assets a
     JOIN users owner ON owner.id = a.owner_user_id
-    LEFT JOIN asset_collections collection ON collection.id = a.collection_id
+    LEFT JOIN asset_user_metadata user_metadata
+      ON user_metadata.asset_id = a.id AND user_metadata.user_id = @user_id
     WHERE a.id = @asset_id AND ${accessibleAssetSql('a')}
       ${includeDeleted ? '' : 'AND a.deleted_at IS NULL'}
   `).get({ user_id: userId, asset_id: assetId });
   if (!row) return null;
   const { tagsByAsset, variantsByAsset } = listTagsAndVariants(db, [row.id]);
+  const collectionsByAsset = listAssetCollections(db, userId, [row.id]);
   return normalizeAsset(row, {
     tags: tagsByAsset.get(row.id) || [],
     variants: variantsByAsset.get(row.id) || [],
+    collections: collectionsByAsset.get(row.id) || [],
     isSuperAdmin
   });
 }
 
+async function repairAssetStorageRow(db, row) {
+  if (!row?.id || !row.original_storage_path || Number(row.file_size || 0) > 0) return false;
+  try {
+    const info = await getStoredFileInfo(row.original_storage_path);
+    const fileSize = Math.max(0, Number(info?.byteLength || 0));
+    if (!fileSize) return false;
+    const mimeType = info?.contentType && info.contentType !== 'application/octet-stream'
+      ? info.contentType
+      : row.mime_type || 'application/octet-stream';
+    const updatedAt = now();
+    db.prepare(`
+      UPDATE assets SET file_size = ?, mime_type = ?, updated_at = ?
+      WHERE id = ? AND file_size = 0
+    `).run(fileSize, mimeType, updatedAt, row.id);
+    db.prepare(`
+      UPDATE asset_variants SET file_size = ?, mime_type = ?, updated_at = ?
+      WHERE asset_id = ? AND variant_type = 'original' AND file_size = 0
+    `).run(fileSize, mimeType, updatedAt, row.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function repairAssetFileMetadata(userId, assetId) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id, a.original_storage_path, a.file_size, a.mime_type
+    FROM assets a
+    WHERE a.id = @asset_id AND ${accessibleAssetSql('a')}
+  `).get({ user_id: userId, asset_id: assetId });
+  if (!row) return false;
+  return repairAssetStorageRow(db, row);
+}
+
+export async function repairMissingAssetFileMetadata(userId, { limit = 500, concurrency = 4 } = {}) {
+  const db = getDb();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 500, 500));
+  const rows = db.prepare(`
+    SELECT id, original_storage_path, file_size, mime_type
+    FROM assets
+    WHERE owner_user_id = ? AND file_size = 0 AND original_storage_path != ''
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(userId, safeLimit);
+  if (!rows.length) return 0;
+  let cursor = 0;
+  let repaired = 0;
+  const workers = Array.from({ length: Math.min(rows.length, Math.max(1, Math.min(Number(concurrency) || 4, 8))) }, async () => {
+    while (cursor < rows.length) {
+      const row = rows[cursor];
+      cursor += 1;
+      if (await repairAssetStorageRow(db, row)) repaired += 1;
+    }
+  });
+  await Promise.all(workers);
+  return repaired;
+}
+
 export function listAssets(userId, options = {}) {
   const db = getDb();
+  const effectiveFavorite = userFavoriteSql('a', 'user_metadata');
   const limit = Math.max(1, Math.min(Number(options.limit) || 48, 100));
   const offset = Math.max(0, Number(options.offset) || 0);
   const params = {
@@ -248,10 +355,15 @@ export function listAssets(userId, options = {}) {
   else where.push('a.deleted_at IS NULL');
   where.push('(@media_type = \'\' OR a.media_type = @media_type)');
   where.push('(@source_type = \'\' OR a.source_type = @source_type)');
-  where.push('(@favorite = 0 OR a.favorite = 1)');
+  where.push(`(@favorite = 0 OR ${effectiveFavorite} = 1)`);
   where.push('(@shared = 0 OR a.owner_user_id != @user_id)');
   where.push('(@project = 0 OR EXISTS (SELECT 1 FROM asset_project_links project_link WHERE project_link.asset_id = a.id))');
-  where.push('(@collection_id = \'\' OR a.collection_id = @collection_id)');
+  where.push(`(@collection_id = '' OR EXISTS (
+    SELECT 1 FROM asset_collection_memberships selected_collection
+    WHERE selected_collection.user_id = @user_id
+      AND selected_collection.asset_id = a.id
+      AND selected_collection.collection_id = @collection_id
+  ))`);
   where.push(`(@team_id = '' OR EXISTS (
     SELECT 1
     FROM asset_permissions selected_team_permission
@@ -262,17 +374,30 @@ export function listAssets(userId, options = {}) {
       AND selected_team_permission.principal_id = @team_id
       AND selected_team_member.user_id = @user_id
   ))`);
-  where.push('(@collection_type = \'\' OR collection.collection_type = @collection_type)');
+  where.push(`(@collection_type = '' OR EXISTS (
+    SELECT 1
+    FROM asset_collection_memberships typed_membership
+    JOIN asset_collections typed_collection ON typed_collection.id = typed_membership.collection_id
+    WHERE typed_membership.user_id = @user_id
+      AND typed_membership.asset_id = a.id
+      AND typed_collection.collection_type = @collection_type
+  ))`);
   where.push('(@tag = \'\' OR EXISTS (SELECT 1 FROM asset_tags filter_tag WHERE filter_tag.asset_id = a.id AND filter_tag.tag = @tag))');
-  where.push(`(@query = '%%' OR LOWER(a.name) LIKE @query OR LOWER(a.prompt) LIKE @query OR EXISTS (
-      SELECT 1 FROM asset_tags search_tag WHERE search_tag.asset_id = a.id AND LOWER(search_tag.tag) LIKE @query
-    ))`);
+  where.push(`(@query = '%%' OR LOWER(a.name) LIKE @query OR EXISTS (
+    SELECT 1
+    FROM asset_collection_memberships search_membership
+    JOIN asset_collections search_collection ON search_collection.id = search_membership.collection_id
+    WHERE search_membership.user_id = @user_id
+      AND search_membership.asset_id = a.id
+      AND LOWER(search_collection.name) LIKE @query
+  ))`);
   const rows = db.prepare(`
-    SELECT a.*, owner.full_name AS owner_name, collection.name AS collection_name,
-      collection.collection_type, @user_id AS requesting_user_id
+    SELECT a.*, owner.full_name AS owner_name, ${effectiveFavorite} AS user_favorite,
+      @user_id AS requesting_user_id
     FROM assets a
     JOIN users owner ON owner.id = a.owner_user_id
-    LEFT JOIN asset_collections collection ON collection.id = a.collection_id
+    LEFT JOIN asset_user_metadata user_metadata
+      ON user_metadata.asset_id = a.id AND user_metadata.user_id = @user_id
     WHERE ${where.join(' AND ')}
     ORDER BY a.favorite DESC, a.created_at DESC, a.id DESC
     LIMIT @limit OFFSET @offset
@@ -280,10 +405,12 @@ export function listAssets(userId, options = {}) {
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
   const { tagsByAsset, variantsByAsset } = listTagsAndVariants(db, pageRows.map((row) => row.id));
+  const collectionsByAsset = listAssetCollections(db, userId, pageRows.map((row) => row.id));
   return {
     assets: pageRows.map((row) => normalizeAsset(row, {
       tags: tagsByAsset.get(row.id) || [],
       variants: variantsByAsset.get(row.id) || [],
+      collections: collectionsByAsset.get(row.id) || [],
       isSuperAdmin: Boolean(options.isSuperAdmin)
     })),
     hasMore,
@@ -302,6 +429,9 @@ export function getAssetStats(userId) {
       COALESCE(SUM(CASE WHEN media_type = 'image' THEN 1 ELSE 0 END), 0) AS image_count,
       COALESCE(SUM(CASE WHEN media_type = 'video' THEN 1 ELSE 0 END), 0) AS video_count,
       COALESCE(SUM(CASE WHEN media_type = 'audio' THEN 1 ELSE 0 END), 0) AS audio_count,
+      COALESCE(SUM(CASE WHEN media_type = 'image' THEN file_size ELSE 0 END), 0) AS image_bytes,
+      COALESCE(SUM(CASE WHEN media_type = 'video' THEN file_size ELSE 0 END), 0) AS video_bytes,
+      COALESCE(SUM(CASE WHEN media_type = 'audio' THEN file_size ELSE 0 END), 0) AS audio_bytes,
       COALESCE(SUM(CASE WHEN deleted_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS deleted_count
     FROM assets WHERE owner_user_id = ?
   `).get(userId);
@@ -318,6 +448,9 @@ export function getAssetStats(userId) {
     imageCount: Number(row.image_count || 0),
     videoCount: Number(row.video_count || 0),
     audioCount: Number(row.audio_count || 0),
+    imageBytes: Number(row.image_bytes || 0),
+    videoBytes: Number(row.video_bytes || 0),
+    audioBytes: Number(row.audio_bytes || 0),
     deletedCount: Number(row.deleted_count || 0),
     accessibleCount: Number(accessible?.count || 0),
     quotaBytes
@@ -421,13 +554,12 @@ export async function createUploadedAsset(userId, { bytes, mimeType, fileName, s
   }
   db.prepare(`
     INSERT INTO assets
-      (id, owner_user_id, collection_id, name, media_type, source_type, status, original_storage_path,
+      (id, owner_user_id, name, media_type, source_type, status, original_storage_path,
        mime_type, file_size, checksum, metadata_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'processing', '', ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, 'processing', '', ?, ?, ?, ?, ?, ?)
   `).run(
     assetId,
     userId,
-    collectionId || null,
     cleanName(fileName),
     mediaType,
     ASSET_SOURCE_TYPES.has(sourceType) ? sourceType : 'upload',
@@ -438,6 +570,12 @@ export async function createUploadedAsset(userId, { bytes, mimeType, fileName, s
     createdAt,
     createdAt
   );
+  if (collectionId) {
+    db.prepare(`
+      INSERT OR IGNORE INTO asset_collection_memberships (user_id, asset_id, collection_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(userId, assetId, collectionId, createdAt);
+  }
   const jobId = randomUUID();
   db.prepare(`
     INSERT INTO asset_processing_jobs (id, asset_id, job_type, status, progress, created_at, updated_at)
@@ -601,13 +739,16 @@ export function replaceAssetTags(userId, assetId, tags) {
 
 export function updateAsset(userId, assetId, changes = {}) {
   const db = getDb();
-  const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId);
+  const asset = db.prepare(`
+    SELECT asset.* FROM assets asset
+    WHERE asset.id = @asset_id AND ${accessibleAssetSql('asset')}
+  `).get({ user_id: userId, asset_id: assetId });
+  if (!asset) return null;
   const owned = asset?.owner_user_id === userId;
   const editable = asset && canEditAsset(db, userId, assetId);
-  if (!editable) return null;
   const updates = [];
   const values = [];
-  if (changes.name !== undefined) {
+  if (editable && changes.name !== undefined) {
     updates.push('name = ?');
     values.push(cleanName(changes.name, asset.name));
   }
@@ -619,13 +760,25 @@ export function updateAsset(userId, assetId, changes = {}) {
     updates.push('visibility = ?');
     values.push(changes.visibility);
   }
-  if (owned && changes.collectionId !== undefined) {
-    const collectionId = String(changes.collectionId || '');
-    if (collectionId && !db.prepare('SELECT id FROM asset_collections WHERE id = ? AND owner_user_id = ?').get(collectionId, userId)) {
+  const personalMetadata = db.prepare(`
+    SELECT favorite FROM asset_user_metadata WHERE user_id = ? AND asset_id = ?
+  `).get(userId, assetId);
+  const requestedCollectionIds = changes.collectionIds !== undefined
+    ? [...new Set((Array.isArray(changes.collectionIds) ? changes.collectionIds : []).map((value) => String(value || '').trim()).filter(Boolean))]
+    : changes.collectionId !== undefined
+      ? (String(changes.collectionId || '').trim() ? [String(changes.collectionId).trim()] : [])
+      : null;
+  if (requestedCollectionIds && requestedCollectionIds.length > 100) {
+    throw Object.assign(new Error('INVALID_COLLECTION_SELECTION'), { code: 'INVALID_COLLECTION_SELECTION' });
+  }
+  if (requestedCollectionIds?.length) {
+    const placeholders = requestedCollectionIds.map(() => '?').join(',');
+    const validCollections = db.prepare(`
+      SELECT id FROM asset_collections WHERE owner_user_id = ? AND id IN (${placeholders})
+    `).all(userId, ...requestedCollectionIds);
+    if (validCollections.length !== requestedCollectionIds.length) {
       throw Object.assign(new Error('COLLECTION_NOT_FOUND'), { code: 'COLLECTION_NOT_FOUND' });
     }
-    updates.push('collection_id = ?');
-    values.push(collectionId || null);
   }
   if (owned && changes.deleted === true) {
     updates.push('deleted_at = ?');
@@ -633,20 +786,127 @@ export function updateAsset(userId, assetId, changes = {}) {
   } else if (owned && changes.deleted === false) {
     updates.push('deleted_at = NULL');
   }
-  if (updates.length) {
-    updates.push('updated_at = ?');
-    values.push(now());
-    db.prepare(`UPDATE assets SET ${updates.join(', ')} WHERE id = ?`).run(...values, assetId);
+  const metadataRequested = changes.favorite !== undefined;
+  const updatedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (updates.length) {
+      updates.push('updated_at = ?');
+      values.push(updatedAt);
+      db.prepare(`UPDATE assets SET ${updates.join(', ')} WHERE id = ?`).run(...values, assetId);
+    }
+    if (metadataRequested) {
+      const favorite = changes.favorite !== undefined
+        ? (changes.favorite ? 1 : 0)
+        : Number(personalMetadata?.favorite ?? (owned ? asset.favorite : 0));
+      db.prepare(`
+        INSERT INTO asset_user_metadata
+          (user_id, asset_id, favorite, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, asset_id) DO UPDATE SET
+          favorite = excluded.favorite,
+          updated_at = excluded.updated_at
+      `).run(userId, assetId, favorite, updatedAt, updatedAt);
+    }
+    if (requestedCollectionIds !== null) {
+      db.prepare('DELETE FROM asset_collection_memberships WHERE user_id = ? AND asset_id = ?').run(userId, assetId);
+      const insertMembership = db.prepare(`
+        INSERT INTO asset_collection_memberships (user_id, asset_id, collection_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      for (const collectionId of requestedCollectionIds) {
+        insertMembership.run(userId, assetId, collectionId, updatedAt);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   }
-  if (changes.tags !== undefined) replaceAssetTags(userId, assetId, changes.tags);
+  if (editable && changes.tags !== undefined) replaceAssetTags(userId, assetId, changes.tags);
   return getAccessibleAsset(userId, assetId, { includeDeleted: true });
+}
+
+export function assignAssetsToCollection(userId, assetIds = [], collectionId = '') {
+  const db = getDb();
+  const normalizedIds = [...new Set((Array.isArray(assetIds) ? assetIds : []).map((value) => String(value || '').trim()).filter(Boolean))];
+  if (!normalizedIds.length || normalizedIds.length > 100) {
+    throw Object.assign(new Error('INVALID_ASSET_SELECTION'), { code: 'INVALID_ASSET_SELECTION' });
+  }
+  const collection = db.prepare(`
+    SELECT id FROM asset_collections
+    WHERE id = ? AND owner_user_id = ?
+  `).get(String(collectionId || ''), userId);
+  if (!collection) throw Object.assign(new Error('COLLECTION_NOT_FOUND'), { code: 'COLLECTION_NOT_FOUND' });
+
+  const accessibleAssets = normalizedIds.map((assetId) => db.prepare(`
+    SELECT asset.* FROM assets asset
+    WHERE asset.id = @asset_id AND asset.deleted_at IS NULL AND ${accessibleAssetSql('asset')}
+  `).get({ user_id: userId, asset_id: assetId }));
+  if (accessibleAssets.some((asset) => !asset)) {
+    throw Object.assign(new Error('ASSET_NOT_FOUND'), { code: 'ASSET_NOT_FOUND' });
+  }
+
+  const updatedAt = now();
+  const insertMembership = db.prepare(`
+    INSERT OR IGNORE INTO asset_collection_memberships (user_id, asset_id, collection_id, created_at)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const asset of accessibleAssets) {
+      insertMembership.run(userId, asset.id, collection.id, updatedAt);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return normalizedIds.map((assetId) => getAccessibleAsset(userId, assetId, { includeDeleted: false }));
+}
+
+// Compatibility for older callers; folders and former brand kits now share
+// the same category behavior.
+export function assignAssetsToBrand(userId, assetIds = [], collectionId = '') {
+  return assignAssetsToCollection(userId, assetIds, collectionId);
+}
+
+export function moveAssetsToTrash(userId, assetIds = []) {
+  const db = getDb();
+  const normalizedIds = [...new Set((Array.isArray(assetIds) ? assetIds : []).map((value) => String(value || '').trim()).filter(Boolean))];
+  if (!normalizedIds.length || normalizedIds.length > 100) {
+    throw Object.assign(new Error('INVALID_ASSET_SELECTION'), { code: 'INVALID_ASSET_SELECTION' });
+  }
+  const rows = normalizedIds.map((assetId) => db.prepare('SELECT id, owner_user_id, deleted_at FROM assets WHERE id = ?').get(assetId));
+  if (rows.some((asset) => !asset)) throw Object.assign(new Error('ASSET_NOT_FOUND'), { code: 'ASSET_NOT_FOUND' });
+  if (rows.some((asset) => asset.owner_user_id !== userId)) {
+    throw Object.assign(new Error('ASSET_NOT_OWNED'), { code: 'ASSET_NOT_OWNED' });
+  }
+
+  const deletedAt = now();
+  const update = db.prepare('UPDATE assets SET deleted_at = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const asset of rows) update.run(deletedAt, deletedAt, asset.id, userId);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return { deleted: rows.length, assetIds: normalizedIds, deletedAt };
 }
 
 export function listCollections(userId) {
   return getDb().prepare(`
     SELECT collection.*, COUNT(asset.id) AS asset_count
     FROM asset_collections collection
-    LEFT JOIN assets asset ON asset.collection_id = collection.id AND asset.deleted_at IS NULL
+    LEFT JOIN asset_collection_memberships membership
+      ON membership.collection_id = collection.id AND membership.user_id = collection.owner_user_id
+    LEFT JOIN assets asset ON asset.id = membership.asset_id
+      AND asset.deleted_at IS NULL
+      AND ${accessibleAssetSql('asset', 'collection.owner_user_id')}
     WHERE collection.owner_user_id = ?
     GROUP BY collection.id
     ORDER BY collection.collection_type DESC, collection.name COLLATE NOCASE
@@ -689,7 +949,7 @@ export function deleteCollection(userId, collectionId) {
   if (!collection) return false;
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.prepare('UPDATE assets SET collection_id = NULL, updated_at = ? WHERE collection_id = ? AND owner_user_id = ?').run(now(), collectionId, userId);
+    db.prepare('DELETE FROM asset_collection_memberships WHERE collection_id = ? AND user_id = ?').run(collectionId, userId);
     db.prepare('DELETE FROM asset_collections WHERE id = ? AND owner_user_id = ?').run(collectionId, userId);
     db.exec('COMMIT');
     return true;
@@ -706,10 +966,16 @@ export function linkAssetToProject(userId, assetId, projectId, { role = '', asse
   if (!asset) throw Object.assign(new Error('ASSET_NOT_FOUND'), { code: 'ASSET_NOT_FOUND' });
   if (!project) throw Object.assign(new Error('PROJECT_NOT_FOUND'), { code: 'PROJECT_NOT_FOUND' });
   if (asset.mediaType !== 'image') throw Object.assign(new Error('IMAGE_ASSET_REQUIRED'), { code: 'IMAGE_ASSET_REQUIRED' });
+  if (!isSupportedEcommerceAssetMimeType(asset.mimeType)) {
+    throw Object.assign(new Error('INVALID_ASSET_TYPE'), { code: 'INVALID_ASSET_TYPE' });
+  }
+  if (Number(asset.fileSize || 0) > ECOMMERCE_PROJECT_ASSET_MAX_BYTES) {
+    throw Object.assign(new Error('ASSET_TOO_LARGE'), { code: 'ASSET_TOO_LARGE' });
+  }
   const normalizedAssetType = ECOMMERCE_ASSET_TYPES.has(assetType) ? assetType : 'reference';
   const normalizedRole = String(role || normalizedAssetType).slice(0, 40);
   const existing = db.prepare('SELECT id, asset_type FROM ecommerce_project_assets WHERE project_id = ? AND user_id = ? AND media_asset_id = ?').get(projectId, userId, assetId);
-  if (!existing && listEcommerceProjectAssets(userId, projectId, { includeUnavailable: true }).length >= MAX_ECOMMERCE_PROJECT_ASSETS) {
+  if (!existing && listEcommerceProjectAssets(userId, projectId, { includeUnavailable: true }).length >= ECOMMERCE_PROJECT_ASSET_LIMIT) {
     throw Object.assign(new Error('ASSET_LIMIT_REACHED'), { code: 'ASSET_LIMIT_REACHED' });
   }
   let projectAssetId = existing?.id || '';
@@ -854,7 +1120,12 @@ export function addTeamMember(userId, teamId, email, role = 'member') {
   const team = db.prepare('SELECT * FROM teams WHERE id = ? AND owner_user_id = ?').get(teamId, userId);
   if (!team) throw Object.assign(new Error('TEAM_NOT_FOUND'), { code: 'TEAM_NOT_FOUND' });
   const member = getUserByEmail(email);
-  if (!member) throw Object.assign(new Error('USER_NOT_FOUND'), { code: 'USER_NOT_FOUND' });
+  if (!member || String(member.status || 'active') !== 'active') {
+    throw Object.assign(new Error('USER_NOT_FOUND'), { code: 'USER_NOT_FOUND' });
+  }
+  if (member.id === team.owner_user_id) {
+    throw Object.assign(new Error('TEAM_OWNER_REQUIRED'), { code: 'TEAM_OWNER_REQUIRED' });
+  }
   db.prepare(`
     INSERT INTO team_members (team_id, user_id, role, created_at)
     VALUES (?, ?, ?, ?)
@@ -905,8 +1176,13 @@ export function shareAsset(userId, assetId, { principalType, principalId, email,
   let resolvedType = principalType === 'team' ? 'team' : 'user';
   let resolvedId = String(principalId || '');
   if (resolvedType === 'user') {
-    const target = email ? getUserByEmail(email) : db.prepare('SELECT * FROM users WHERE id = ?').get(resolvedId);
-    if (!target) throw Object.assign(new Error('USER_NOT_FOUND'), { code: 'USER_NOT_FOUND' });
+    const target = email ? getUserByEmail(email) : getUserById(resolvedId);
+    if (!target || String(target.status || 'active') !== 'active') {
+      throw Object.assign(new Error('USER_NOT_FOUND'), { code: 'USER_NOT_FOUND' });
+    }
+    if (target.id === userId) {
+      throw Object.assign(new Error('CANNOT_SHARE_WITH_SELF'), { code: 'CANNOT_SHARE_WITH_SELF' });
+    }
     resolvedId = target.id;
   } else {
     const team = db.prepare(`
@@ -921,7 +1197,14 @@ export function shareAsset(userId, assetId, { principalType, principalId, email,
     ON CONFLICT(asset_id, principal_type, principal_id) DO UPDATE SET permission = excluded.permission
   `).run(assetId, resolvedType, resolvedId, permission === 'edit' ? 'edit' : 'view', now());
   db.prepare("UPDATE assets SET visibility = 'team', updated_at = ? WHERE id = ?").run(now(), assetId);
-  return { assetId, principalType: resolvedType, principalId: resolvedId, permission: permission === 'edit' ? 'edit' : 'view' };
+  const targetUser = resolvedType === 'user' ? getUserById(resolvedId) : null;
+  return {
+    assetId,
+    principalType: resolvedType,
+    principalId: resolvedId,
+    permission: permission === 'edit' ? 'edit' : 'view',
+    target: targetUser ? { userId: targetUser.id, email: targetUser.email, fullName: targetUser.fullName || '' } : null
+  };
 }
 
 export function listAssetPermissions(userId, assetId) {

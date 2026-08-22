@@ -1,5 +1,5 @@
 import { authenticateRequest } from '../_lib/local-auth.js';
-import { getAccessibleAsset, permanentlyDeleteAsset, updateAsset } from '../_lib/media-assets.js';
+import { getAccessibleAsset, permanentlyDeleteAsset, repairAssetFileMetadata, updateAsset } from '../_lib/media-assets.js';
 import { readJsonBody } from '../_lib/request.js';
 
 function json(res, status, payload) {
@@ -15,6 +15,7 @@ export default async function handler(req, res) {
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
   const assetId = String(req.query?.id || '').trim();
   if (req.method === 'GET') {
+    await repairAssetFileMetadata(auth.user.id, assetId);
     const asset = getAccessibleAsset(auth.user.id, assetId, { includeDeleted: true, isSuperAdmin: auth.user.isSuperAdmin });
     return asset ? json(res, 200, { ok: true, asset }) : json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
   }

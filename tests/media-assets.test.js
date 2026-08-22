@@ -54,12 +54,51 @@ test('unified asset library uploads image variants and supports organization lif
   assert.deepEqual(updated.tags, ['campaign']);
   assert.equal(media.listAssets(owner.id, { favorite: true }).assets.length, 1);
   assert.equal(media.listAssets(owner.id, { collectionId: collection.id }).assets.some((item) => item.id === asset.id), true);
+  assert.equal(media.listAssets(owner.id, { query: 'launch hero' }).assets.some((item) => item.id === asset.id), true);
+  assert.equal(media.listAssets(owner.id, { query: 'launch brand' }).assets.some((item) => item.id === asset.id), true);
+  assert.equal(media.listAssets(owner.id, { query: 'campaign' }).assets.some((item) => item.id === asset.id), false);
 
   const deleted = media.updateAsset(owner.id, asset.id, { deleted: true });
   assert.ok(deleted.deletedAt);
   assert.equal(media.listAssets(owner.id).assets.length, 0);
   assert.equal(media.listAssets(owner.id, { deleted: true }).assets.length, 1);
   assert.equal(media.updateAsset(owner.id, asset.id, { deleted: false }).deletedAt, '');
+});
+
+test('one asset can belong to multiple folders and brand kits without replacement', async () => {
+  const bytes = await sharp({ create: { width: 720, height: 480, channels: 3, background: '#22c55e' } }).png().toBuffer();
+  const campaignFolder = media.createCollection(owner.id, { name: 'Campaign 2026', type: 'folder' });
+  const productFolder = media.createCollection(owner.id, { name: 'Product originals', type: 'folder' });
+  const primaryBrand = media.createCollection(owner.id, { name: 'Primary brand', type: 'brand' });
+  const seasonalBrand = media.createCollection(owner.id, { name: 'Seasonal brand', type: 'brand' });
+  const asset = await media.createUploadedAsset(owner.id, {
+    bytes,
+    mimeType: 'image/png',
+    fileName: 'multi-collection.png'
+  });
+
+  const organized = media.updateAsset(owner.id, asset.id, {
+    collectionIds: [campaignFolder.id, productFolder.id, primaryBrand.id]
+  });
+  assert.deepEqual(new Set(organized.collectionIds), new Set([campaignFolder.id, productFolder.id, primaryBrand.id]));
+  for (const collectionId of organized.collectionIds) {
+    assert.equal(media.listAssets(owner.id, { collectionId }).assets.some((item) => item.id === asset.id), true);
+  }
+
+  const [afterBatchBrand] = media.assignAssetsToCollection(owner.id, [asset.id], seasonalBrand.id);
+  assert.deepEqual(
+    new Set(afterBatchBrand.collectionIds),
+    new Set([campaignFolder.id, productFolder.id, primaryBrand.id, seasonalBrand.id])
+  );
+  assert.equal(media.listCollections(owner.id).find((item) => item.id === seasonalBrand.id).assetCount, 1);
+
+  assert.equal(media.deleteCollection(owner.id, campaignFolder.id), true);
+  const afterFolderDelete = media.getAccessibleAsset(owner.id, asset.id);
+  assert.equal(afterFolderDelete.collectionIds.includes(campaignFolder.id), false);
+  assert.deepEqual(
+    new Set(afterFolderDelete.collectionIds),
+    new Set([productFolder.id, primaryBrand.id, seasonalBrand.id])
+  );
 });
 
 test('projects reference the same asset file without copying it', async () => {
@@ -78,6 +117,62 @@ test('projects reference the same asset file without copying it', async () => {
   assert.equal(row.media_asset_id, asset.id);
   assert.equal(row.storage_path, row.original_storage_path);
   assert.equal(db.getDb().prepare('SELECT COUNT(*) count FROM asset_project_links WHERE asset_id = ? AND project_id = ?').get(asset.id, project.id).count >= 1, true);
+});
+
+test('ecommerce projects accept at most nine images and reject assets over 5 MB', async () => {
+  const bytes = await sharp({ create: { width: 48, height: 48, channels: 3, background: '#0ea5e9' } }).png().toBuffer();
+  const project = db.createEcommerceProject(owner.id, {
+    projectName: 'Nine-image project', platformId: 'taobao', industryId: 'digital', productName: 'Camera', brandName: '',
+    coreUser: '', coreScenario: '', sellingPoints: [], specifications: '', prohibitedContent: '', aiBriefOriginals: {}, identitySpec: {},
+    templateId: '', visualStyleId: 'clean-commercial', imageProviderId: '', selectedSlots: []
+  });
+  const assets = [];
+  for (let index = 0; index < 10; index += 1) {
+    assets.push(await media.createUploadedAsset(owner.id, {
+      bytes,
+      mimeType: 'image/png',
+      fileName: `project-limit-${index}.png`
+    }));
+  }
+  for (const asset of assets.slice(0, 9)) {
+    media.linkAssetToProject(owner.id, asset.id, project.id, { assetType: 'product', role: 'product' });
+  }
+  assert.equal(db.listEcommerceProjectAssets(owner.id, project.id, { includeUnavailable: true }).length, 9);
+  assert.throws(
+    () => media.linkAssetToProject(owner.id, assets[9].id, project.id, { assetType: 'product', role: 'product' }),
+    (error) => error?.code === 'ASSET_LIMIT_REACHED'
+  );
+
+  const oversizedProject = db.createEcommerceProject(owner.id, {
+    projectName: 'Oversized-image project', platformId: 'taobao', industryId: 'digital', productName: 'Camera', brandName: '',
+    coreUser: '', coreScenario: '', sellingPoints: [], specifications: '', prohibitedContent: '', aiBriefOriginals: {}, identitySpec: {},
+    templateId: '', visualStyleId: 'clean-commercial', imageProviderId: '', selectedSlots: []
+  });
+  db.getDb().prepare('UPDATE assets SET file_size = ? WHERE id = ?').run(5 * 1024 * 1024 + 1, assets[9].id);
+  assert.throws(
+    () => media.linkAssetToProject(owner.id, assets[9].id, oversizedProject.id, { assetType: 'product', role: 'product' }),
+    (error) => error?.code === 'ASSET_TOO_LARGE'
+  );
+});
+
+test('deleting folders and brand kits preserves assets and returns them to unsorted', async () => {
+  const bytes = await sharp({ create: { width: 300, height: 200, channels: 3, background: '#14b8a6' } }).png().toBuffer();
+  for (const type of ['folder', 'brand']) {
+    const collection = media.createCollection(owner.id, { name: `Delete ${type}`, type });
+    const asset = await media.createUploadedAsset(owner.id, {
+      bytes,
+      mimeType: 'image/png',
+      fileName: `delete-${type}.png`,
+      collectionId: collection.id
+    });
+    assert.equal(media.getAccessibleAsset(owner.id, asset.id).collectionId, collection.id);
+    assert.equal(media.deleteCollection(owner.id, collection.id), true);
+    assert.equal(media.listCollections(owner.id).some((item) => item.id === collection.id), false);
+    const preserved = media.getAccessibleAsset(owner.id, asset.id);
+    assert.ok(preserved);
+    assert.equal(preserved.collectionId, '');
+    assert.equal(preserved.collectionName, '');
+  }
 });
 
 test('project asset roles update in place and unlinking preserves the library asset', () => {
@@ -122,6 +217,143 @@ test('team sharing exposes the same asset to registered members', () => {
   assert.equal(shared[0].shared, true);
   assert.deepEqual(media.listAssets(member.id, { teamId: team.id }).assets.map((item) => item.id), [asset.id]);
   assert.deepEqual(media.listAssets(owner.id, { teamId: team.id }).assets.map((item) => item.id), [asset.id]);
+});
+
+test('shared assets can be favorited and organized per user without changing the owner library', async () => {
+  const bytes = await sharp({ create: { width: 640, height: 640, channels: 3, background: '#fb7185' } }).png().toBuffer();
+  const asset = await media.createUploadedAsset(owner.id, {
+    bytes,
+    mimeType: 'image/png',
+    fileName: 'personal-organization.png'
+  });
+  const ownerFavorite = asset.favorite;
+  const ownerCollectionId = asset.collectionId;
+  const team = media.createTeam(owner.id, 'Personal organization team');
+  media.addTeamMember(owner.id, team.id, member.email, 'member');
+  media.shareAsset(owner.id, asset.id, { principalType: 'team', principalId: team.id, permission: 'view' });
+  const memberCollection = media.createCollection(member.id, { name: 'Member references', type: 'brand' });
+
+  const organized = media.updateAsset(member.id, asset.id, {
+    favorite: true,
+    collectionId: memberCollection.id
+  });
+  assert.equal(organized.favorite, true);
+  assert.equal(organized.collectionId, memberCollection.id);
+  assert.equal(media.listAssets(member.id, { favorite: true }).assets.some((item) => item.id === asset.id), true);
+  assert.equal(media.listAssets(member.id, { collectionId: memberCollection.id }).assets.some((item) => item.id === asset.id), true);
+  assert.equal(media.listAssets(member.id, { query: 'member references' }).assets.some((item) => item.id === asset.id), true);
+  assert.equal(media.listCollections(member.id).find((item) => item.id === memberCollection.id).assetCount, 1);
+
+  const ownerView = media.getAccessibleAsset(owner.id, asset.id);
+  assert.equal(ownerView.favorite, ownerFavorite);
+  assert.equal(ownerView.collectionId, ownerCollectionId);
+  assert.equal(media.listAssets(owner.id, { query: 'member references' }).assets.some((item) => item.id === asset.id), false);
+
+  const project = db.createEcommerceProject(member.id, {
+    projectName: 'Shared library project', platformId: 'taobao', industryId: 'digital', productName: 'Shared camera', brandName: '',
+    coreUser: '', coreScenario: '', sellingPoints: [], specifications: '', prohibitedContent: '', aiBriefOriginals: {}, identitySpec: {},
+    templateId: '', visualStyleId: 'clean-commercial', imageProviderId: '', selectedSlots: []
+  });
+  const linked = media.linkAssetToProject(member.id, asset.id, project.id, { assetType: 'reference', role: 'reference' });
+  assert.equal(linked.asset.id, asset.id);
+});
+
+test('multiple accessible assets can be assigned to any personal category atomically', async () => {
+  const bytes = await sharp({ create: { width: 480, height: 360, channels: 3, background: '#a855f7' } }).png().toBuffer();
+  const sharedAsset = await media.createUploadedAsset(owner.id, { bytes, mimeType: 'image/png', fileName: 'bulk-shared.png' });
+  const personalAsset = await media.createUploadedAsset(member.id, { bytes, mimeType: 'image/png', fileName: 'bulk-personal.png' });
+  const team = media.createTeam(owner.id, 'Bulk brand team');
+  media.addTeamMember(owner.id, team.id, member.email, 'member');
+  media.shareAsset(owner.id, sharedAsset.id, { principalType: 'team', principalId: team.id, permission: 'view' });
+  const brand = media.createCollection(member.id, { name: 'Bulk brand', type: 'brand' });
+  const folder = media.createCollection(member.id, { name: 'Campaign category', type: 'folder' });
+
+  const assignedToFolder = media.assignAssetsToCollection(member.id, [sharedAsset.id, personalAsset.id], folder.id);
+  assert.deepEqual(assignedToFolder.map((asset) => asset.id).sort(), [sharedAsset.id, personalAsset.id].sort());
+  assert.deepEqual(media.listAssets(member.id, { collectionId: folder.id }).assets.map((asset) => asset.id).sort(), [sharedAsset.id, personalAsset.id].sort());
+
+  const updated = media.assignAssetsToCollection(member.id, [sharedAsset.id, personalAsset.id], brand.id);
+  assert.deepEqual(updated.map((asset) => asset.id).sort(), [sharedAsset.id, personalAsset.id].sort());
+  assert.deepEqual(media.listAssets(member.id, { collectionId: brand.id }).assets.map((asset) => asset.id).sort(), [sharedAsset.id, personalAsset.id].sort());
+  assert.deepEqual(new Set(updated[0].collectionIds), new Set([folder.id, brand.id]));
+  assert.equal(media.getAccessibleAsset(owner.id, sharedAsset.id).collectionId, '');
+});
+
+test('bulk deletion moves owned assets to trash and rejects mixed shared selections atomically', async () => {
+  const bytes = await sharp({ create: { width: 360, height: 360, channels: 3, background: '#e11d48' } }).png().toBuffer();
+  const firstOwned = await media.createUploadedAsset(member.id, { bytes, mimeType: 'image/png', fileName: 'bulk-delete-one.png' });
+  const secondOwned = await media.createUploadedAsset(member.id, { bytes, mimeType: 'image/png', fileName: 'bulk-delete-two.png' });
+  const deleted = media.moveAssetsToTrash(member.id, [firstOwned.id, secondOwned.id]);
+  assert.equal(deleted.deleted, 2);
+  assert.ok(media.getAccessibleAsset(member.id, firstOwned.id, { includeDeleted: true }).deletedAt);
+  assert.ok(media.getAccessibleAsset(member.id, secondOwned.id, { includeDeleted: true }).deletedAt);
+
+  const personalAsset = await media.createUploadedAsset(member.id, { bytes, mimeType: 'image/png', fileName: 'bulk-delete-personal.png' });
+  const sharedAsset = await media.createUploadedAsset(owner.id, { bytes, mimeType: 'image/png', fileName: 'bulk-delete-shared.png' });
+  const team = media.createTeam(owner.id, 'Bulk delete team');
+  media.addTeamMember(owner.id, team.id, member.email, 'member');
+  media.shareAsset(owner.id, sharedAsset.id, { principalType: 'team', principalId: team.id, permission: 'view' });
+  assert.throws(
+    () => media.moveAssetsToTrash(member.id, [personalAsset.id, sharedAsset.id]),
+    (error) => error?.code === 'ASSET_NOT_OWNED'
+  );
+  assert.equal(media.getAccessibleAsset(member.id, personalAsset.id, { includeDeleted: true }).deletedAt, '');
+  assert.equal(media.getAccessibleAsset(owner.id, sharedAsset.id, { includeDeleted: true }).deletedAt, '');
+});
+
+test('team-wide sharing automatically covers members added after the asset is shared', () => {
+  const asset = media.listAssets(owner.id, { mediaType: 'image' }).assets[0];
+  const lateMember = db.createUser({ email: 'late-team-member@example.com', password: 'testing-1234', fullName: 'Late Member' });
+  const team = media.createTeam(owner.id, 'Growing team');
+  media.shareAsset(owner.id, asset.id, { principalType: 'team', principalId: team.id, permission: 'view' });
+  assert.equal(media.getAccessibleAsset(lateMember.id, asset.id, { includeDeleted: false }), null);
+
+  media.addTeamMember(owner.id, team.id, lateMember.email, 'member');
+  assert.equal(media.getAccessibleAsset(lateMember.id, asset.id, { includeDeleted: false })?.id, asset.id);
+  assert.equal(media.listAssets(lateMember.id, { teamId: team.id }).assets.some((item) => item.id === asset.id), true);
+});
+
+test('team members and direct asset shares require registered users', () => {
+  const asset = media.listAssets(owner.id, { mediaType: 'image' }).assets[0];
+  const team = media.createTeam(owner.id, 'Verified members');
+
+  assert.throws(
+    () => media.addTeamMember(owner.id, team.id, 'missing-user@example.com', 'member'),
+    (error) => error?.code === 'USER_NOT_FOUND'
+  );
+  assert.throws(
+    () => media.addTeamMember(owner.id, team.id, owner.email, 'member'),
+    (error) => error?.code === 'TEAM_OWNER_REQUIRED'
+  );
+  assert.equal(media.listTeams(owner.id).find((item) => item.id === team.id).members[0].role, 'owner');
+
+  const added = media.addTeamMember(owner.id, team.id, member.email, 'editor');
+  assert.equal(added.userId, member.id);
+  assert.equal(added.email, member.email);
+
+  assert.throws(
+    () => media.shareAsset(owner.id, asset.id, { principalType: 'user', principalId: 'missing-user-id' }),
+    (error) => error?.code === 'USER_NOT_FOUND'
+  );
+  assert.throws(
+    () => media.shareAsset(owner.id, asset.id, { principalType: 'user', principalId: owner.id }),
+    (error) => error?.code === 'CANNOT_SHARE_WITH_SELF'
+  );
+
+  const shared = media.shareAsset(owner.id, asset.id, {
+    principalType: 'user',
+    principalId: member.id,
+    permission: 'edit'
+  });
+  assert.equal(shared.target.userId, member.id);
+  assert.equal(shared.target.email, member.email);
+  assert.equal(media.listAssetPermissions(owner.id, asset.id).some((item) => (
+    item.principalType === 'user' && item.principalId === member.id && item.permission === 'edit'
+  )), true);
+
+  assert.equal(media.revokeAssetPermission(owner.id, asset.id, 'user', member.id), true);
+  assert.equal(media.removeTeamMember(owner.id, team.id, member.id), true);
+  assert.equal(media.listTeams(owner.id).find((item) => item.id === team.id).members.some((item) => item.userId === member.id), false);
 });
 
 test('selecting a team only returns assets shared to that exact team', async () => {
@@ -259,18 +491,49 @@ test('generation completion automatically creates a generated asset and referenc
   const filePath = path.join(process.env.LOCAL_STORAGE_ROOT, storagePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   await sharp({ create: { width: 1024, height: 1024, channels: 3, background: '#a78bfa' } }).png().toFile(filePath);
+  const fileSize = fs.statSync(filePath).size;
   db.getDb().prepare(`
     INSERT INTO generations (id, user_id, prompt, model, size, quality, provider, status, storage_path, created_at)
     VALUES (?, ?, 'generated asset prompt', 'gpt-image-2', '1024x1024', 'medium', 'test', 'processing', ?, datetime('now'))
   `).run(generationId, owner.id, storagePath);
-  db.updateGeneration(generationId, { status: 'succeeded', completed_at: new Date().toISOString() });
+  db.updateGeneration(generationId, {
+    status: 'succeeded',
+    file_size: fileSize,
+    mime_type: 'image/png',
+    completed_at: new Date().toISOString()
+  });
   const asset = media.listAssets(owner.id, { sourceType: 'generated' }).assets.find((item) => item.sourceId === generationId);
   assert.ok(asset);
   assert.equal(asset.mediaType, 'image');
+  assert.equal(asset.fileSize, fileSize);
   const normalized = references.normalizeReferenceRequests([{ assetId: asset.id, annotations: [] }]);
   const inputs = await references.loadReferenceImageInputs(owner.id, normalized, { model: 'gpt-image-2' });
   assert.equal(inputs.length, 1);
   assert.match(inputs[0], /^data:image\/png;base64,/);
+});
+
+test('legacy generated assets repair their real storage size for details and quota totals', async () => {
+  const generationId = 'legacy-zero-size-generation';
+  const storagePath = `${owner.id}/${generationId}.png`;
+  const filePath = path.join(process.env.LOCAL_STORAGE_ROOT, storagePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  await sharp({ create: { width: 816, height: 816, channels: 3, background: '#14b8a6' } }).png().toFile(filePath);
+  const actualSize = fs.statSync(filePath).size;
+  db.getDb().prepare(`
+    INSERT INTO generations (id, user_id, prompt, model, size, quality, provider, status, storage_path, created_at)
+    VALUES (?, ?, 'legacy generated prompt', 'gpt-image-2', '816x816', 'low', 'test', 'processing', ?, datetime('now'))
+  `).run(generationId, owner.id, storagePath);
+  db.updateGeneration(generationId, { status: 'succeeded', completed_at: new Date().toISOString() });
+  const assetId = `generation-${generationId}`;
+  assert.equal(media.getAccessibleAsset(owner.id, assetId).fileSize, 0);
+
+  assert.equal(await media.repairAssetFileMetadata(owner.id, assetId), true);
+  assert.equal(media.getAccessibleAsset(owner.id, assetId).fileSize, actualSize);
+  assert.ok(media.getAssetStats(owner.id).totalBytes >= actualSize);
+  assert.equal(
+    db.getDb().prepare(`SELECT file_size FROM asset_variants WHERE asset_id = ? AND variant_type = 'original'`).get(assetId).file_size,
+    actualSize
+  );
 });
 
 test('video and audio uploads create playable preview variants', { timeout: 120000 }, async () => {
@@ -288,4 +551,8 @@ test('video and audio uploads create playable preview variants', { timeout: 1200
   assert.ok(audio.durationMs > 0);
   assert.ok(audio.variants.some((variant) => variant.type === 'preview' && variant.mimeType === 'audio/mpeg'));
   assert.ok(audio.variants.some((variant) => variant.type === 'waveform'));
+  const stats = media.getAssetStats(owner.id);
+  assert.ok(stats.videoBytes >= video.fileSize);
+  assert.ok(stats.audioBytes >= audio.fileSize);
+  assert.equal(stats.totalBytes, stats.imageBytes + stats.videoBytes + stats.audioBytes);
 });

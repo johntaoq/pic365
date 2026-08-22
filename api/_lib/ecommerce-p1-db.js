@@ -252,7 +252,7 @@ export function createEcommerceGenerationTasks(userId, projectId, requests) {
         userId,
         projectId,
         String(request.slotId || ''),
-        request.quality === 'low' ? 'low' : 'medium',
+        ['low', 'medium', 'high'].includes(request.quality) ? request.quality : 'low',
         JSON.stringify(requestJson),
         timestamp,
         timestamp

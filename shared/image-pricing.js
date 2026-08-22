@@ -1,6 +1,8 @@
 import {
   IMAGE_MAX_PIXELS,
   IMAGE_MIN_PIXELS,
+  getImageModelConstraints,
+  isGeminiImageModel,
   parseImageSize,
   validateImageSize
 } from './image-generation.js';
@@ -13,6 +15,13 @@ export const IMAGE_PROMOTION_ROUNDING_STEP = 1;
 export const IMAGE_PROMOTION_MIN_PAY_PERCENT = 10;
 export const IMAGE_PROMOTION_MAX_PAY_PERCENT = 100;
 export const IMAGE_PRICING_PIXEL_STEP = 256;
+
+export const GEMINI_IMAGE_PRICING_TIERS = Object.freeze({
+  low: Object.freeze({ resolution: '1K', pixels: 1024 * 1024 }),
+  medium: Object.freeze({ resolution: '2K', pixels: 2048 * 2048 }),
+  high: Object.freeze({ resolution: '4K', pixels: 4096 * 4096 })
+});
+export const GEMINI_IMAGE_MAX_PRICING_PIXELS = GEMINI_IMAGE_PRICING_TIERS.high.pixels;
 
 export const IMAGE_PRICING_STRATEGIES = Object.freeze({
   PIXEL_QUALITY_FORMULA: 'pixel-quality-formula',
@@ -52,6 +61,8 @@ export const GPT_IMAGE_2_PRICING_CONFIG = Object.freeze({
   maximumChargeRmb: 5,
   promotionEligible: true,
   autoSizePixels: 2048 * 2048,
+  maximumPixels: IMAGE_MAX_PIXELS,
+  modelFamily: 'gpt-image-2',
   autoQuality: 'medium',
   formula: {
     baseCostRmb: IMAGE_COST_MODEL.baseCostRmb / 0.3,
@@ -92,12 +103,13 @@ function roundUpToStep(value, step) {
   return Math.ceil((Number(value || 0) - 1e-9) / safeStep) * safeStep;
 }
 
-export function alignImagePricingPixelsUp(value, fallback = IMAGE_MIN_PIXELS) {
-  const pixels = finiteNumber(value, fallback, IMAGE_MIN_PIXELS, IMAGE_MAX_PIXELS);
+export function alignImagePricingPixelsUp(value, fallback = IMAGE_MIN_PIXELS, maximumPixels = IMAGE_MAX_PIXELS) {
+  const safeMaximum = Math.max(IMAGE_MIN_PIXELS, Number(maximumPixels) || IMAGE_MAX_PIXELS);
+  const pixels = finiteNumber(value, fallback, IMAGE_MIN_PIXELS, safeMaximum);
   return clamp(
     Math.ceil((pixels - 1e-9) / IMAGE_PRICING_PIXEL_STEP) * IMAGE_PRICING_PIXEL_STEP,
     IMAGE_MIN_PIXELS,
-    IMAGE_MAX_PIXELS
+    safeMaximum
   );
 }
 
@@ -111,6 +123,10 @@ function qualityPrices(value = {}, fallback = {}) {
 
 export function defaultImagePricingConfigForModel(model = '') {
   if (/gpt[-_ ]?image[-_ ]?2/i.test(String(model))) return structuredClone(GPT_IMAGE_2_PRICING_CONFIG);
+  const geminiImage = isGeminiImageModel(model);
+  const maximumPixels = geminiImage
+    ? GEMINI_IMAGE_MAX_PRICING_PIXELS
+    : getImageModelConstraints(model).maxPixels;
   return {
     version: 1,
     strategy: IMAGE_PRICING_STRATEGIES.FIXED_QUALITY,
@@ -119,7 +135,9 @@ export function defaultImagePricingConfigForModel(model = '') {
     minimumChargeRmb: 0.2,
     maximumChargeRmb: 100,
     promotionEligible: true,
-    autoSizePixels: 2048 * 2048,
+    autoSizePixels: geminiImage ? GEMINI_IMAGE_PRICING_TIERS.medium.pixels : Math.min(2048 * 2048, maximumPixels),
+    maximumPixels,
+    modelFamily: geminiImage ? 'gemini-image' : getImageModelConstraints(model).modelFamily,
     autoQuality: 'medium',
     qualityPricesRmb: { low: 0.2, medium: 0.2, high: 0.2 },
     actualCostRatio: 1
@@ -133,6 +151,12 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
   const resolvedStrategy = allowedStrategies.includes(strategy || source.strategy)
     ? (strategy || source.strategy)
     : fallback.strategy;
+  const maximumPixels = model
+    ? fallback.maximumPixels
+    : alignImagePricingPixelsUp(source.maximumPixels, fallback.maximumPixels, GEMINI_IMAGE_MAX_PRICING_PIXELS);
+  const modelFamily = model
+    ? fallback.modelFamily
+    : String(source.modelFamily || fallback.modelFamily || 'default');
   const common = {
     version: Math.max(1, Math.round(finiteNumber(source.version, fallback.version || 1, 1, 1000))),
     strategy: resolvedStrategy,
@@ -141,7 +165,9 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
     minimumChargeRmb: roundMoney(finiteNumber(source.minimumChargeRmb, fallback.minimumChargeRmb, 0, 100000), 2),
     maximumChargeRmb: roundMoney(finiteNumber(source.maximumChargeRmb, fallback.maximumChargeRmb, 0.01, 100000), 2),
     promotionEligible: source.promotionEligible == null ? fallback.promotionEligible !== false : source.promotionEligible !== false,
-    autoSizePixels: alignImagePricingPixelsUp(source.autoSizePixels, fallback.autoSizePixels),
+    autoSizePixels: alignImagePricingPixelsUp(source.autoSizePixels, fallback.autoSizePixels, maximumPixels),
+    maximumPixels,
+    modelFamily,
     autoQuality: 'medium'
   };
   if (common.maximumChargeRmb < common.minimumChargeRmb) common.maximumChargeRmb = common.minimumChargeRmb;
@@ -175,14 +201,14 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
     const bands = (Array.isArray(source.bands) ? source.bands : fallbackBands)
       .map((band, index) => ({
         id: String(band?.id || `band-${index + 1}`).slice(0, 60),
-        maxPixels: alignImagePricingPixelsUp(band?.maxPixels, IMAGE_MAX_PIXELS),
+        maxPixels: alignImagePricingPixelsUp(band?.maxPixels, maximumPixels, maximumPixels),
         pricesRmb: qualityPrices(band?.pricesRmb, { low: common.minimumChargeRmb, medium: common.minimumChargeRmb, high: common.minimumChargeRmb })
       }))
       .sort((left, right) => left.maxPixels - right.maxPixels);
-    if (!bands.length || bands.at(-1).maxPixels < IMAGE_MAX_PIXELS) {
+    if (!bands.length || bands.at(-1).maxPixels < maximumPixels) {
       bands.push({
         id: 'maximum',
-        maxPixels: IMAGE_MAX_PIXELS,
+        maxPixels: maximumPixels,
         pricesRmb: bands.at(-1)?.pricesRmb || { low: common.minimumChargeRmb, medium: common.minimumChargeRmb, high: common.minimumChargeRmb }
       });
     }
@@ -317,14 +343,18 @@ function pricingBaseRmb(config, pixels, quality) {
   };
 }
 
-export function getImageGenerationPricing({ size = '1024x1024', quality = 'low' } = {}, pricingConfig = GPT_IMAGE_2_PRICING_CONFIG) {
-  const config = normalizeImagePricingConfig(pricingConfig, { strategy: pricingConfig?.strategy });
+export function getImageGenerationPricing({ size = '1024x1024', quality = 'low', model = '' } = {}, pricingConfig = GPT_IMAGE_2_PRICING_CONFIG) {
+  const config = normalizeImagePricingConfig(pricingConfig, { model, strategy: pricingConfig?.strategy });
   const parsed = parseImageSize(size);
   const requestedPixels = parsed && !parsed.auto
     ? parsed.width * parsed.height
     : config.autoSizePixels;
-  const billedPixels = clamp(requestedPixels, IMAGE_MIN_PIXELS, IMAGE_MAX_PIXELS);
   const billedQuality = quality === 'auto' ? 'medium' : resolveImagePricingQuality(quality);
+  const geminiImage = isGeminiImageModel(model) || config.modelFamily === 'gemini-image';
+  const resolutionTier = geminiImage ? GEMINI_IMAGE_PRICING_TIERS[billedQuality] : null;
+  const billedPixels = resolutionTier
+    ? resolutionTier.pixels
+    : clamp(requestedPixels, IMAGE_MIN_PIXELS, config.maximumPixels || IMAGE_MAX_PIXELS);
   const base = pricingBaseRmb(config, billedPixels, billedQuality);
   const isFixedPrice = config.strategy === IMAGE_PRICING_STRATEGIES.FIXED_QUALITY
     || config.strategy === IMAGE_PRICING_STRATEGIES.FIXED_IMAGE;
@@ -345,6 +375,8 @@ export function getImageGenerationPricing({ size = '1024x1024', quality = 'low' 
     rawChargeRmb: roundMoney(base.rawChargeRmb),
     requestedPixels,
     billedPixels,
+    maximumPixels: config.maximumPixels,
+    resolutionTier: resolutionTier?.resolution || '',
     bandId: base.bandId,
     requestedQuality: quality,
     billedQuality,

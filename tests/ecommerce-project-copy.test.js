@@ -28,7 +28,8 @@ async function fixture() {
   const project = localDb.createEcommerceProject(user.id, {
     projectName: 'Reusable bottle launch',
     platformId: 'amazon',
-    industryId: 'home-appliances',
+    industryId: 'appliances-kitchen',
+    subcategoryId: 'drinkware',
     productName: 'Aero bottle',
     brandName: 'Aero',
     coreUser: 'Urban commuters',
@@ -92,6 +93,7 @@ test('same-platform duplication physically copies assets and layouts but not gen
 
   assert.equal(duplicate.platformId, project.platformId);
   assert.equal(duplicate.productName, project.productName);
+  assert.equal(duplicate.subcategoryId, project.subcategoryId);
   assert.equal(duplicate.coreUser, project.coreUser);
   assert.equal(duplicate.coreScenario, project.coreScenario);
   assert.deepEqual(duplicate.selectedSlots, project.selectedSlots);
@@ -117,6 +119,7 @@ test('cross-platform adaptation keeps product facts and assets while adopting ta
 
   assert.equal(adapted.platformId, 'taobao-tmall');
   assert.equal(adapted.productName, project.productName);
+  assert.equal(adapted.subcategoryId, project.subcategoryId);
   assert.equal(adapted.coreUser, project.coreUser);
   assert.equal(adapted.coreScenario, project.coreScenario);
   assert.deepEqual(adapted.sellingPoints, project.sellingPoints);

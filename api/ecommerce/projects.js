@@ -14,8 +14,11 @@ import {
   ECOMMERCE_INDUSTRIES,
   ECOMMERCE_PLATFORMS,
   ECOMMERCE_VISUAL_STYLES,
-  getDefaultSlotIds,
-  getEcommerceTemplate
+  getDefaultEcommercePlan,
+  getEcommerceTemplate,
+  inferEcommerceIndustryId,
+  inferEcommerceSubcategoryId,
+  isValidSubcategory
 } from '../../shared/ecommerce-catalog.js';
 
 function json(res, status, payload) {
@@ -68,18 +71,25 @@ function normalizeProjectInput(body) {
   const platform = ECOMMERCE_PLATFORMS.find((item) => item.id === platformId);
   if (!platform) return { error: 'INVALID_PLATFORM' };
 
-  const industryId = cleanText(body.industryId, 60);
+  const productName = cleanText(body.productName, 120);
+  if (!productName) return { error: 'PRODUCT_NAME_REQUIRED' };
+  const brandName = cleanText(body.brandName, 120);
+  const requestedIndustryId = cleanText(body.industryId, 60);
+  const industryId = requestedIndustryId || inferEcommerceIndustryId(productName, brandName);
   if (!ECOMMERCE_INDUSTRIES.some((item) => item.id === industryId)) return { error: 'INVALID_INDUSTRY' };
+  const requestedSubcategoryId = cleanText(body.subcategoryId, 80);
+  const subcategoryId = requestedSubcategoryId && isValidSubcategory(industryId, requestedSubcategoryId)
+    ? requestedSubcategoryId
+    : inferEcommerceSubcategoryId(industryId, productName, brandName);
+  const defaultPlan = getDefaultEcommercePlan(platformId, industryId);
 
-  const visualStyleId = cleanText(body.visualStyleId, 60);
+  const visualStyleId = cleanText(body.visualStyleId, 60) || defaultPlan.visualStyleId;
   if (!ECOMMERCE_VISUAL_STYLES.some((item) => item.id === visualStyleId)) return { error: 'INVALID_VISUAL_STYLE' };
 
   const templateId = cleanText(body.templateId, 80);
   const template = templateId ? getEcommerceTemplate(templateId) : null;
   if (templateId && (!template || template.platformId !== platformId)) return { error: 'INVALID_TEMPLATE' };
 
-  const productName = cleanText(body.productName, 120);
-  if (!productName) return { error: 'PRODUCT_NAME_REQUIRED' };
   const legacyAudience = cleanText(body.targetAudience, 1000);
   const hasCoreUser = Object.prototype.hasOwnProperty.call(body, 'coreUser');
   const hasCoreScenario = Object.prototype.hasOwnProperty.call(body, 'coreScenario');
@@ -98,8 +108,9 @@ function normalizeProjectInput(body) {
       projectName: cleanText(body.projectName, 120) || `${productName} · ${platform.nameZh}`,
       platformId,
       industryId,
+      subcategoryId,
       productName,
-      brandName: cleanText(body.brandName, 120),
+      brandName,
       coreUser,
       coreScenario,
       targetAudience: [coreUser, coreScenario].filter(Boolean).join('\n'),
@@ -111,7 +122,8 @@ function normalizeProjectInput(body) {
       templateId,
       visualStyleId,
       imageProviderId: cleanText(body.imageProviderId, 80),
-      selectedSlots: selectedSlots.length ? selectedSlots : getDefaultSlotIds(platformId)
+      imageQuality: ['low', 'medium', 'high'].includes(body.imageQuality) ? body.imageQuality : 'low',
+      selectedSlots: selectedSlots.length ? selectedSlots : defaultPlan.selectedSlotIds
     }
   };
 }

@@ -12,6 +12,7 @@ export const MAI_IMAGE_MAX_PIXELS = 1_048_576;
 const DEFAULT_IMAGE_MODEL_CONSTRAINTS = Object.freeze({
   modelFamily: 'default',
   isMai: false,
+  isGeminiImage: false,
   allowAutoSize: true,
   minSide: IMAGE_MIN_SIDE,
   maxSide: IMAGE_MAX_SIDE,
@@ -26,6 +27,7 @@ const DEFAULT_IMAGE_MODEL_CONSTRAINTS = Object.freeze({
 const MAI_IMAGE_2_CONSTRAINTS = Object.freeze({
   modelFamily: 'mai-image-2',
   isMai: true,
+  isGeminiImage: false,
   allowAutoSize: false,
   minSide: MAI_IMAGE_MIN_SIDE,
   maxSide: Math.floor((MAI_IMAGE_MAX_PIXELS / MAI_IMAGE_MIN_SIDE) / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP,
@@ -41,6 +43,58 @@ const MAI_IMAGE_2_5_CONSTRAINTS = Object.freeze({
   ...MAI_IMAGE_2_CONSTRAINTS,
   modelFamily: 'mai-image-2.5',
   maxReferenceImages: 1
+});
+
+export const GEMINI_IMAGE_RATIO_PRESETS = Object.freeze([
+  { id: '1:1', width: 1, height: 1 },
+  { id: '1:4', width: 1, height: 4 },
+  { id: '1:8', width: 1, height: 8 },
+  { id: '2:3', width: 2, height: 3 },
+  { id: '3:2', width: 3, height: 2 },
+  { id: '3:4', width: 3, height: 4 },
+  { id: '4:1', width: 4, height: 1 },
+  { id: '4:3', width: 4, height: 3 },
+  { id: '4:5', width: 4, height: 5 },
+  { id: '5:4', width: 5, height: 4 },
+  { id: '8:1', width: 8, height: 1 },
+  { id: '9:16', width: 9, height: 16 },
+  { id: '16:9', width: 16, height: 9 },
+  { id: '21:9', width: 21, height: 9 }
+]);
+
+export const GEMINI_IMAGE_COMMON_SIZES = Object.freeze([
+  '1024x1024',
+  '1024x1536',
+  '1536x1024',
+  '768x1024',
+  '1024x768',
+  '1024x1280',
+  '1280x1024',
+  '1008x1792',
+  '1792x1008',
+  '1792x768',
+  '512x2048',
+  '2048x512',
+  '512x4096',
+  '4096x512'
+]);
+
+const GEMINI_IMAGE_CONSTRAINTS = Object.freeze({
+  modelFamily: 'gemini-image',
+  isMai: false,
+  isGeminiImage: true,
+  allowAutoSize: true,
+  minSide: 512,
+  maxSide: 4096,
+  minPixels: 512 * 512,
+  maxPixels: 4096 * 4096,
+  minAspect: 1 / 8,
+  maxAspect: 8,
+  // Gemini supports more inputs, while Pic365 intentionally keeps the
+  // established nine-reference product limit for predictable request sizes.
+  maxReferenceImages: 9,
+  referenceMimeTypes: Object.freeze(['image/jpeg', 'image/png', 'image/webp']),
+  supportedAspectRatios: GEMINI_IMAGE_RATIO_PRESETS
 });
 
 export const IMAGE_QUALITY_OPTIONS = ['auto', 'low', 'medium', 'high'];
@@ -87,8 +141,16 @@ function normalizeModelName(value) {
   return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
 }
 
+export function isGeminiImageModel(value) {
+  const normalized = normalizeModelName(value);
+  return normalized.includes('gemini') && normalized.includes('image')
+    || normalized.includes('nano-banana')
+    || /^banana(?:-|$)/.test(normalized);
+}
+
 export function getImageModelConstraints(model) {
   const normalized = normalizeModelName(model);
+  if (isGeminiImageModel(normalized)) return GEMINI_IMAGE_CONSTRAINTS;
   if (normalized === 'mai-image-2.5' || normalized.startsWith('mai-image-2.5-')) {
     return MAI_IMAGE_2_5_CONSTRAINTS;
   }
@@ -144,6 +206,30 @@ export function validateImageSize(value) {
 
 export function validateImageSizeForModel(value, model) {
   const constraints = getImageModelConstraints(model);
+  if (constraints.isGeminiImage) {
+    const parsed = parseImageSize(value);
+    if (!parsed) return { valid: false, error: 'FORMAT' };
+    if (parsed.auto) return { valid: true, ...parsed, pixels: null, aspect: null };
+    const { width, height } = parsed;
+    if (!width || !height || width % IMAGE_DIMENSION_STEP || height % IMAGE_DIMENSION_STEP) {
+      return { valid: false, error: 'STEP', ...parsed };
+    }
+    if (width < constraints.minSide || height < constraints.minSide) {
+      return { valid: false, error: 'GEMINI_MIN_SIDE', ...parsed };
+    }
+    if (width > constraints.maxSide || height > constraints.maxSide) {
+      return { valid: false, error: 'GEMINI_MAX_SIDE', ...parsed };
+    }
+    const pixels = width * height;
+    if (pixels > constraints.maxPixels) {
+      return { valid: false, error: 'GEMINI_MAX_PIXELS', ...parsed, pixels, aspect: width / height };
+    }
+    const supportedRatio = GEMINI_IMAGE_RATIO_PRESETS.find((preset) => width * preset.height === height * preset.width);
+    if (!supportedRatio) {
+      return { valid: false, error: 'GEMINI_ASPECT_RATIO', ...parsed, pixels, aspect: width / height };
+    }
+    return { valid: true, ...parsed, pixels, aspect: width / height, aspectRatio: supportedRatio.id };
+  }
   if (!constraints.isMai) return validateImageSize(value);
 
   const parsed = parseImageSize(value);
@@ -162,6 +248,179 @@ export function validateImageSizeForModel(value, model) {
     return { valid: false, error: 'MAI_MAX_PIXELS', ...parsed, pixels, aspect: width / height };
   }
   return { valid: true, ...parsed, pixels, aspect: width / height };
+}
+
+export function resolveReferenceImageSize(reference, model, fallbackSize = '1024x1024') {
+  const explicitWidth = Math.round(Number(reference?.width || 0));
+  const explicitHeight = Math.round(Number(reference?.height || 0));
+  const parsedReference = explicitWidth > 0 && explicitHeight > 0
+    ? { width: explicitWidth, height: explicitHeight }
+    : parseImageSize(reference?.size);
+  const candidate = parsedReference && !parsedReference.auto
+    ? `${parsedReference.width}x${parsedReference.height}`
+    : '';
+
+  if (candidate && validateImageSizeForModel(candidate, model).valid) {
+    return {
+      width: parsedReference.width,
+      height: parsedReference.height,
+      size: candidate,
+      usedFallback: false
+    };
+  }
+
+  const parsedFallback = parseImageSize(fallbackSize) || parseImageSize('1024x1024');
+  return {
+    width: parsedFallback.width,
+    height: parsedFallback.height,
+    size: `${parsedFallback.width}x${parsedFallback.height}`,
+    usedFallback: true
+  };
+}
+
+function alignedBoundary(value, direction = 'up') {
+  const operation = direction === 'down' ? Math.floor : Math.ceil;
+  return operation(Number(value || 0) / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP;
+}
+
+function sourceDimensions(reference) {
+  const explicitWidth = Math.round(Number(reference?.sourceWidth || reference?.width || 0));
+  const explicitHeight = Math.round(Number(reference?.sourceHeight || reference?.height || 0));
+  if (explicitWidth > 0 && explicitHeight > 0) return { width: explicitWidth, height: explicitHeight };
+  const parsed = parseImageSize(reference?.sourceSize || reference?.size);
+  return parsed && !parsed.auto ? { width: parsed.width, height: parsed.height } : null;
+}
+
+/**
+ * Fits a source image into a provider canvas without changing its orientation or
+ * intended aspect ratio. The preferred dimensions are rounded upward to the
+ * provider's 16px grid. If that upward rounding crosses a provider limit, the
+ * nearest legal grid point is selected instead. No generic fallback is used:
+ * callers can surface an unsupported-source-size state before billing or work.
+ */
+export function resolveSourceImageSizeForModel(reference, model) {
+  const source = sourceDimensions(reference);
+  const constraints = getImageModelConstraints(model);
+  if (!source) {
+    return { valid: false, error: 'SOURCE_SIZE_MISSING', constraints };
+  }
+
+  const sourceWidth = source.width;
+  const sourceHeight = source.height;
+  const sourcePixels = sourceWidth * sourceHeight;
+  const sourceAspect = sourceWidth / sourceHeight;
+  if (sourceAspect < constraints.minAspect || sourceAspect > constraints.maxAspect) {
+    return {
+      valid: false,
+      error: 'PROVIDER_SOURCE_SIZE_UNSUPPORTED',
+      sourceWidth,
+      sourceHeight,
+      sourcePixels,
+      sourceAspect,
+      constraints
+    };
+  }
+
+  const minScale = Math.max(
+    constraints.minSide / sourceWidth,
+    constraints.minSide / sourceHeight,
+    Math.sqrt(constraints.minPixels / sourcePixels)
+  );
+  const maxScale = Math.min(
+    constraints.maxSide / sourceWidth,
+    constraints.maxSide / sourceHeight,
+    Math.sqrt(constraints.maxPixels / sourcePixels)
+  );
+  if (!Number.isFinite(minScale) || !Number.isFinite(maxScale) || minScale > maxScale) {
+    return {
+      valid: false,
+      error: 'PROVIDER_SOURCE_SIZE_UNSUPPORTED',
+      sourceWidth,
+      sourceHeight,
+      sourcePixels,
+      sourceAspect,
+      constraints
+    };
+  }
+
+  const preferredScale = Math.max(minScale, Math.min(maxScale, 1));
+  const targetWidth = sourceWidth * preferredScale;
+  const targetHeight = sourceHeight * preferredScale;
+  const upwardWidth = alignedBoundary(targetWidth, 'up');
+  const upwardHeight = alignedBoundary(targetHeight, 'up');
+  const upwardSize = `${upwardWidth}x${upwardHeight}`;
+  if (validateImageSizeForModel(upwardSize, model).valid) {
+    return {
+      valid: true,
+      sourceWidth,
+      sourceHeight,
+      sourcePixels,
+      sourceAspect,
+      width: upwardWidth,
+      height: upwardHeight,
+      size: upwardSize,
+      usedScaling: upwardWidth !== sourceWidth || upwardHeight !== sourceHeight,
+      usedStepAlignment: sourceWidth % IMAGE_DIMENSION_STEP !== 0 || sourceHeight % IMAGE_DIMENSION_STEP !== 0,
+      constraints
+    };
+  }
+
+  const minDimension = alignedBoundary(constraints.minSide, 'up');
+  const maxDimension = alignedBoundary(constraints.maxSide, 'down');
+  const candidates = new Map();
+  const remember = (width, height) => {
+    if (width < minDimension || height < minDimension || width > maxDimension || height > maxDimension) return;
+    const size = `${width}x${height}`;
+    if (!validateImageSizeForModel(size, model).valid) return;
+    candidates.set(size, { width, height, size });
+  };
+
+  for (let width = minDimension; width <= maxDimension; width += IMAGE_DIMENSION_STEP) {
+    const idealHeight = width / sourceAspect;
+    remember(width, alignedBoundary(idealHeight, 'down'));
+    remember(width, alignedBoundary(idealHeight, 'up'));
+  }
+  for (let height = minDimension; height <= maxDimension; height += IMAGE_DIMENSION_STEP) {
+    const idealWidth = height * sourceAspect;
+    remember(alignedBoundary(idealWidth, 'down'), height);
+    remember(alignedBoundary(idealWidth, 'up'), height);
+  }
+
+  const best = [...candidates.values()].sort((left, right) => {
+    const score = (candidate) => {
+      const ratioError = Math.abs(Math.log((candidate.width / candidate.height) / sourceAspect));
+      const targetError = Math.abs(Math.log(candidate.width / targetWidth))
+        + Math.abs(Math.log(candidate.height / targetHeight));
+      const downwardPenalty = (candidate.width < targetWidth ? 0.002 : 0)
+        + (candidate.height < targetHeight ? 0.002 : 0);
+      return ratioError * 1_000_000 + targetError * 100 + downwardPenalty;
+    };
+    return score(left) - score(right);
+  })[0];
+
+  if (!best) {
+    return {
+      valid: false,
+      error: 'PROVIDER_SOURCE_SIZE_UNSUPPORTED',
+      sourceWidth,
+      sourceHeight,
+      sourcePixels,
+      sourceAspect,
+      constraints
+    };
+  }
+
+  return {
+    valid: true,
+    sourceWidth,
+    sourceHeight,
+    sourcePixels,
+    sourceAspect,
+    ...best,
+    usedScaling: best.width !== sourceWidth || best.height !== sourceHeight,
+    usedStepAlignment: sourceWidth % IMAGE_DIMENSION_STEP !== 0 || sourceHeight % IMAGE_DIMENSION_STEP !== 0,
+    constraints
+  };
 }
 
 function constrainedRatioDimensions(widthRatio, heightRatio, targetLongSide, constraints) {

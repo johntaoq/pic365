@@ -3,6 +3,7 @@ import { checkStorageHealth } from './_lib/storage.js';
 import { getFreeGenerationWorkerStatus, startFreeGenerationWorker } from '../server/free-generation-worker.js';
 import { getEcommerceGenerationWorkerStatus, startEcommerceGenerationWorker } from '../server/ecommerce-generation-worker.js';
 import { getMediaProcessingWorkerStatus, startMediaProcessingWorker } from '../server/media-processing-worker.js';
+import { getStorageBillingWorkerStatus, startStorageBillingWorker } from '../server/storage-billing-worker.js';
 
 const DEEP_TIMEOUT_MS = 5000;
 
@@ -68,17 +69,20 @@ export default async function handler(req, res) {
     startFreeGenerationWorker();
     startEcommerceGenerationWorker();
     startMediaProcessingWorker();
+    startStorageBillingWorker();
     checks.workers = {
       free: getFreeGenerationWorkerStatus(),
       ecommerce: getEcommerceGenerationWorkerStatus(),
-      media: getMediaProcessingWorkerStatus()
+      media: getMediaProcessingWorkerStatus(),
+      storageBilling: getStorageBillingWorkerStatus()
     };
     const providerOk = checks.providers.length > 0
       && checks.providers.every((provider) => provider.configured && (!deep || provider.reachable));
     const ok = checks.database.ok && checks.storage.ok && providerOk
       && checks.workers.free.running && checks.workers.ecommerce.running && checks.workers.media.running;
-    return res.status(ok ? 200 : 503).json({
-      ok,
+    const workerOk = ok && checks.workers.storageBilling.running;
+    return res.status(workerOk ? 200 : 503).json({
+      ok: workerOk,
       deep,
       checks,
       durationMs: Date.now() - startedAt

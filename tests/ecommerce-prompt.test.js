@@ -34,7 +34,7 @@ test('core users and usage scenarios are represented as separate prompt facts', 
   assert.equal((prompt.match(/Daily subway travel and desk hydration/g) || []).length, 1);
 });
 
-test('an intentionally empty core user does not reuse the scenario as legacy audience data', () => {
+test('an intentionally empty core user receives automatic context without reusing the scenario', () => {
   const platform = getEcommercePlatform('amazon');
   const slot = platform.slots.find((item) => item.id === 'feature');
   const prompt = buildEcommerceSlotPrompt({
@@ -44,7 +44,7 @@ test('an intentionally empty core user does not reuse the scenario as legacy aud
     assets: []
   });
 
-  assert.match(prompt, /核心用户：未填写；使用与商品匹配的普通消费者/);
+  assert.match(prompt, /核心用户：关注其他产品外观、使用体验和信息透明度的潜在消费者/);
   assert.match(prompt, /核心场景：Home office use/);
   assert.equal((prompt.match(/Home office use/g) || []).length, 1);
 });
@@ -196,4 +196,55 @@ test('comparison prompts enforce strict left and right image regions', () => {
   assert.match(prompt, /右半区只呈现对比对象或对比状态/);
   assert.match(prompt, /不得跨越中线/);
   assert.match(prompt, /不得拼成上下结构/);
+});
+
+test('ecommerce generation prompts include the shared commerce safety context', () => {
+  const platform = getEcommercePlatform('taobao-tmall');
+  const slot = platform.slots.find((item) => item.id === 'main-square');
+  const prompt = buildEcommerceSlotPrompt({ project: project(), platform, slot, assets: [] });
+  assert.match(prompt, /你是一个严格遵循商品真实资料的生图约束系统/);
+  assert.match(prompt, /不得擅自添加赠品、备用件、收纳袋、工具、电池、线材/);
+  assert.match(prompt, /【系统级电商语境与安全判断约束】/);
+  assert.match(prompt, /以上下文场景为准，而非关键词联想/);
+  assert.match(prompt, /本约束不是审核绕过/);
+  assert.ok(prompt.indexOf('【必须避免】') < prompt.indexOf('【系统级电商语境与安全判断约束】'));
+  assert.ok(prompt.indexOf('【系统级电商语境与安全判断约束】') < prompt.indexOf('【具体任务】'));
+});
+
+test('ecommerce generation accepts the configured system prompt before all generated task details', () => {
+  const platform = getEcommercePlatform('taobao-tmall');
+  const slot = platform.slots.find((item) => item.id === 'main-square');
+  const prompt = buildEcommerceSlotPrompt({
+    project: project(),
+    platform,
+    slot,
+    assets: [],
+    systemPrompt: '后台自定义电商真实性约束。'
+  });
+  assert.ok(prompt.startsWith('后台自定义电商真实性约束。'));
+  assert.ok(prompt.indexOf('后台自定义电商真实性约束。') < prompt.indexOf('【系统级电商语境与安全判断约束】'));
+  assert.doesNotMatch(prompt, /你是一个严格遵循商品真实资料的生图约束系统/);
+});
+
+test('blank optional product fields receive hidden automatic generation constraints', () => {
+  const platform = getEcommercePlatform('taobao-tmall');
+  const slot = platform.slots.find((item) => item.id === 'main-square');
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({
+      brandName: '',
+      coreUser: '',
+      coreScenario: '',
+      sellingPoints: [],
+      specifications: '',
+      prohibitedContent: '',
+      identitySpec: {}
+    }),
+    platform,
+    slot,
+    assets: []
+  });
+
+  assert.equal(prompt.includes('未填写；不得自行编造'), false);
+  assert.match(prompt, /保持商品外形、比例、颜色/);
+  assert.match(prompt, /不得宣称未经核验/);
 });

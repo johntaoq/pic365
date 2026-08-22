@@ -8,6 +8,7 @@ import {
   hasGuestGenerationUsage,
   recordGuestGenerationUsage,
   recordGenerationFailureAlert,
+  recordPromptAuditLog,
   releaseCreditReservation,
   reserveCredit,
   updateGeneration
@@ -106,6 +107,16 @@ function throwIfGenerationCancelled(signal) {
   throw error;
 }
 
+function batchRepairProviderPrompt(prompt) {
+  return [
+    'This is one independent image-repair task. Use only the single supplied source image for this task.',
+    'Apply the user request conservatively. Preserve every composition, subject, background, lighting, color, material, text, logo, shadow, edge, and fine detail that the user did not explicitly ask to change.',
+    'Do not combine this source with any other batch item and do not create a collage.',
+    'User repair request:',
+    prompt
+  ].join('\n');
+}
+
 async function runGenerationJob({
   job,
   userId,
@@ -140,6 +151,8 @@ async function runGenerationJob({
       provider_request_id: providerResult.providerRequestId,
       storage_path: storedImage.storagePath,
       output_url: storedImage.url,
+      file_size: storedImage.byteLength,
+      mime_type: storedImage.contentType,
       completed_at: new Date().toISOString()
     });
     completeCreditReservation(job.reservationId);
@@ -294,7 +307,7 @@ export default async function handler(req, res) {
     res.once?.('close', unregisterTask);
   }
   const pricing = applyImagePromotion(
-    getImageGenerationPricing({ size, quality: requestedQuality }, providerConfig.pricingConfig),
+    getImageGenerationPricing({ size, quality: requestedQuality, model: providerConfig.model }, providerConfig.pricingConfig),
     getImagePromotionConfig()
   );
   let references;
@@ -313,7 +326,11 @@ export default async function handler(req, res) {
       error: error?.code || 'INVALID_REFERENCE_IMAGES'
     });
   }
-  const providerPrompt = buildReferencePrompt(prompt, references);
+  const taskMode = body.taskMode === 'batch-repair' ? 'batch-repair' : 'single';
+  const providerPrompt = buildReferencePrompt(
+    taskMode === 'batch-repair' ? batchRepairProviderPrompt(prompt) : prompt,
+    references
+  );
   const parsedCaseId = Number(body.caseId);
   const caseId = Number.isFinite(parsedCaseId) ? parsedCaseId : null;
 
@@ -371,6 +388,30 @@ export default async function handler(req, res) {
         quality,
         provider: providerConfig.name
       });
+      try {
+        recordPromptAuditLog({
+          userId: auth.user.id,
+          userEmail: auth.user.email || auth.profile?.email || '',
+          generationId,
+          clientTaskId,
+          taskMode,
+          sourceName: taskMode === 'batch-repair' ? String(body.sourceName || '') : '',
+          userPrompt: prompt,
+          effectivePrompt: providerPrompt,
+          providerId: providerConfig.id,
+          providerName: providerConfig.name,
+          model: providerConfig.model,
+          size,
+          quality,
+          referenceCount: references.length
+        });
+      } catch (auditError) {
+        console.warn('Failed to record prompt audit log', {
+          userId: auth.user.id,
+          generationId,
+          message: String(auditError?.message || 'unknown').slice(0, 200)
+        });
+      }
       jobs.push({ reservationId: reservation.reservationId, generationId, creditAmount: reservation.creditAmount });
     }
   } catch (error) {

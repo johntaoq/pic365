@@ -1,6 +1,5 @@
-import { listCreditProducts, getUserProfile } from '../_lib/local-db.js';
+import { getRechargeConfig, getUserProfile } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
-import { isStripeConfigured } from '../_lib/billing.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -18,21 +17,35 @@ export default async function handler(req, res) {
   }
 
   try {
-    const packs = listCreditProducts().map((row) => ({
-      id: row.id,
+    const recharge = getRechargeConfig();
+    const packs = recharge.packs.filter((pack) => pack.enabled).map((pack) => {
+      const amountYuan = Number(pack.amountCents) / 100;
+      return {
+      id: pack.id,
       type: 'credit_pack',
-      name: { en: row.name_en, zh: row.name_zh },
-      description: { en: row.description_en, zh: row.description_zh },
-      credits: Number(row.credits),
-      amountCents: Number(row.amount_cents),
-      currency: row.currency,
-      priceLabel: new Intl.NumberFormat('zh-CN', { style: 'currency', currency: String(row.currency).toUpperCase() }).format(Number(row.amount_cents) / 100),
-      active: Boolean(row.active)
-    }));
+      name: { en: `¥${amountYuan} top-up`, zh: `${amountYuan} 元充值` },
+      description: pack.bonusCredits > 0
+        ? {
+            en: `${pack.baseCredits} base credits + ${pack.bonusCredits} bonus credits`,
+            zh: `${pack.baseCredits} 基础积分 + ${pack.bonusCredits} 赠送积分`
+          }
+        : { en: `${pack.baseCredits} base credits`, zh: `${pack.baseCredits} 基础积分` },
+      credits: Number(pack.credits),
+      baseCredits: Number(pack.baseCredits),
+      bonusCredits: Number(pack.bonusCredits),
+      bonusPercent: Number(pack.bonusPercent),
+      amountCents: Number(pack.amountCents),
+      currency: 'cny',
+      priceLabel: new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amountYuan),
+      active: true
+    };
+    });
     return json(res, 200, {
       ok: true,
-      checkoutAvailable: isStripeConfigured(),
+      checkoutAvailable: false,
+      paymentInterfaceReady: false,
       packs,
+      recharge,
       user: auth.user ? getUserProfile(auth.user.id) : null
     });
   } catch (error) {

@@ -12,6 +12,7 @@ COPY dist ./dist
 COPY server ./server
 COPY api ./api
 COPY shared ./shared
+COPY scripts/create-sqlite-backup.mjs scripts/check-sqlite.mjs scripts/inspect-production-db-safety.mjs ./scripts/
 
 RUN mkdir -p /app/data/generated
 

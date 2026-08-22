@@ -1,5 +1,5 @@
 import { authenticateRequest } from '../../_lib/local-auth.js';
-import { adjustUserCredits } from '../../_lib/local-db.js';
+import { adjustManagedUserCredits, requestAuditMetadata } from '../../_lib/governance.js';
 import { readJsonBody } from '../../_lib/request.js';
 
 function json(res, status, payload) {
@@ -17,10 +17,6 @@ export default async function handler(req, res) {
     return json(res, auth.status || 401, { ok: false, error: auth.error });
   }
 
-  if (!auth.profile?.isSuperAdmin) {
-    return json(res, 403, { ok: false, error: 'FORBIDDEN' });
-  }
-
   let body;
   try {
     body = await readJsonBody(req);
@@ -30,26 +26,26 @@ export default async function handler(req, res) {
 
   const userId = String(body.userId || '').trim();
   const amount = Number(body.amount);
-  const reason = String(body.reason || '').trim().slice(0, 240);
-  const password = String(body.password || '');
-  if (!userId || !Number.isInteger(amount) || (!amount && !password)) {
+  const reasonCode = String(body.reasonCode || '').trim();
+  const details = String(body.details || '').trim();
+  const requestId = String(body.requestId || '').trim();
+  if (!userId || !Number.isInteger(amount) || !amount || !requestId) {
     return json(res, 400, { ok: false, error: 'INVALID_CREDIT_ADJUSTMENT' });
-  }
-  if (password && (password.length < 8 || password.length > 128)) {
-    return json(res, 400, { ok: false, error: 'INVALID_PASSWORD' });
   }
 
   try {
-    const user = adjustUserCredits({
-      adminUserId: auth.user.id,
-      userId,
+    const result = adjustManagedUserCredits({
+      actorUserId: auth.user.id,
+      targetUserId: userId,
       amount,
-      reason,
-      password
+      reasonCode,
+      details,
+      requestId,
+      auditMeta: requestAuditMetadata(req)
     });
-    return json(res, 200, { ok: true, user });
+    return json(res, 200, { ok: true, ...result });
   } catch (error) {
-    if (['INVALID_CREDIT_ADJUSTMENT', 'INVALID_PASSWORD', 'CREDITS_INSUFFICIENT', 'USER_NOT_FOUND'].includes(error?.code)) {
+    if (['INVALID_CREDIT_ADJUSTMENT', 'CREDIT_REASON_REQUIRED', 'CREDITS_INSUFFICIENT', 'USER_NOT_FOUND', 'CANNOT_ADJUST_SELF', 'BALANCE_CHANGED'].includes(error?.code)) {
       return json(res, error.code === 'USER_NOT_FOUND' ? 404 : 400, { ok: false, error: error.code });
     }
     if (error?.code === 'FORBIDDEN') {

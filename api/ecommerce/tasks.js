@@ -27,6 +27,7 @@ function cleanText(value, maxLength = 120) {
 
 const REFINEMENT_AREAS = new Set(['auto', 'subject', 'background', 'top-left', 'top-right', 'bottom-left', 'bottom-right']);
 const REFINEMENT_ROLES = new Set(['detail', 'composition', 'lighting', 'scene']);
+const IMAGE_QUALITIES = new Set(['low', 'medium', 'high']);
 
 export default async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) {
@@ -122,7 +123,7 @@ export default async function handler(req, res) {
     normalized.push({
       id: cleanText(request.id, 120),
       slotId,
-      quality: request.quality === 'low' ? 'low' : 'medium',
+      quality: IMAGE_QUALITIES.has(request.quality) ? request.quality : 'low',
       adjustment: cleanText(request.adjustment, 1200),
       baseGenerationId,
       targetArea,

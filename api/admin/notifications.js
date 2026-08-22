@@ -5,6 +5,8 @@ import {
   listAdminAlerts,
   updateAdminNotificationConfig
 } from '../_lib/local-db.js';
+import { requirePermission } from '../_lib/governance.js';
+import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
 import { readJsonBody } from '../_lib/request.js';
 
 export default async function handler(req, res) {
@@ -14,7 +16,11 @@ export default async function handler(req, res) {
   }
   const auth = authenticateRequest(req);
   if (auth.error) return res.status(auth.status || 401).json({ ok: false, error: auth.error });
-  if (!auth.profile?.isSuperAdmin) return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  try {
+    requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_NOTIFICATIONS);
+  } catch {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
   if (req.method === 'GET') return res.status(200).json({ ok: true, notifications: getAdminNotificationConfig(), alerts: listAdminAlerts(100, String(req.query?.status || 'open')) });
   try {
     const body = await readJsonBody(req);

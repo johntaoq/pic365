@@ -1,5 +1,6 @@
-import { listGenerations } from './_lib/local-db.js';
+import { clearGenerationHistory, hideGenerationFromHistory, listGenerations } from './_lib/local-db.js';
 import { authenticateRequest } from './_lib/local-auth.js';
+import { readJsonBody } from './_lib/request.js';
 import { generatedImageUrl, GENERATED_THUMBNAIL_VARIANT } from '../shared/image-thumbnails.js';
 
 function json(res, status, payload) {
@@ -14,13 +15,26 @@ function imageMimeType(storagePath) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
+  if (!['GET', 'DELETE'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, DELETE');
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
   const auth = authenticateRequest(req);
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
+
+  if (req.method === 'DELETE') {
+    const body = await readJsonBody(req);
+    const clearAll = body?.all === true;
+    const generationId = String(body?.generationId || '').trim();
+    if (!clearAll && !generationId) return json(res, 400, { ok: false, error: 'GENERATION_ID_REQUIRED' });
+    const removed = clearAll
+      ? clearGenerationHistory(auth.user.id)
+      : hideGenerationFromHistory(auth.user.id, generationId);
+    if (!clearAll && !removed) return json(res, 404, { ok: false, error: 'GENERATION_NOT_FOUND' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    return json(res, 200, { ok: true, removed });
+  }
 
   const requestedLimit = Number(req.query?.limit || 30);
   const requestedOffset = Number(req.query?.offset || 0);

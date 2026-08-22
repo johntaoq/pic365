@@ -1,11 +1,19 @@
+import { createHash } from 'node:crypto';
 import { authenticateRequest } from '../_lib/local-auth.js';
-import { chargeAiToolCredit, getEcommerceProject, listEcommerceProjectAssets } from '../_lib/local-db.js';
+import {
+  chargeAiToolCredit,
+  getEcommerceProject,
+  listEcommerceProjectAssets,
+  markEcommerceProjectAutomaticAnalysis,
+  saveEcommerceProjectAutomaticAnalysis
+} from '../_lib/local-db.js';
 import { generateText, isProviderConfigured } from '../_lib/provider.js';
 import { readJsonBody } from '../_lib/request.js';
 import { readStoredImage } from '../_lib/storage.js';
-import { ECOMMERCE_INDUSTRIES } from '../../shared/ecommerce-catalog.js';
+import { ECOMMERCE_INDUSTRIES, getEcommerceSubcategory } from '../../shared/ecommerce-catalog.js';
 import {
   buildFallbackEcommerceBrief,
+  mergeRefreshedAiIdentitySpec,
   normalizeAiIdentitySpec,
   normalizeEcommerceAiBrief
 } from '../../shared/ecommerce-brief.js';
@@ -78,6 +86,62 @@ function selectEvidenceAssets(project, assets) {
     .filter((asset) => score(asset) > 0)
     .sort((left, right) => score(right) - score(left) || Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
     .slice(0, 4);
+}
+
+function automaticAnalysisFingerprint(project, assets) {
+  const evidence = selectEvidenceAssets(project, assets).map((asset) => ({
+    id: asset.id,
+    type: asset.assetType,
+    purpose: asset.purpose || '',
+    size: Number(asset.fileSize || 0),
+    storagePath: asset.storagePath || ''
+  }));
+  return createHash('sha256').update(JSON.stringify({
+    productName: project.productName,
+    brandName: project.brandName,
+    industryId: project.industryId,
+    subcategoryId: project.subcategoryId || '',
+    masterAssetId: project.masterAssetId || '',
+    evidence
+  })).digest('hex');
+}
+
+function mergeAutomaticBrief(project, generatedBrief) {
+  const originals = project.aiBriefOriginals && typeof project.aiBriefOriginals === 'object'
+    ? { ...project.aiBriefOriginals }
+    : {};
+  const nextOriginals = { ...originals };
+  const currentText = {
+    coreUser: String(project.coreUser || '').trim(),
+    coreScenario: String(project.coreScenario || '').trim(),
+    sellingPoints: (project.sellingPoints || []).join('\n').trim()
+  };
+  const generatedText = {
+    coreUser: String(generatedBrief.coreUser || '').trim(),
+    coreScenario: String(generatedBrief.coreScenario || '').trim(),
+    sellingPoints: String(generatedBrief.sellingPoints || '').trim()
+  };
+  const mergedText = { ...currentText };
+  for (const field of ['coreUser', 'coreScenario', 'sellingPoints']) {
+    const previousAiValue = String(originals[field] || '').trim();
+    const replaceable = !currentText[field] || (previousAiValue && currentText[field] === previousAiValue);
+    if (!replaceable || !generatedText[field]) continue;
+    mergedText[field] = generatedText[field];
+    nextOriginals[field] = generatedText[field];
+  }
+  const mergedIdentity = mergeRefreshedAiIdentitySpec(
+    project.identitySpec,
+    generatedBrief.identitySpec,
+    originals.identitySpec
+  );
+  if (Object.keys(mergedIdentity.aiOriginals).length) nextOriginals.identitySpec = mergedIdentity.aiOriginals;
+  return {
+    coreUser: mergedText.coreUser,
+    coreScenario: mergedText.coreScenario,
+    sellingPoints: mergedText.sellingPoints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    identitySpec: mergedIdentity.identitySpec,
+    aiBriefOriginals: nextOriginals
+  };
 }
 
 async function loadEvidence(project, assets) {
@@ -163,39 +227,92 @@ export default async function handler(req, res) {
   }
 
   const language = body.language === 'zh' ? 'zh' : 'en';
-  const industryId = cleanText(body.industryId, 60);
-  const industry = ECOMMERCE_INDUSTRIES.find((item) => item.id === industryId);
-  const productName = cleanText(body.productName, 120);
-  const brandName = cleanText(body.brandName, 120);
+  const automatic = body.automatic === true;
   const projectId = cleanText(body.projectId, 80);
+  let project = projectId ? getEcommerceProject(auth.user.id, projectId) : null;
+  if (automatic && !project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+
+  const industryId = automatic ? project.industryId : cleanText(body.industryId, 60);
+  const industry = ECOMMERCE_INDUSTRIES.find((item) => item.id === industryId);
+  const productName = automatic ? project.productName : cleanText(body.productName, 120);
+  const brandName = automatic ? project.brandName : cleanText(body.brandName, 120);
   if (!industry) return json(res, 400, { ok: false, error: 'INVALID_INDUSTRY' });
   if (!productName) return json(res, 400, { ok: false, error: 'PRODUCT_NAME_REQUIRED' });
 
-  let project = null;
   let evidence = [];
+  let projectAssets = [];
   const providerConfigured = isProviderConfigured();
   if (projectId) {
-    project = getEcommerceProject(auth.user.id, projectId);
+    project ||= getEcommerceProject(auth.user.id, projectId);
     if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
     const sameProductContext = project.industryId === industryId
       && project.productName.trim().toLocaleLowerCase() === productName.toLocaleLowerCase();
     if (providerConfigured && sameProductContext) {
-      evidence = await loadEvidence(project, listEcommerceProjectAssets(auth.user.id, projectId));
+      projectAssets = listEcommerceProjectAssets(auth.user.id, projectId);
+      evidence = await loadEvidence(project, projectAssets);
     }
   }
+
+  const fingerprint = automatic ? automaticAnalysisFingerprint(project, projectAssets) : '';
+  if (automatic && !evidence.length) {
+    markEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, { fingerprint, status: 'waiting-for-image' });
+    return json(res, 409, { ok: false, error: 'PRODUCT_IMAGE_REQUIRED' });
+  }
+  if (automatic && project.autoAnalysisStatus === 'completed' && project.autoAnalysisFingerprint === fingerprint) {
+    return json(res, 200, { ok: true, analyzed: true, cached: true, project });
+  }
+  if (automatic) markEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, { fingerprint, status: 'running' });
+
+  const subcategory = getEcommerceSubcategory(industryId, project?.subcategoryId);
+  const categoryName = language === 'zh'
+    ? `${industry.nameZh} / ${subcategory.nameZh}`
+    : `${industry.nameEn} / ${subcategory.nameEn}`;
 
   const input = {
     language,
     industryName: language === 'zh' ? industry.nameZh : industry.nameEn,
-    productCategory: language === 'zh' ? industry.nameZh : industry.nameEn,
-    categoryExamples: language === 'zh' ? industry.examplesZh : industry.examplesEn,
+    productCategory: categoryName,
+    categoryExamples: language === 'zh'
+      ? `${subcategory.nameZh}；${industry.examplesZh}`
+      : `${subcategory.nameEn}; ${industry.examplesEn}`,
     productName,
     brandName,
-    focus: body.focus === 'identitySpec' ? 'identitySpec' : 'brief',
-    currentBrief: normalizeCurrentBrief(body.currentBrief),
+    focus: automatic ? 'complete' : body.focus === 'identitySpec' ? 'identitySpec' : 'brief',
+    currentBrief: automatic ? normalizeCurrentBrief(project) : normalizeCurrentBrief(body.currentBrief),
     evidence
   };
   const fallbackBrief = buildFallbackEcommerceBrief(input);
+
+  if (automatic) {
+    if (!providerConfigured) {
+      markEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, { fingerprint, status: 'provider-unavailable' });
+      return json(res, 503, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
+    }
+    try {
+      const generated = await generateBrief(input);
+      const merged = mergeAutomaticBrief(project, generated.brief);
+      const savedProject = saveEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, {
+        ...merged,
+        fingerprint,
+        status: 'completed'
+      });
+      return json(res, 200, {
+        ok: true,
+        analyzed: true,
+        model: generated.model,
+        project: savedProject
+      });
+    } catch (error) {
+      markEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, { fingerprint, status: 'failed' });
+      console.warn('Automatic ecommerce product analysis failed', {
+        status: error?.status || null,
+        code: error?.code || null,
+        message: String(error?.message || 'unknown').slice(0, 240)
+      });
+      return json(res, 502, { ok: false, error: 'AUTOMATIC_ANALYSIS_FAILED' });
+    }
+  }
+
   let user;
   try {
     user = chargeAiToolCredit(auth.user.id, {

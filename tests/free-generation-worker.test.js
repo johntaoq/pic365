@@ -56,6 +56,7 @@ test('server worker completes a queued task without a browser request remaining 
     enabled: true,
     isDefault: true
   });
+  localDb.updatePromptLoggingConfig({ enabled: true }, user.id);
   const created = queue.createFreeGenerationTask(user.id, {
     prompt: 'Generate a worker image',
     size: '1024x1024',
@@ -76,4 +77,11 @@ test('server worker completes a queued task without a browser request remaining 
   assert.equal(localDb.getDb().prepare(`
     SELECT COUNT(*) AS count FROM generations WHERE user_id = ? AND status = 'succeeded'
   `).get(user.id).count, 1);
+  const [promptLog] = localDb.listPromptAuditLogs();
+  assert.equal(promptLog.userEmail, user.email);
+  assert.equal(promptLog.taskMode, 'single');
+  assert.equal(promptLog.userPrompt, 'Generate a worker image');
+  assert.equal(promptLog.model, 'gpt-image-2');
+  assert.equal(promptLog.size, '1024x1024');
+  assert.equal(promptLog.quality, 'low');
 });

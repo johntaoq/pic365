@@ -1,4 +1,4 @@
-import { getEcommerceProject } from '../_lib/local-db.js';
+import { getEcommerceProject, getGeneration } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
 import { listEcommerceProjectOutputs } from '../_lib/ecommerce-p1-db.js';
 import {
@@ -21,9 +21,18 @@ function cleanText(value, maxLength = 120) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
+function generatedOutputsForProject(userId, project) {
+  const selectedSlots = new Set(project.selectedSlots || []);
+  return listEcommerceProjectOutputs(userId, project.id).filter((output) => {
+    if (!selectedSlots.has(output.slotId) || !output.selectedGenerationId) return false;
+    const generation = getGeneration(userId, output.selectedGenerationId);
+    return generation?.status === 'succeeded' && Boolean(generation.storage_path || generation.output_url);
+  });
+}
+
 function documentsForProject(userId, project) {
-  const selected = new Set(project.selectedSlots || []);
-  return listEcommerceDeliveryDocuments(userId, project.id).filter((document) => selected.has(document.slotId));
+  const generatedSlots = new Set(generatedOutputsForProject(userId, project).map((output) => output.slotId));
+  return listEcommerceDeliveryDocuments(userId, project.id).filter((document) => generatedSlots.has(document.slotId));
 }
 
 export default async function handler(req, res) {
@@ -55,16 +64,17 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     if (body.action !== 'prepare') return json(res, 400, { ok: false, error: 'INVALID_DELIVERY_ACTION' });
     const platform = getEcommercePlatform(project.platformId);
-    const outputs = listEcommerceProjectOutputs(auth.user.id, project.id);
+    const outputs = generatedOutputsForProject(auth.user.id, project);
     const outputsBySlot = new Map(outputs.map((output) => [output.slotId, output]));
     const documents = [];
     for (const [index, slotId] of project.selectedSlots.entries()) {
       const slot = platform.slots.find((item) => item.id === slotId);
-      if (!slot) continue;
+      const output = outputsBySlot.get(slotId);
+      if (!slot || !output) continue;
       documents.push(syncEcommerceDeliveryDocument(auth.user.id, createDeliveryDocumentDraft({
         project,
         slot,
-        output: outputsBySlot.get(slot.id),
+        output,
         language: body.language === 'en' ? 'en' : 'zh',
         order: index + 1
       })));

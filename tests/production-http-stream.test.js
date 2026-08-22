@@ -58,6 +58,9 @@ test('production HTTP wrapper keeps streamed asset responses open through comple
       AZURE_STORAGE_CONNECTION_STRING: '',
       PROVIDER_CONFIG_SECRET: 'production-http-provider-secret',
       SESSION_SECRET: 'production-http-session-secret',
+      EMAIL_VERIFICATION_SECRET: 'production-http-email-secret',
+      PIC365_ALLOW_TEST_EMAIL_TRANSPORT: 'true',
+      EMAIL_VERIFICATION_TRANSPORT: 'test',
       AI_API_KEY: 'test-provider-key',
       AI_BASE_URL: 'https://provider.example.invalid',
       AI_IMAGE_MODEL: 'gpt-image-2'
@@ -69,17 +72,25 @@ test('production HTTP wrapper keeps streamed asset responses open through comple
   try {
     const baseUrl = `http://127.0.0.1:${port}`;
     await waitForServer(`${baseUrl}/api/health`, child, output);
+    const codeResponse = await fetch(`${baseUrl}/api/auth/send-verification-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'stream@example.com', language: 'en' })
+    });
+    assert.equal(codeResponse.status, 200);
+    const verificationCode = (await codeResponse.json()).previewCode;
+    assert.match(verificationCode, /^\d{6}$/);
     const registration = await fetch(`${baseUrl}/api/auth/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'stream@example.com', password: 'testing-1234', fullName: 'Stream Test' })
+      body: JSON.stringify({ email: 'stream@example.com', password: 'testing-1234', fullName: 'Stream Test', verificationCode })
     });
     assert.equal(registration.status, 201);
     const cookie = registration.headers.get('set-cookie')?.split(';')[0];
     assert.ok(cookie?.startsWith('member_session='));
 
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR4nGNkYPjPgA0wYRUAAAwAAf4B+ZQAAAAASUVORK5CYII=', 'base64');
-    const upload = await fetch(`${baseUrl}/api/assets?fileName=stream.png`, {
+    const upload = await fetch(`${baseUrl}/api/assets?fileName=stream-download`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'image/png' },
       body: png
@@ -106,6 +117,15 @@ test('production HTTP wrapper keeps streamed asset responses open through comple
     });
     assert.equal(full.status, 200);
     assert.equal((await full.arrayBuffer()).byteLength, png.length);
+
+    const download = await fetch(`${baseUrl}/api/assets/file?id=${encodeURIComponent(asset.id)}&variant=original&download=1`, {
+      headers: { cookie }
+    });
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get('content-disposition') || '', /attachment;/);
+    assert.match(download.headers.get('content-disposition') || '', /filename\*=UTF-8''stream-download\.png/);
+    assert.equal(download.headers.get('content-type'), 'image/png');
+    assert.equal((await download.arrayBuffer()).byteLength, png.length);
   } finally {
     await stopChild(child);
     fs.rmSync(tempDirectory, { recursive: true, force: true });

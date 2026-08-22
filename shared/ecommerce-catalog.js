@@ -249,6 +249,130 @@ export const ECOMMERCE_INDUSTRIES = [
   )
 ];
 
+function subcategory(id, nameEn, nameZh, keywords = []) {
+  return { id, nameEn, nameZh, keywords };
+}
+
+export const ECOMMERCE_SUBCATEGORIES = {
+  apparel: [
+    subcategory('womenswear', 'Womenswear', '女装', ['女装', '连衣裙', '半身裙', 'women', 'dress', 'skirt']),
+    subcategory('menswear', 'Menswear', '男装', ['男装', '衬衫', '西装', 'men', 'shirt', 'suit']),
+    subcategory('underwear', 'Underwear', '内衣', ['内衣', '文胸', '内裤', 'underwear', 'lingerie']),
+    subcategory('loungewear', 'Loungewear', '家居服', ['家居服', '睡衣', 'loungewear', 'pajama']),
+    subcategory('apparel-other', 'Other apparel', '其他服装')
+  ],
+  'footwear-bags': [
+    subcategory('footwear', 'Footwear', '鞋履', ['鞋', '靴', 'sneaker', 'shoe', 'boot']),
+    subcategory('handbags', 'Handbags', '手提包', ['手提包', '女包', 'handbag', 'purse']),
+    subcategory('backpacks', 'Backpacks', '背包', ['背包', '双肩包', 'backpack']),
+    subcategory('luggage', 'Luggage', '旅行箱', ['行李箱', '旅行箱', 'luggage', 'suitcase']),
+    subcategory('footwear-bags-other', 'Other footwear and bags', '其他鞋包')
+  ],
+  'accessories-jewelry': [
+    subcategory('fashion-accessories', 'Fashion accessories', '时尚配饰', ['配饰', '帽', '围巾', 'accessory']),
+    subcategory('watches', 'Watches', '腕表', ['手表', '腕表', 'watch']),
+    subcategory('jewelry', 'Jewelry', '珠宝首饰', ['珠宝', '首饰', '项链', '戒指', '耳环', 'jewelry', 'necklace', 'ring']),
+    subcategory('eyewear', 'Eyewear', '眼镜', ['眼镜', '墨镜', 'eyewear', 'glasses']),
+    subcategory('accessories-other', 'Other accessories', '其他配饰')
+  ],
+  beauty: [
+    subcategory('skincare', 'Skincare', '护肤', ['护肤', '面霜', '精华', '面膜', 'skincare', 'serum', 'cream']),
+    subcategory('makeup', 'Makeup', '彩妆', ['彩妆', '口红', '粉底', '眼影', 'makeup', 'lipstick']),
+    subcategory('hair-body-care', 'Hair and body care', '洗护个护', ['洗发', '护发', '沐浴', '个护', 'shampoo', 'body care']),
+    subcategory('fragrance', 'Fragrance', '香水香氛', ['香水', '香氛', 'perfume', 'fragrance']),
+    subcategory('beauty-other', 'Other beauty', '其他美妆个护')
+  ],
+  health: [
+    subcategory('wellness-products', 'Wellness products', '健康用品', ['健康', '保健', 'wellness']),
+    subcategory('care-products', 'Care products', '护理产品', ['护理', '护具', 'care product']),
+    subcategory('care-devices', 'Care devices', '个护仪器', ['护理仪', '按摩仪', '理疗', 'device', 'massager']),
+    subcategory('monitoring-devices', 'Monitoring devices', '健康监测', ['血压', '血糖', '监测', 'monitor']),
+    subcategory('health-other', 'Other health products', '其他健康用品')
+  ],
+  'computer-office': [
+    subcategory('computers', 'Computers', '电脑整机', ['电脑', '笔记本', '台式机', 'laptop', 'computer']),
+    subcategory('computer-accessories', 'Computer accessories', '电脑配件', ['键盘', '鼠标', '显示器', '配件', 'keyboard', 'mouse', 'monitor']),
+    subcategory('office-supplies', 'Office supplies', '文具耗材', ['文具', '纸', '墨盒', '耗材', 'stationery']),
+    subcategory('office-equipment', 'Office equipment', '办公设备', ['打印机', '扫描仪', '办公设备', 'printer']),
+    subcategory('computer-office-other', 'Other computer and office', '其他电脑办公')
+  ],
+  'consumer-electronics': [
+    subcategory('phones-tablets', 'Phones and tablets', '手机平板', ['手机', '平板', 'phone', 'tablet']),
+    subcategory('audio', 'Audio', '影音耳机', ['耳机', '音箱', '麦克风', 'earbuds', 'speaker', 'audio']),
+    subcategory('cameras', 'Cameras', '摄影摄像', ['相机', '镜头', '摄影', 'camera', 'lens']),
+    subcategory('charging-accessories', 'Charging accessories', '充电配件', ['充电', '数据线', '移动电源', 'charger', 'cable']),
+    subcategory('electronics-other', 'Other electronics', '其他数码')
+  ],
+  home: [
+    subcategory('furniture', 'Furniture', '家具', ['家具', '沙发', '床', '桌', '椅', 'furniture', 'sofa']),
+    subcategory('home-goods', 'Home goods', '家居用品', ['家居', '收纳', '置物', 'home goods', 'storage']),
+    subcategory('decor-textiles', 'Decor and textiles', '软装家纺', ['窗帘', '地毯', '抱枕', '家纺', 'decor', 'textile']),
+    subcategory('lighting-renovation', 'Lighting and renovation', '灯具家装', ['灯具', '家装', '装修', 'lighting', 'renovation']),
+    subcategory('home-other', 'Other home products', '其他家居')
+  ],
+  'appliances-kitchen': [
+    subcategory('home-appliances', 'Home appliances', '家用电器', ['冰箱', '洗衣机', '空调', '家电', 'appliance']),
+    subcategory('small-appliances', 'Small appliances', '生活小家电', ['咖啡机', '榨汁机', '空气炸锅', '小家电']),
+    subcategory('kitchenware', 'Kitchenware', '厨具餐具', ['锅', '餐具', '厨具', 'cookware']),
+    subcategory('drinkware', 'Drinkware', '杯壶水具', ['保温杯', '水杯', '杯', '水壶', 'tumbler', 'bottle']),
+    subcategory('appliances-kitchen-other', 'Other appliances and kitchenware', '其他家电厨具')
+  ],
+  food: [
+    subcategory('packaged-food', 'Packaged food', '包装食品', ['包装食品', '方便食品', '罐头', 'packaged food']),
+    subcategory('snacks', 'Snacks', '休闲零食', ['零食', '坚果', '糖果', 'snack']),
+    subcategory('fresh-produce', 'Fresh produce', '生鲜农产品', ['水果', '蔬菜', '肉', '海鲜', '生鲜', 'fresh']),
+    subcategory('ingredients', 'Ingredients', '粮油调味', ['粮油', '调味', '食材', 'ingredient', 'seasoning']),
+    subcategory('food-other', 'Other food', '其他食品')
+  ],
+  'beverage-alcohol': [
+    subcategory('water-soft-drinks', 'Water and soft drinks', '饮用水与软饮', ['矿泉水', '饮用水', '纯净水', '汽水', '饮料', 'water', 'soda']),
+    subcategory('tea-coffee', 'Tea and coffee', '茶与咖啡', ['茶', '咖啡', 'tea', 'coffee']),
+    subcategory('juice-dairy', 'Juice and dairy drinks', '果汁与乳饮', ['果汁', '乳饮', '奶', 'juice', 'dairy']),
+    subcategory('beer-wine-spirits', 'Beer, wine and spirits', '啤酒葡萄酒与烈酒', ['啤酒', '葡萄酒', '白酒', '烈酒', 'beer', 'wine', 'spirit']),
+    subcategory('beverage-other', 'Other beverages', '其他饮品')
+  ],
+  'sports-outdoor': [
+    subcategory('fitness', 'Fitness', '健身训练', ['健身', '瑜伽', '训练', 'fitness', 'yoga']),
+    subcategory('camping-hiking', 'Camping and hiking', '露营登山', ['露营', '登山', '帐篷', 'camping', 'hiking']),
+    subcategory('cycling', 'Cycling', '骑行装备', ['骑行', '自行车', 'cycling', 'bike']),
+    subcategory('sports-gear', 'Sports gear', '运动装备', ['运动', '球拍', '护具', 'sports gear']),
+    subcategory('sports-other', 'Other sports and outdoor', '其他运动户外')
+  ],
+  'tools-commercial': [
+    subcategory('hand-tools', 'Hand tools', '手动工具', ['扳手', '螺丝刀', '钳', 'hand tool']),
+    subcategory('power-tools', 'Power tools', '电动工具', ['钻机', '电钻', '切割机', 'power tool']),
+    subcategory('commercial-equipment', 'Commercial equipment', '商业设备', ['商业设备', '机器', 'equipment']),
+    subcategory('industrial-consumables', 'Industrial consumables', '工业耗材', ['耗材', '配件', 'consumable']),
+    subcategory('tools-other', 'Other tools', '其他工具设备')
+  ],
+  automotive: [
+    subcategory('vehicle-parts', 'Vehicle parts', '汽车零部件', ['汽车配件', '轮胎', '车灯', 'part', 'tire']),
+    subcategory('car-accessories', 'Car accessories', '车载用品', ['车载', '坐垫', '支架', 'car accessory']),
+    subcategory('detailing-maintenance', 'Detailing and maintenance', '美容养护', ['机油', '洗车', '养护', 'detailing', 'maintenance']),
+    subcategory('car-electronics', 'Car electronics', '汽车电子', ['行车记录仪', '导航', '汽车电子', 'dash cam']),
+    subcategory('automotive-other', 'Other automotive', '其他汽车用品')
+  ],
+  'toys-collectibles': [
+    subcategory('toys', 'Toys', '玩具', ['玩具', 'toy']),
+    subcategory('designer-toys', 'Designer toys', '潮玩手办', ['潮玩', '手办', '盲盒', 'designer toy', 'figure']),
+    subcategory('models-blocks', 'Models and blocks', '模型积木', ['模型', '积木', 'model', 'blocks']),
+    subcategory('collectibles', 'Collectibles', '文玩收藏', ['文玩', '收藏', 'collectible']),
+    subcategory('toys-other', 'Other toys and collectibles', '其他玩具收藏')
+  ],
+  'baby-pet': [
+    subcategory('baby-care', 'Baby care', '母婴护理', ['母婴', '婴儿', '纸尿裤', 'baby care', 'diaper']),
+    subcategory('feeding', 'Feeding', '喂养用品', ['奶瓶', '辅食', '喂养', 'feeding']),
+    subcategory('pet-food', 'Pet food', '宠物食品', ['猫粮', '狗粮', '宠物食品', 'pet food']),
+    subcategory('pet-supplies', 'Pet supplies', '宠物用品', ['猫砂', '宠物用品', '牵引绳', 'pet supplies']),
+    subcategory('baby-pet-other', 'Other baby and pet', '其他母婴宠物')
+  ],
+  general: [
+    subcategory('daily-goods', 'Daily goods', '日用百货', ['日用', '百货', 'daily goods']),
+    subcategory('gifts', 'Gifts and customization', '礼品定制', ['礼品', '定制', 'gift']),
+    subcategory('general-other', 'Other products', '其他商品')
+  ]
+};
+
 export const ECOMMERCE_VISUAL_STYLES = [
   visualStyle('clean-commercial', 'Clean commercial', '简洁商业', 'Crisp subject, controlled light, quiet background.', '主体清晰、光线克制、背景干净。', '使用精确棚拍光线、清楚轮廓和克制背景，突出商品本身，避免无关装饰。', ['#dff8f0', '#95cfe0', '#253650']),
   visualStyle('premium-editorial', 'Premium editorial', '高端杂志', 'Refined lighting, material depth, restrained luxury.', '精致布光、材质层次、克制高级感。', '采用高端杂志式构图与精致方向性布光，强调材质层次、留白和高级但真实的色彩。', ['#f2dcc3', '#9b7d91', '#26263a']),
@@ -414,6 +538,65 @@ export function getEcommerceTemplates(platformId, industryId) {
   ));
   if (exact.length) return exact;
   return ECOMMERCE_P1_TEMPLATES.filter((item) => item.platformId === platformId);
+}
+
+const ECOMMERCE_INDUSTRY_KEYWORDS = [
+  ['apparel', ['服装', '女装', '男装', '内衣', '泳衣', '家居服', '衬衫', '裙', '裤', '外套', 't-shirt', 'shirt', 'dress', 'jacket', 'apparel']],
+  ['footwear-bags', ['鞋', '靴', '箱包', '手提包', '背包', '行李箱', 'sneaker', 'shoe', 'boot', 'bag', 'luggage']],
+  ['accessories-jewelry', ['首饰', '珠宝', '项链', '戒指', '耳环', '手表', '腕表', '眼镜', '配饰', 'jewelry', 'watch', 'necklace', 'ring']],
+  ['beauty', ['护肤', '彩妆', '面霜', '精华', '口红', '香水', '洗发', '沐浴', '面膜', 'beauty', 'skincare', 'cosmetic', 'perfume']],
+  ['health', ['护理仪', '按摩仪', '血压', '血糖', '理疗', '护具', '健康', 'care device', 'wellness']],
+  ['computer-office', ['电脑', '键盘', '鼠标', '显示器', '打印机', '办公', '文具', '笔记本', 'laptop', 'keyboard', 'mouse', 'monitor', 'office']],
+  ['consumer-electronics', ['手机', '耳机', '音箱', '相机', '充电', '数据线', '平板', '数码', 'phone', 'earbuds', 'speaker', 'camera', 'charger']],
+  ['home', ['家具', '沙发', '床', '桌', '椅', '灯具', '窗帘', '家居', '收纳', 'sofa', 'furniture', 'home decor']],
+  ['appliances-kitchen', ['保温杯', '水杯', '锅', '餐具', '厨具', '咖啡机', '榨汁机', '空气炸锅', '电器', '家电', 'tumbler', 'cookware', 'appliance']],
+  ['food', ['食品', '零食', '坚果', '水果', '蔬菜', '肉', '海鲜', '调味', 'food', 'snack', 'fresh']],
+  ['beverage-alcohol', ['矿泉水', '饮用水', '纯净水', '饮料', '咖啡', '茶', '酒', '果汁', '汽水', 'mineral water', 'drinking water', 'beverage', 'coffee', 'tea', 'wine', 'beer']],
+  ['sports-outdoor', ['运动', '健身', '瑜伽', '露营', '户外', '登山', '骑行', '帐篷', 'sport', 'fitness', 'outdoor', 'camping']],
+  ['tools-commercial', ['工具', '五金', '钻机', '扳手', '螺丝刀', '设备', '耗材', 'tool', 'hardware', 'equipment']],
+  ['automotive', ['汽车', '车载', '轮胎', '车灯', '机油', '洗车', 'automotive', 'vehicle', 'car accessory']],
+  ['toys-collectibles', ['玩具', '潮玩', '手办', '模型', '积木', '收藏', 'toy', 'collectible', 'figure']],
+  ['baby-pet', ['母婴', '婴儿', '儿童', '奶瓶', '纸尿裤', '宠物', '猫', '狗', 'baby', 'pet']]
+];
+
+export function inferEcommerceIndustryId(...values) {
+  const text = values.flat().map((value) => String(value || '').toLowerCase()).join(' ');
+  const match = ECOMMERCE_INDUSTRY_KEYWORDS.find(([, keywords]) => keywords.some((keyword) => text.includes(keyword)));
+  return match?.[0] || 'general';
+}
+
+export function getEcommerceSubcategories(industryId) {
+  return ECOMMERCE_SUBCATEGORIES[industryId] || ECOMMERCE_SUBCATEGORIES.general;
+}
+
+export function getEcommerceSubcategory(industryId, subcategoryId) {
+  const subcategories = getEcommerceSubcategories(industryId);
+  return subcategories.find((item) => item.id === subcategoryId) || subcategories[0];
+}
+
+export function inferEcommerceSubcategoryId(industryId, ...values) {
+  const text = values.flat().map((value) => String(value || '').toLowerCase()).join(' ');
+  const subcategories = getEcommerceSubcategories(industryId);
+  const match = subcategories.find((item) => item.keywords.some((keyword) => text.includes(keyword)));
+  return match?.id || subcategories[0].id;
+}
+
+export function isValidSubcategory(industryId, subcategoryId) {
+  return getEcommerceSubcategories(industryId).some((item) => item.id === subcategoryId);
+}
+
+export function getDefaultEcommercePlan(platformId, industryId = 'general') {
+  const platform = getEcommercePlatform(platformId);
+  const resolvedIndustryId = isValidIndustry(industryId) ? industryId : 'general';
+  const template = getEcommerceTemplates(platform.id, resolvedIndustryId)[0] || null;
+  const validSlotIds = new Set(platform.slots.map((item) => item.id));
+  const selectedSlotIds = (template?.selectedSlotIds || platform.slots.filter((item) => item.required).map((item) => item.id))
+    .filter((slotId) => validSlotIds.has(slotId));
+  return {
+    templateId: template?.id || '',
+    visualStyleId: template?.visualStyleId || getVisualStylesForIndustry(resolvedIndustryId)[0]?.id || 'clean-commercial',
+    selectedSlotIds: selectedSlotIds.length ? selectedSlotIds : platform.slots.slice(0, 4).map((item) => item.id)
+  };
 }
 
 export function getEcommerceTemplate(templateId) {

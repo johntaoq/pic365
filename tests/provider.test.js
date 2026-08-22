@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { classifyImageProviderError, editImage } from '../api/_lib/provider.js';
+import {
+  buildGeminiImageChatRequest,
+  classifyImageProviderError,
+  editImage,
+  generateImage
+} from '../api/_lib/provider.js';
 
 test('image provider failures are classified into direct user-facing causes', () => {
   assert.equal(classifyImageProviderError({ status: 503, code: 'model_not_found', message: 'no available channel' }), 'IMAGE_PROVIDER_UNAVAILABLE');
@@ -9,6 +14,101 @@ test('image provider failures are classified into direct user-facing causes', ()
   assert.equal(classifyImageProviderError({ status: 402, message: 'insufficient quota' }), 'IMAGE_PROVIDER_BALANCE_ERROR');
   assert.equal(classifyImageProviderError({ status: 429 }), 'UPSTREAM_BUSY');
   assert.equal(classifyImageProviderError({ name: 'AbortError' }), 'IMAGE_PROVIDER_TIMEOUT');
+});
+
+test('Gemini image generation uses New API chat completions with image_config', async () => {
+  const previousFetch = globalThis.fetch;
+  let requestUrl;
+  let requestBody;
+  globalThis.fetch = async (url, options) => {
+    requestUrl = String(url);
+    requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: '![image](data:image/jpeg;base64,aGVsbG8=)' } }]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    const result = await generateImage({
+      prompt: 'Create a clean product image',
+      size: '1024x1536',
+      quality: 'low',
+      providerConfig: {
+        name: '香蕉',
+        providerType: 'openai-compatible',
+        baseUrl: 'https://provider.example',
+        apiKey: 'banana-test-key',
+        model: 'gemini-3.1-flash-image'
+      }
+    });
+    assert.equal(requestUrl, 'https://provider.example/v1/chat/completions');
+    assert.equal(requestBody.model, 'gemini-3.1-flash-image');
+    assert.equal(requestBody.messages[0].content[0].type, 'text');
+    assert.equal(requestBody.extra_body.google.image_config.aspect_ratio, '2:3');
+    assert.equal(requestBody.extra_body.google.image_config.image_size, '1K');
+    assert.equal(result.contentType, 'image/jpeg');
+    assert.match(result.image, /^data:image\/jpeg;base64,/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('Gemini image editing sends references through multimodal chat and preserves HTTP URLs', async () => {
+  const previousFetch = globalThis.fetch;
+  let requestBody;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      choices: [{ message: { images: [{ image_url: { url: 'data:image/png;base64,aGVsbG8=' } }] } }]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  try {
+    const result = await editImage({
+      prompt: 'Keep the product and replace only the background',
+      images: [
+        'https://cdn.example/reference.jpg',
+        'data:image/webp;base64,aGVsbG8='
+      ],
+      size: '1792x1008',
+      quality: 'auto',
+      providerConfig: {
+        name: '香蕉',
+        providerType: 'openai-compatible',
+        baseUrl: 'https://provider.example',
+        apiKey: 'banana-test-key',
+        model: 'gemini-3.1-flash-image'
+      }
+    });
+    assert.deepEqual(
+      requestBody.messages[0].content.slice(1).map((item) => item.image_url.url),
+      ['https://cdn.example/reference.jpg', 'data:image/webp;base64,aGVsbG8=']
+    );
+    assert.equal(requestBody.extra_body.google.image_config.aspect_ratio, '16:9');
+    assert.equal(requestBody.extra_body.google.image_config.image_size, '2K');
+    assert.equal(result.contentType, 'image/png');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('Gemini request builder caps Pic365 reference inputs at nine', () => {
+  const body = buildGeminiImageChatRequest({
+    prompt: 'Combine the references',
+    images: Array.from({ length: 12 }, (_, index) => `https://cdn.example/${index}.png`),
+    model: 'gemini-3.1-flash-image',
+    size: '512x4096',
+    quality: 'high'
+  });
+  assert.equal(body.messages[0].content.length, 10);
+  assert.equal(body.extra_body.google.image_config.aspect_ratio, '1:8');
+  assert.equal(body.extra_body.google.image_config.image_size, '4K');
 });
 
 test('gpt-image-2 edit requests omit unsupported input_fidelity', async () => {

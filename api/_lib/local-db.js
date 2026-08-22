@@ -7,6 +7,15 @@ import {
   normalizeImagePricingConfig,
   normalizeImagePromotionConfig
 } from '../../shared/image-pricing.js';
+import { normalizeRechargeConfig } from '../../shared/recharge-config.js';
+import {
+  ADMIN_PERMISSIONS,
+  isAdministrativeRole,
+  normalizeUserRole,
+  permissionsForRole,
+  roleHasPermission,
+  USER_ROLES
+} from '../../shared/admin-permissions.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
 
 const DEFAULT_DB_PATH = path.resolve(process.cwd(), 'data', 'app.sqlite');
@@ -73,16 +82,26 @@ function dimensionsFromSize(size) {
 
 function insertOriginalAssetVariant(db, { assetId, storagePath, mimeType, fileSize = 0, width = 0, height = 0, durationMs = 0, createdAt }) {
   db.prepare(`
-    INSERT OR IGNORE INTO asset_variants
+    INSERT INTO asset_variants
       (id, asset_id, variant_type, storage_path, mime_type, file_size, width, height, duration_ms, status, created_at, updated_at)
     VALUES (?, ?, 'original', ?, ?, ?, ?, ?, ?, 'ready', ?, ?)
+    ON CONFLICT(asset_id, variant_type) DO UPDATE SET
+      storage_path = excluded.storage_path,
+      mime_type = excluded.mime_type,
+      file_size = CASE WHEN excluded.file_size > 0 THEN excluded.file_size ELSE asset_variants.file_size END,
+      width = CASE WHEN excluded.width > 0 THEN excluded.width ELSE asset_variants.width END,
+      height = CASE WHEN excluded.height > 0 THEN excluded.height ELSE asset_variants.height END,
+      duration_ms = CASE WHEN excluded.duration_ms > 0 THEN excluded.duration_ms ELSE asset_variants.duration_ms END,
+      status = 'ready',
+      updated_at = excluded.updated_at
   `).run(`original-${assetId}`, assetId, storagePath, mimeType, fileSize, width, height, durationMs, createdAt, createdAt);
 }
 
 function ensureGenerationMediaAsset(db, generation) {
   if (!generation?.id || !generation?.user_id || generation.status !== 'succeeded' || !generation.storage_path) return '';
   const assetId = `generation-${generation.id}`;
-  const mimeType = mediaMimeTypeFromPath(generation.storage_path, 'image/png');
+  const mimeType = generation.mime_type || mediaMimeTypeFromPath(generation.storage_path, 'image/png');
+  const fileSize = Math.max(0, Number(generation.file_size || 0));
   const { width, height } = dimensionsFromSize(generation.size);
   const createdAt = generation.created_at || now();
   const metadata = {
@@ -98,13 +117,14 @@ function ensureGenerationMediaAsset(db, generation) {
     INSERT OR IGNORE INTO assets
       (id, owner_user_id, name, media_type, source_type, status, original_storage_path, mime_type,
        file_size, width, height, duration_ms, prompt, source_table, source_id, metadata_json, created_at, updated_at)
-    VALUES (?, ?, ?, 'image', 'generated', 'ready', ?, ?, 0, ?, ?, 0, ?, 'generations', ?, ?, ?, ?)
+    VALUES (?, ?, ?, 'image', 'generated', 'ready', ?, ?, ?, ?, ?, 0, ?, 'generations', ?, ?, ?, ?)
   `).run(
     assetId,
     generation.user_id,
     `AI-${String(generation.id).slice(0, 8)}`,
     generation.storage_path,
     mimeType,
+    fileSize,
     width,
     height,
     generation.prompt || '',
@@ -113,10 +133,34 @@ function ensureGenerationMediaAsset(db, generation) {
     createdAt,
     generation.completed_at || createdAt
   );
+  db.prepare(`
+    UPDATE assets SET
+      original_storage_path = ?,
+      mime_type = ?,
+      file_size = CASE WHEN ? > 0 THEN ? ELSE file_size END,
+      width = CASE WHEN ? > 0 THEN ? ELSE width END,
+      height = CASE WHEN ? > 0 THEN ? ELSE height END,
+      metadata_json = ?,
+      updated_at = ?
+    WHERE id = ?
+  `).run(
+    generation.storage_path,
+    mimeType,
+    fileSize,
+    fileSize,
+    width,
+    width,
+    height,
+    height,
+    JSON.stringify(metadata),
+    generation.completed_at || createdAt,
+    assetId
+  );
   insertOriginalAssetVariant(db, {
     assetId,
     storagePath: generation.storage_path,
     mimeType,
+    fileSize,
     width,
     height,
     createdAt
@@ -295,6 +339,7 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       project_name TEXT NOT NULL,
       platform_id TEXT NOT NULL,
       industry_id TEXT NOT NULL,
+      subcategory_id TEXT NOT NULL DEFAULT '',
       product_name TEXT NOT NULL,
       brand_name TEXT NOT NULL DEFAULT '',
       target_audience TEXT NOT NULL DEFAULT '',
@@ -305,8 +350,12 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       prohibited_content TEXT NOT NULL DEFAULT '',
       ai_brief_originals TEXT NOT NULL DEFAULT '{}',
       identity_spec TEXT NOT NULL DEFAULT '{}',
+      auto_analysis_fingerprint TEXT NOT NULL DEFAULT '',
+      auto_analysis_status TEXT NOT NULL DEFAULT '',
+      auto_analysis_updated_at TEXT,
       template_id TEXT NOT NULL DEFAULT '',
       visual_style_id TEXT NOT NULL DEFAULT 'clean-commercial',
+      image_quality TEXT NOT NULL DEFAULT 'low',
       selected_slots TEXT NOT NULL DEFAULT '[]',
       master_asset_id TEXT,
       status TEXT NOT NULL DEFAULT 'draft',
@@ -329,10 +378,85 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS chat_provider_configs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      provider_type TEXT NOT NULL DEFAULT 'openai-compatible',
+      base_url TEXT NOT NULL,
+      api_key_encrypted TEXT NOT NULL,
+      model TEXT NOT NULL,
+      system_prompt TEXT NOT NULL DEFAULT '',
+      max_output_tokens INTEGER NOT NULL DEFAULT 2048,
+      input_price_microyuan INTEGER NOT NULL DEFAULT 7000000,
+      output_price_microyuan INTEGER NOT NULL DEFAULT 42000000,
+      cache_read_price_microyuan INTEGER NOT NULL DEFAULT 700000,
+      cache_write_price_microyuan INTEGER NOT NULL DEFAULT 8750000,
+      exchange_rate_micros INTEGER NOT NULL DEFAULT 7000000,
+      pricing_source TEXT NOT NULL DEFAULT 'manual',
+      pricing_version TEXT NOT NULL DEFAULT '',
+      price_synced_at TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_conversations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      attachments_json TEXT NOT NULL DEFAULT '[]',
+      usage_json TEXT NOT NULL DEFAULT '{}',
+      charged_credit_centi INTEGER NOT NULL DEFAULT 0,
+      sequence INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_usage_records (
+      id TEXT PRIMARY KEY,
+      client_request_id TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+      assistant_message_id TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+      provider_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      calculated_credit_centi INTEGER NOT NULL DEFAULT 0,
+      charged_credit_centi INTEGER NOT NULL DEFAULT 0,
+      pricing_json TEXT NOT NULL DEFAULT '{}',
+      upstream_request_id TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS email_verification_codes (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'register',
+      code_hash TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -377,6 +501,8 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       provider_request_id TEXT,
       storage_path TEXT,
       output_url TEXT,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      mime_type TEXT NOT NULL DEFAULT '',
       error_code TEXT,
       archived_at TEXT,
       created_at TEXT NOT NULL,
@@ -434,7 +560,6 @@ function migrate(db, { recoverInterrupted = true } = {}) {
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY,
       owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      collection_id TEXT REFERENCES asset_collections(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       media_type TEXT NOT NULL,
       source_type TEXT NOT NULL DEFAULT 'upload',
@@ -455,6 +580,23 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       deleted_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_user_metadata (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      favorite INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, asset_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_collection_memberships (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      collection_id TEXT NOT NULL REFERENCES asset_collections(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, asset_id, collection_id)
     );
 
     CREATE TABLE IF NOT EXISTS asset_variants (
@@ -585,6 +727,32 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       deleted_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS prompt_audit_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      user_email TEXT NOT NULL DEFAULT '',
+      generation_id TEXT UNIQUE REFERENCES generations(id) ON DELETE SET NULL,
+      client_task_id TEXT NOT NULL DEFAULT '',
+      task_mode TEXT NOT NULL DEFAULT 'single',
+      source_name TEXT NOT NULL DEFAULT '',
+      user_prompt TEXT NOT NULL DEFAULT '',
+      effective_prompt TEXT NOT NULL DEFAULT '',
+      provider_id TEXT NOT NULL DEFAULT '',
+      provider_name TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      size TEXT NOT NULL DEFAULT '1024x1024',
+      width INTEGER NOT NULL DEFAULT 0,
+      height INTEGER NOT NULL DEFAULT 0,
+      quality TEXT NOT NULL DEFAULT 'medium',
+      reference_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_prompt_audit_logs_created
+      ON prompt_audit_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_prompt_audit_logs_user
+      ON prompt_audit_logs(user_id, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS ecommerce_delivery_documents (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES ecommerce_projects(id) ON DELETE CASCADE,
@@ -698,6 +866,142 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       created_at TEXT NOT NULL
     );
 
+      CREATE TABLE IF NOT EXISTS user_ui_preferences (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        hide_ecommerce INTEGER NOT NULL DEFAULT 0,
+        hide_templates INTEGER NOT NULL DEFAULT 0,
+        hide_cases INTEGER NOT NULL DEFAULT 0,
+        hide_api INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+    CREATE TABLE IF NOT EXISTS redemption_code_batches (
+      id TEXT PRIMARY KEY,
+      batch_number TEXT NOT NULL UNIQUE,
+      code_type TEXT NOT NULL CHECK (code_type IN ('free', 'paid')),
+      face_value_cents INTEGER NOT NULL CHECK (face_value_cents > 0),
+      credits_per_yuan INTEGER NOT NULL CHECK (credits_per_yuan > 0),
+      credits_per_code INTEGER NOT NULL CHECK (credits_per_code > 0),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      free_purpose TEXT NOT NULL DEFAULT '',
+      paid_source TEXT NOT NULL DEFAULT '',
+      source_detail TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      payment_confirmed INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+      created_by TEXT NOT NULL REFERENCES users(id),
+      operator_name_snapshot TEXT NOT NULL DEFAULT '',
+      operator_email_snapshot TEXT NOT NULL DEFAULT '',
+      operator_role_snapshot TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS redemption_codes (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES redemption_code_batches(id),
+      code_hash TEXT NOT NULL UNIQUE,
+      code_ciphertext TEXT NOT NULL,
+      code_masked TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'redeemed', 'voided', 'expired')),
+      redeemed_by TEXT REFERENCES users(id),
+      redeemed_at TEXT,
+      voided_by TEXT REFERENCES users(id),
+      voided_at TEXT,
+      void_reason TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      action TEXT NOT NULL,
+      result TEXT NOT NULL DEFAULT 'success',
+      actor_type TEXT NOT NULL DEFAULT 'user',
+      actor_user_id TEXT,
+      actor_role TEXT NOT NULL DEFAULT '',
+      actor_name_snapshot TEXT NOT NULL DEFAULT '',
+      actor_email_snapshot TEXT NOT NULL DEFAULT '',
+      target_user_id TEXT,
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT NOT NULL DEFAULT '',
+      credit_ledger_id TEXT,
+      credit_delta INTEGER,
+      balance_before INTEGER,
+      balance_after INTEGER,
+      amount_cents INTEGER,
+      reason TEXT NOT NULL DEFAULT '',
+      details TEXT NOT NULL DEFAULT '',
+      before_json TEXT NOT NULL DEFAULT '{}',
+      after_json TEXT NOT NULL DEFAULT '{}',
+      request_id TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TRIGGER IF NOT EXISTS audit_events_block_update
+    BEFORE UPDATE ON audit_events
+    BEGIN
+      SELECT RAISE(ABORT, 'AUDIT_EVENTS_IMMUTABLE');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS audit_events_block_delete
+    BEFORE DELETE ON audit_events
+    BEGIN
+      SELECT RAISE(ABORT, 'AUDIT_EVENTS_IMMUTABLE');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS credit_ledger_block_update
+    BEFORE UPDATE ON credit_ledger
+    BEGIN
+      SELECT RAISE(ABORT, 'CREDIT_LEDGER_IMMUTABLE');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS credit_ledger_block_delete
+    BEFORE DELETE ON credit_ledger
+    BEGIN
+      SELECT RAISE(ABORT, 'CREDIT_LEDGER_IMMUTABLE');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS credit_ledger_audit_insert
+    AFTER INSERT ON credit_ledger
+    BEGIN
+      INSERT INTO audit_events
+        (id, category, action, result, actor_type, actor_user_id, actor_role,
+         actor_name_snapshot, actor_email_snapshot, target_user_id, entity_type, entity_id,
+         credit_ledger_id, credit_delta, reason, after_json, created_at)
+      VALUES
+        (lower(hex(randomblob(16))), 'credits', 'credit_ledger_posted', 'success',
+         CASE WHEN json_extract(NEW.metadata, '$.adminUserId') IS NOT NULL THEN 'user' ELSE 'system' END,
+         json_extract(NEW.metadata, '$.adminUserId'),
+         COALESCE((SELECT role FROM users WHERE id = json_extract(NEW.metadata, '$.adminUserId')), ''),
+         COALESCE(json_extract(NEW.metadata, '$.actorName'), ''),
+         COALESCE(json_extract(NEW.metadata, '$.actorEmail'), ''),
+         NEW.user_id, 'credit_ledger', NEW.id, NEW.id, NEW.amount,
+         NEW.source,
+         json_object('type', NEW.type, 'source', NEW.source, 'referenceId', NEW.reference_id),
+         NEW.created_at);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS app_setting_audit_to_event
+    AFTER INSERT ON app_setting_audit
+    BEGIN
+      INSERT INTO audit_events
+        (id, category, action, result, actor_type, actor_user_id, actor_role,
+         actor_name_snapshot, actor_email_snapshot, entity_type, entity_id,
+         before_json, after_json, created_at)
+      VALUES
+        (lower(hex(randomblob(16))), 'settings', 'app_setting_updated', 'success',
+         CASE WHEN NEW.updated_by IS NULL THEN 'system' ELSE 'user' END,
+         NEW.updated_by,
+         COALESCE((SELECT role FROM users WHERE id = NEW.updated_by), ''),
+         COALESCE((SELECT full_name FROM users WHERE id = NEW.updated_by), ''),
+         COALESCE((SELECT email FROM users WHERE id = NEW.updated_by), ''),
+         'app_setting', NEW.setting_key,
+         NEW.previous_value_json, NEW.next_value_json, NEW.created_at);
+    END;
+
     CREATE TABLE IF NOT EXISTS admin_alerts (
       id TEXT PRIMARY KEY,
       alert_type TEXT NOT NULL,
@@ -713,7 +1017,72 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       acknowledged_by TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS storage_billing_months (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      billing_month TEXT NOT NULL,
+      unit_price_cents_per_gb INTEGER NOT NULL,
+      billed_peak_bytes INTEGER NOT NULL DEFAULT 0,
+      charged_credits INTEGER NOT NULL DEFAULT 0,
+      last_run_date TEXT,
+      last_charged_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, billing_month)
+    );
+
+    CREATE TABLE IF NOT EXISTS storage_billing_daily_usage (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      usage_date TEXT NOT NULL,
+      billing_month TEXT NOT NULL,
+      run_phase TEXT NOT NULL DEFAULT 'daily',
+      owned_bytes INTEGER NOT NULL DEFAULT 0,
+      owned_asset_count INTEGER NOT NULL DEFAULT 0,
+      result_status TEXT NOT NULL DEFAULT 'measured',
+      incremental_credits INTEGER NOT NULL DEFAULT 0,
+      balance_before INTEGER,
+      balance_after INTEGER,
+      charge_id TEXT,
+      measured_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, usage_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS storage_billing_charges (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      billing_month TEXT NOT NULL,
+      usage_date TEXT NOT NULL,
+      previous_billed_bytes INTEGER NOT NULL DEFAULT 0,
+      billed_peak_bytes INTEGER NOT NULL DEFAULT 0,
+      incremental_bytes INTEGER NOT NULL DEFAULT 0,
+      unit_price_cents_per_gb INTEGER NOT NULL,
+      credits INTEGER NOT NULL,
+      ledger_id TEXT NOT NULL,
+      balance_before INTEGER NOT NULL,
+      balance_after INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (user_id, usage_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS storage_billing_batches (
+      run_date TEXT PRIMARY KEY,
+      run_phase TEXT NOT NULL DEFAULT 'daily',
+      status TEXT NOT NULL DEFAULT 'running',
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      user_count INTEGER NOT NULL DEFAULT 0,
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      charged_users INTEGER NOT NULL DEFAULT 0,
+      charged_credits INTEGER NOT NULL DEFAULT 0,
+      insufficient_users INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      error_json TEXT NOT NULL DEFAULT '[]'
+    );
+
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS email_verification_email_created_idx
+      ON email_verification_codes(email, purpose, created_at DESC);
+    CREATE INDEX IF NOT EXISTS email_verification_expiry_idx
+      ON email_verification_codes(expires_at, consumed_at);
     CREATE INDEX IF NOT EXISTS generations_user_created_idx ON generations(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS ecommerce_projects_user_updated_idx ON ecommerce_projects(user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS ecommerce_outputs_project_slot_idx ON ecommerce_project_outputs(project_id, slot_id, version_number DESC);
@@ -722,8 +1091,10 @@ function migrate(db, { recoverInterrupted = true } = {}) {
     CREATE INDEX IF NOT EXISTS assets_owner_media_idx ON assets(owner_user_id, media_type, created_at DESC);
     CREATE INDEX IF NOT EXISTS assets_owner_source_idx ON assets(owner_user_id, source_type, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS assets_owner_source_unique_idx ON assets(owner_user_id, source_table, source_id) WHERE source_table != '' AND source_id != '';
-    CREATE INDEX IF NOT EXISTS assets_collection_idx ON assets(collection_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS assets_deleted_idx ON assets(owner_user_id, deleted_at);
+    CREATE INDEX IF NOT EXISTS asset_user_metadata_favorite_idx ON asset_user_metadata(user_id, favorite, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS asset_collection_memberships_user_collection_idx ON asset_collection_memberships(user_id, collection_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS asset_collection_memberships_asset_idx ON asset_collection_memberships(asset_id, user_id);
     CREATE INDEX IF NOT EXISTS asset_links_project_idx ON asset_project_links(project_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS asset_jobs_asset_status_idx ON asset_processing_jobs(asset_id, status);
     CREATE INDEX IF NOT EXISTS asset_usage_asset_created_idx ON asset_usage(asset_id, created_at DESC);
@@ -736,20 +1107,51 @@ function migrate(db, { recoverInterrupted = true } = {}) {
     CREATE INDEX IF NOT EXISTS ecommerce_user_templates_user_updated_idx ON ecommerce_user_templates(user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS ledger_user_created_idx ON credit_ledger(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS ledger_type_created_idx ON credit_ledger(type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS chat_provider_default_idx ON chat_provider_configs(enabled, is_default, created_at);
+    CREATE INDEX IF NOT EXISTS chat_conversations_user_updated_idx ON chat_conversations(user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS chat_messages_conversation_created_idx ON chat_messages(conversation_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS chat_usage_user_created_idx ON chat_usage_records(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS reservations_user_status_idx ON credit_reservations(user_id, status);
     CREATE INDEX IF NOT EXISTS generations_status_created_idx ON generations(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS storage_billing_daily_month_idx ON storage_billing_daily_usage(billing_month, usage_date);
+    CREATE INDEX IF NOT EXISTS storage_billing_charges_user_month_idx ON storage_billing_charges(user_id, billing_month, created_at DESC);
+    CREATE INDEX IF NOT EXISTS storage_billing_batches_status_idx ON storage_billing_batches(status, run_date DESC);
+    CREATE INDEX IF NOT EXISTS redemption_codes_batch_status_idx ON redemption_codes(batch_id, status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS redemption_codes_redeemed_user_idx ON redemption_codes(redeemed_by, redeemed_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_events_category_created_idx ON audit_events(category, created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_events_actor_created_idx ON audit_events(actor_user_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS audit_credit_adjustment_request_idx
+      ON audit_events(request_id)
+      WHERE action = 'credit_adjustment' AND result = 'success' AND request_id != '';
   `);
 
   ensureColumn(db, 'generations', 'project_id', 'TEXT');
+  ensureColumn(db, 'user_ui_preferences', 'hide_ecommerce', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'users', 'admin_note', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'users', 'last_login_at', 'TEXT');
   ensureColumn(db, 'generations', 'slot_id', 'TEXT');
   ensureColumn(db, 'generations', 'version_number', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'generations', 'archived_at', 'TEXT');
+  ensureColumn(db, 'generations', 'history_hidden_at', 'TEXT');
+  ensureColumn(db, 'generations', 'file_size', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'generations', 'mime_type', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_projects', 'master_asset_id', 'TEXT');
+  ensureColumn(db, 'ecommerce_projects', 'subcategory_id', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_projects', 'core_user', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_projects', 'core_scenario', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_projects', 'image_provider_id', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_projects', 'image_quality', "TEXT NOT NULL DEFAULT 'low'");
   ensureColumn(db, 'image_provider_configs', 'pricing_strategy', "TEXT NOT NULL DEFAULT 'pixel-quality-formula'");
   ensureColumn(db, 'image_provider_configs', 'pricing_config', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'redemption_codes', 'disabled_by', 'TEXT');
+  ensureColumn(db, 'redemption_codes', 'disabled_at', 'TEXT');
+  db.prepare(`
+    INSERT OR IGNORE INTO asset_user_metadata
+      (user_id, asset_id, favorite, created_at, updated_at)
+    SELECT owner_user_id, id, favorite, created_at, updated_at
+    FROM assets
+    WHERE favorite = 1
+  `).run();
   const providersWithoutPricing = db.prepare(`
     SELECT id, model FROM image_provider_configs
     WHERE pricing_config IS NULL OR TRIM(pricing_config) = '' OR TRIM(pricing_config) = '{}'
@@ -768,6 +1170,9 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   `).run();
   ensureColumn(db, 'ecommerce_projects', 'ai_brief_originals', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'ecommerce_projects', 'identity_spec', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'ecommerce_projects', 'auto_analysis_fingerprint', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_projects', 'auto_analysis_status', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'ecommerce_projects', 'auto_analysis_updated_at', 'TEXT');
   ensureColumn(db, 'ecommerce_projects', 'template_id', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_project_assets', 'purpose', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_project_assets', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
@@ -780,6 +1185,13 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'ecommerce_project_outputs', 'consistency_issues', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, 'ecommerce_project_outputs', 'consistency_summary', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_project_outputs', 'checked_at', 'TEXT');
+  ensureColumn(db, 'free_generation_tasks', 'task_mode', "TEXT NOT NULL DEFAULT 'single'");
+  ensureColumn(db, 'free_generation_tasks', 'batch_id', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'free_generation_tasks', 'batch_index', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'free_generation_tasks', 'source_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'free_generation_tasks', 'source_width', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'free_generation_tasks', 'source_height', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'free_generation_tasks', 'source_thumbnail', "TEXT NOT NULL DEFAULT ''");
   db.exec('CREATE INDEX IF NOT EXISTS generations_project_slot_idx ON generations(project_id, slot_id, created_at DESC)');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ecommerce_outputs_project_slot_unique_idx ON ecommerce_project_outputs(project_id, slot_id)');
 
@@ -885,6 +1297,8 @@ export function getDb() {
 
 const IMAGE_PROMOTION_SETTING_KEY = 'image_promotion';
 const ADMIN_NOTIFICATION_SETTING_KEY = 'admin_notifications';
+const RECHARGE_CONFIG_SETTING_KEY = 'recharge_config';
+const PROMPT_LOGGING_SETTING_KEY = 'prompt_logging';
 
 function parseJsonSetting(value) {
   try {
@@ -893,6 +1307,123 @@ function parseJsonSetting(value) {
   } catch {
     return {};
   }
+}
+
+export function getPromptLoggingConfig() {
+  const row = getDb().prepare(`
+    SELECT value_json, updated_at FROM app_settings WHERE setting_key = ?
+  `).get(PROMPT_LOGGING_SETTING_KEY);
+  const value = parseJsonSetting(row?.value_json);
+  return {
+    enabled: Boolean(value.enabled),
+    updatedAt: row?.updated_at || null
+  };
+}
+
+export function updatePromptLoggingConfig(values, adminUserId = null) {
+  const db = getDb();
+  const previous = getPromptLoggingConfig();
+  const next = { enabled: Boolean(values?.enabled) };
+  const updatedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`
+      INSERT INTO app_settings (setting_key, value_json, updated_by, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(setting_key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_by = excluded.updated_by,
+        updated_at = excluded.updated_at
+    `).run(PROMPT_LOGGING_SETTING_KEY, JSON.stringify(next), adminUserId, updatedAt);
+    db.prepare(`
+      INSERT INTO app_setting_audit
+        (id, setting_key, previous_value_json, next_value_json, updated_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      randomUUID(),
+      PROMPT_LOGGING_SETTING_KEY,
+      JSON.stringify(previous),
+      JSON.stringify({ ...next, updatedAt }),
+      adminUserId,
+      updatedAt
+    );
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getPromptLoggingConfig();
+}
+
+export function recordPromptAuditLog(values = {}) {
+  if (!getPromptLoggingConfig().enabled) return null;
+  const parsedSize = String(values.size || '').match(/^(\d+)x(\d+)$/i);
+  const id = randomUUID();
+  const createdAt = now();
+  try {
+    getDb().prepare(`
+      INSERT INTO prompt_audit_logs
+        (id, user_id, user_email, generation_id, client_task_id, task_mode, source_name,
+         user_prompt, effective_prompt, provider_id, provider_name, model, size, width, height,
+         quality, reference_count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      values.userId || null,
+      String(values.userEmail || '').slice(0, 320),
+      values.generationId || null,
+      String(values.clientTaskId || '').slice(0, 160),
+      values.taskMode === 'batch-repair' ? 'batch-repair' : 'single',
+      String(values.sourceName || '').slice(0, 240),
+      String(values.userPrompt || '').slice(0, 12_000),
+      String(values.effectivePrompt || values.userPrompt || '').slice(0, 24_000),
+      String(values.providerId || '').slice(0, 160),
+      String(values.providerName || '').slice(0, 160),
+      String(values.model || '').slice(0, 160),
+      String(values.size || '1024x1024').slice(0, 40),
+      Number(parsedSize?.[1] || 0),
+      Number(parsedSize?.[2] || 0),
+      String(values.quality || 'medium').slice(0, 20),
+      Math.max(0, Math.min(20, Math.round(Number(values.referenceCount) || 0))),
+      createdAt
+    );
+    return id;
+  } catch (error) {
+    if (String(error?.message || '').includes('UNIQUE constraint failed: prompt_audit_logs.generation_id')) return null;
+    throw error;
+  }
+}
+
+export function listPromptAuditLogs({ limit = 100, offset = 0 } = {}) {
+  const safeLimit = Math.max(1, Math.min(200, Math.round(Number(limit) || 100)));
+  const safeOffset = Math.max(0, Math.round(Number(offset) || 0));
+  return getDb().prepare(`
+    SELECT id, user_id, user_email, generation_id, client_task_id, task_mode, source_name,
+           user_prompt, effective_prompt, provider_id, provider_name, model, size, width, height,
+           quality, reference_count, created_at
+    FROM prompt_audit_logs
+    ORDER BY created_at DESC, id DESC
+    LIMIT ? OFFSET ?
+  `).all(safeLimit, safeOffset).map((row) => ({
+    id: row.id,
+    userId: row.user_id || '',
+    userEmail: row.user_email || '',
+    generationId: row.generation_id || '',
+    clientTaskId: row.client_task_id || '',
+    taskMode: row.task_mode || 'single',
+    sourceName: row.source_name || '',
+    userPrompt: row.user_prompt || '',
+    effectivePrompt: row.effective_prompt || '',
+    providerId: row.provider_id || '',
+    providerName: row.provider_name || '',
+    model: row.model || '',
+    size: row.size || '1024x1024',
+    width: Number(row.width || 0),
+    height: Number(row.height || 0),
+    quality: row.quality || 'medium',
+    referenceCount: Number(row.reference_count || 0),
+    createdAt: row.created_at || ''
+  }));
 }
 
 export function getImagePromotionConfig() {
@@ -944,6 +1475,52 @@ export function updateImagePromotionConfig(values, adminUserId = null) {
     throw error;
   }
   return getImagePromotionConfig();
+}
+
+export function getRechargeConfig() {
+  const row = getDb().prepare(`
+    SELECT value_json, updated_at FROM app_settings WHERE setting_key = ?
+  `).get(RECHARGE_CONFIG_SETTING_KEY);
+  return normalizeRechargeConfig({
+    ...parseJsonSetting(row?.value_json),
+    updatedAt: row?.updated_at || null
+  });
+}
+
+export function updateRechargeConfig(values, adminUserId = null) {
+  const db = getDb();
+  const previous = getRechargeConfig();
+  const next = normalizeRechargeConfig(values);
+  const updatedAt = now();
+  const storedNext = { ...next, updatedAt: undefined };
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`
+      INSERT INTO app_settings (setting_key, value_json, updated_by, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(setting_key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_by = excluded.updated_by,
+        updated_at = excluded.updated_at
+    `).run(RECHARGE_CONFIG_SETTING_KEY, JSON.stringify(storedNext), adminUserId, updatedAt);
+    db.prepare(`
+      INSERT INTO app_setting_audit
+        (id, setting_key, previous_value_json, next_value_json, updated_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      randomUUID(),
+      RECHARGE_CONFIG_SETTING_KEY,
+      JSON.stringify(previous),
+      JSON.stringify({ ...next, updatedAt }),
+      adminUserId,
+      updatedAt
+    );
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getRechargeConfig();
 }
 
 function normalizeAdminNotificationConfig(value = {}) {
@@ -1163,17 +1740,21 @@ export function promoteSuperAdminByEmail(email) {
 
 export function normalizeUser(row) {
   if (!row) return null;
+  const role = normalizeUserRole(row.role);
   return {
     id: row.id,
     email: row.email,
     fullName: row.full_name || '',
     avatarUrl: row.avatar_url || '',
-    role: row.role || 'user',
-    isSuperAdmin: row.role === 'super_admin',
+    role,
+    isSuperAdmin: role === USER_ROLES.SUPER_ADMIN,
+    canAccessAdmin: isAdministrativeRole(role),
+    adminPermissions: permissionsForRole(role),
     status: row.status || 'active',
     creditBalance: Number(row.credit_balance || 0),
     createdAt: row.created_at || '',
-    updatedAt: row.updated_at || ''
+    updatedAt: row.updated_at || '',
+    lastLoginAt: row.last_login_at || ''
   };
 }
 
@@ -1196,16 +1777,53 @@ export function getUserBySessionToken(token) {
   return normalizeUser(row);
 }
 
-export function createUser({ email, password, fullName = '' }) {
+export function createUser({
+  email,
+  password,
+  fullName = '',
+  initialCredits = 0,
+  initialCreditSource = 'signup_bonus'
+}) {
   const db = getDb();
   const normalizedEmail = normalizeEmail(email);
   const createdAt = now();
   const userId = randomUUID();
   const role = getConfiguredSuperAdminEmails().includes(normalizedEmail) ? 'super_admin' : 'user';
-  db.prepare(`
-    INSERT INTO users (id, email, password_hash, full_name, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(userId, normalizedEmail, hashPassword(password), String(fullName || '').trim().slice(0, 80), role, createdAt, createdAt);
+  const grantedCredits = Math.max(0, Math.min(1_000_000, Math.round(Number(initialCredits) || 0)));
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, full_name, role, credit_balance, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      normalizedEmail,
+      hashPassword(password),
+      String(fullName || '').trim().slice(0, 80),
+      role,
+      grantedCredits,
+      createdAt,
+      createdAt
+    );
+    if (grantedCredits > 0) {
+      db.prepare(`
+        INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+        VALUES (?, ?, ?, 'signup_bonus', ?, ?, ?, ?)
+      `).run(
+        randomUUID(),
+        userId,
+        grantedCredits,
+        String(initialCreditSource || 'signup_bonus').trim().slice(0, 80),
+        userId,
+        JSON.stringify({ grantedCredits }),
+        createdAt
+      );
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
   return getUserById(userId);
 }
 
@@ -1400,18 +2018,38 @@ export function updateGeneration(id, updates) {
 
 export function listGenerations(userId, limit = 30, offset = 0) {
   return getDb().prepare(`
-    SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status, storage_path, output_url, error_code, archived_at, created_at, completed_at
+    SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status, storage_path, output_url, file_size, mime_type, error_code, archived_at, history_hidden_at, created_at, completed_at
     FROM generations
-    WHERE user_id = ? AND archived_at IS NULL AND status = 'succeeded' AND storage_path IS NOT NULL
+    WHERE user_id = ? AND archived_at IS NULL AND history_hidden_at IS NULL AND status = 'succeeded' AND storage_path IS NOT NULL
     ORDER BY created_at DESC, id DESC
     LIMIT ? OFFSET ?
   `).all(userId, limit, offset);
 }
 
+export function hideGenerationFromHistory(userId, generationId) {
+  const result = getDb().prepare(`
+    UPDATE generations
+    SET history_hidden_at = ?
+    WHERE id = ? AND user_id = ? AND history_hidden_at IS NULL
+      AND status = 'succeeded' AND storage_path IS NOT NULL
+  `).run(now(), generationId, userId);
+  return Number(result.changes || 0);
+}
+
+export function clearGenerationHistory(userId) {
+  const result = getDb().prepare(`
+    UPDATE generations
+    SET history_hidden_at = ?
+    WHERE user_id = ? AND history_hidden_at IS NULL
+      AND status = 'succeeded' AND storage_path IS NOT NULL
+  `).run(now(), userId);
+  return Number(result.changes || 0);
+}
+
 export function getGeneration(userId, generationId) {
   return getDb().prepare(`
     SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status,
-      storage_path, output_url, error_code, archived_at, created_at, completed_at
+      storage_path, output_url, file_size, mime_type, error_code, archived_at, created_at, completed_at
     FROM generations WHERE id = ? AND user_id = ?
   `).get(generationId, userId);
 }
@@ -1419,7 +2057,7 @@ export function getGeneration(userId, generationId) {
 export function listEcommerceProjectGenerations(userId, projectId, limit = 200) {
   return getDb().prepare(`
     SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status,
-      storage_path, output_url, error_code, archived_at, created_at, completed_at
+      storage_path, output_url, file_size, mime_type, error_code, archived_at, created_at, completed_at
     FROM generations
     WHERE user_id = ? AND project_id = ? AND archived_at IS NULL
     ORDER BY created_at DESC
@@ -1538,7 +2176,9 @@ export function getOrCreateWatchaUser(watchaUser, token = {}) {
     user = getUserByEmail(email) || createUser({
       email,
       password: `${randomUUID()}-${randomUUID()}`,
-      fullName: watchaUser?.nickname || `Watcha ${watchaUserId}`
+      fullName: watchaUser?.nickname || `Watcha ${watchaUserId}`,
+      initialCredits: getRechargeConfig().signupBonusCredits,
+      initialCreditSource: 'watcha_signup_bonus'
     });
   }
   const updatedAt = now();
@@ -1646,7 +2286,7 @@ export function listFavorites(userId) {
 }
 
 export function isAdminUser(userId) {
-  return getUserById(userId)?.isSuperAdmin === true;
+  return getUserById(userId)?.canAccessAdmin === true;
 }
 
 export function listAdminUsers(limit = 100) {
@@ -1683,6 +2323,7 @@ export function listAdminUsers(limit = 100) {
 
   return rows.map((row) => ({
     ...normalizeUser(row),
+    adminNote: row.admin_note || '',
     freeGenerationsUsed: null,
     freeUsed: null,
     usage: {
@@ -1881,6 +2522,7 @@ export function normalizeEcommerceProject(row) {
     projectName: row.project_name || '',
     platformId: row.platform_id || '',
     industryId: row.industry_id || '',
+    subcategoryId: row.subcategory_id || '',
     productName: row.product_name || '',
     brandName: row.brand_name || '',
     coreUser,
@@ -1891,9 +2533,13 @@ export function normalizeEcommerceProject(row) {
     prohibitedContent: row.prohibited_content || '',
     aiBriefOriginals: parseJsonObject(row.ai_brief_originals),
     identitySpec: parseJsonObject(row.identity_spec),
+    autoAnalysisFingerprint: row.auto_analysis_fingerprint || '',
+    autoAnalysisStatus: row.auto_analysis_status || '',
+    autoAnalysisUpdatedAt: row.auto_analysis_updated_at || '',
     templateId: row.template_id || '',
     visualStyleId: row.visual_style_id || 'clean-commercial',
     imageProviderId: row.image_provider_id || '',
+    imageQuality: ['low', 'medium', 'high'].includes(row.image_quality) ? row.image_quality : 'low',
     selectedSlots: parseJsonArray(row.selected_slots),
     masterAssetId: row.master_asset_id || '',
     status: row.status || 'draft',
@@ -1937,16 +2583,17 @@ export function createEcommerceProject(userId, values) {
   const audience = resolveProjectAudience(values);
   getDb().prepare(`
     INSERT INTO ecommerce_projects (
-      id, user_id, project_name, platform_id, industry_id, product_name, brand_name,
+      id, user_id, project_name, platform_id, industry_id, subcategory_id, product_name, brand_name,
       target_audience, core_user, core_scenario, selling_points, specifications, prohibited_content, ai_brief_originals, identity_spec, template_id,
-      visual_style_id, image_provider_id, selected_slots, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+      visual_style_id, image_provider_id, image_quality, selected_slots, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
   `).run(
     id,
     userId,
     values.projectName,
     values.platformId,
     values.industryId,
+    values.subcategoryId || '',
     values.productName,
     values.brandName,
     audience.targetAudience,
@@ -1960,6 +2607,7 @@ export function createEcommerceProject(userId, values) {
     values.templateId || '',
     values.visualStyleId,
     values.imageProviderId || '',
+    ['low', 'medium', 'high'].includes(values.imageQuality) ? values.imageQuality : 'low',
     JSON.stringify(values.selectedSlots || []),
     createdAt,
     createdAt
@@ -1972,14 +2620,15 @@ export function updateEcommerceProject(userId, projectId, values) {
   const audience = resolveProjectAudience(values);
   getDb().prepare(`
     UPDATE ecommerce_projects SET
-      project_name = ?, platform_id = ?, industry_id = ?, product_name = ?, brand_name = ?,
+      project_name = ?, platform_id = ?, industry_id = ?, subcategory_id = ?, product_name = ?, brand_name = ?,
       target_audience = ?, core_user = ?, core_scenario = ?, selling_points = ?, specifications = ?, prohibited_content = ?,
-      ai_brief_originals = ?, identity_spec = ?, template_id = ?, visual_style_id = ?, image_provider_id = ?, selected_slots = ?, updated_at = ?
+      ai_brief_originals = ?, identity_spec = ?, template_id = ?, visual_style_id = ?, image_provider_id = ?, image_quality = ?, selected_slots = ?, updated_at = ?
     WHERE id = ? AND user_id = ?
   `).run(
     values.projectName,
     values.platformId,
     values.industryId,
+    values.subcategoryId || '',
     values.productName,
     values.brandName,
     audience.targetAudience,
@@ -1993,12 +2642,65 @@ export function updateEcommerceProject(userId, projectId, values) {
     values.templateId || '',
     values.visualStyleId,
     values.imageProviderId || '',
+    ['low', 'medium', 'high'].includes(values.imageQuality) ? values.imageQuality : 'low',
     JSON.stringify(values.selectedSlots || []),
     now(),
     projectId,
     userId
   );
   return getEcommerceProject(userId, projectId);
+}
+
+export function saveEcommerceProjectAutomaticAnalysis(userId, projectId, values = {}) {
+  const coreUser = String(values.coreUser || '').trim().slice(0, 1000);
+  const coreScenario = String(values.coreScenario || '').trim().slice(0, 1000);
+  const sellingPoints = Array.isArray(values.sellingPoints)
+    ? values.sellingPoints.map((item) => String(item || '').trim().slice(0, 160)).filter(Boolean).slice(0, 12)
+    : [];
+  const identitySpec = values.identitySpec && typeof values.identitySpec === 'object' && !Array.isArray(values.identitySpec)
+    ? values.identitySpec
+    : {};
+  const aiBriefOriginals = values.aiBriefOriginals && typeof values.aiBriefOriginals === 'object' && !Array.isArray(values.aiBriefOriginals)
+    ? values.aiBriefOriginals
+    : {};
+  const updatedAt = now();
+  const result = getDb().prepare(`
+    UPDATE ecommerce_projects SET
+      target_audience = ?, core_user = ?, core_scenario = ?, selling_points = ?,
+      identity_spec = ?, ai_brief_originals = ?, auto_analysis_fingerprint = ?,
+      auto_analysis_status = ?, auto_analysis_updated_at = ?, updated_at = ?
+    WHERE id = ? AND user_id = ? AND status != 'deleted'
+  `).run(
+    [coreUser, coreScenario].filter(Boolean).join('\n'),
+    coreUser,
+    coreScenario,
+    JSON.stringify(sellingPoints),
+    JSON.stringify(identitySpec),
+    JSON.stringify(aiBriefOriginals),
+    String(values.fingerprint || '').slice(0, 128),
+    String(values.status || 'completed').slice(0, 24),
+    updatedAt,
+    updatedAt,
+    projectId,
+    userId
+  );
+  return result.changes ? getEcommerceProject(userId, projectId) : null;
+}
+
+export function markEcommerceProjectAutomaticAnalysis(userId, projectId, values = {}) {
+  const updatedAt = now();
+  const result = getDb().prepare(`
+    UPDATE ecommerce_projects SET
+      auto_analysis_fingerprint = ?, auto_analysis_status = ?, auto_analysis_updated_at = ?
+    WHERE id = ? AND user_id = ? AND status != 'deleted'
+  `).run(
+    String(values.fingerprint || '').slice(0, 128),
+    String(values.status || '').slice(0, 24),
+    updatedAt,
+    projectId,
+    userId
+  );
+  return result.changes ? getEcommerceProject(userId, projectId) : null;
 }
 
 export function setEcommerceProjectImageProvider(userId, projectId, providerId) {

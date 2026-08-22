@@ -27,6 +27,7 @@ function createProjectFixture() {
     projectName: 'P1 fixture',
     platformId: 'taobao-tmall',
     industryId: 'general',
+    subcategoryId: 'daily-goods',
     productName: 'Test product',
     brandName: '',
     coreUser: 'Marketplace operators',
@@ -48,15 +49,19 @@ test('project briefs persist core users and core scenarios independently', () =>
   const { user, project } = createProjectFixture();
   assert.equal(project.coreUser, 'Marketplace operators');
   assert.equal(project.coreScenario, 'Preparing a new product listing');
+  assert.equal(project.subcategoryId, 'daily-goods');
+  assert.equal(project.imageQuality, 'low');
 
   const updated = localDb.updateEcommerceProject(user.id, project.id, {
     ...project,
     coreUser: 'First-time online shoppers',
-    coreScenario: 'Comparing product details before checkout'
+    coreScenario: 'Comparing product details before checkout',
+    imageQuality: 'high'
   });
   assert.equal(updated.coreUser, 'First-time online shoppers');
   assert.equal(updated.coreScenario, 'Comparing product details before checkout');
   assert.equal(updated.targetAudience, 'First-time online shoppers\nComparing product details before checkout');
+  assert.equal(updated.imageQuality, 'high');
 
   const clearedUser = localDb.updateEcommerceProject(user.id, project.id, {
     ...updated,
@@ -122,10 +127,12 @@ test('P1 tasks survive state transitions and can be retried or cancelled', () =>
       targetArea: 'bottom-right',
       referenceInputs: [{ assetId: 'support-1', role: 'detail' }]
     },
-    { slotId: 'white-background', quality: 'low', projectUpdatedAt: project.updatedAt }
+    { slotId: 'white-background', quality: 'high', projectUpdatedAt: project.updatedAt }
   ]);
 
   assert.equal(first.status, 'queued');
+  assert.equal(first.quality, 'medium');
+  assert.equal(second.quality, 'high');
   assert.equal(first.request.targetArea, 'bottom-right');
   assert.deepEqual(first.request.referenceInputs, [{ assetId: 'support-1', role: 'detail' }]);
   assert.throws(

@@ -25,6 +25,7 @@ function projectConfig(project) {
     projectName: '',
     platformId: project.platformId,
     industryId: project.industryId,
+    subcategoryId: project.subcategoryId || '',
     productName: '新商品',
     brandName: '',
     coreUser: '',

@@ -8,6 +8,7 @@ import {
   getDeliveryTextScale,
   getDeliveryWorkflowStep,
   normalizeDeliveryAdvanced,
+  normalizeDeliveryContent,
   resolveDeliveryOverlayBoxes,
   validateDeliveryDocument
 } from '../shared/ecommerce-delivery.js';
@@ -188,6 +189,16 @@ test('default text bounds fit compact copy instead of filling an oversized panel
   assert.ok(geometry.textBox.height < 0.24);
   assert.ok(geometry.maskBox.height < 0.3);
   assert.ok(geometry.maskBox.height > geometry.textBox.height);
+});
+
+test('delivery headline and subtitle preserve intentional line breaks', () => {
+  const content = normalizeDeliveryContent({
+    headline: '第一行主标题\n第二行主标题',
+    subtitle: '第一行副标题\n第二行副标题'
+  });
+  assert.equal(content.headline, '第一行主标题\n第二行主标题');
+  assert.equal(content.subtitle, '第一行副标题\n第二行副标题');
+  assert.ok(getDeliveryTextScale(content, { width: 0.45, height: 0.18 }) > 0);
 });
 
 test('legacy no-text documents also hide the text panel', () => {

@@ -103,6 +103,44 @@ test('pricing quotes follow the selected provider rule', async () => {
   assert.equal(result.payload.pricing.credits, 160);
 });
 
+test('Gemini quotes map low, medium and high to 1K, 2K and 4K', async () => {
+  const provider = localDb.saveImageProviderConfig({
+    name: 'Gemini pricing test',
+    providerType: 'openai-compatible',
+    baseUrl: 'https://images.example.com',
+    apiKey: 'gemini-pricing-test-key',
+    model: 'gemini-3.1-flash-image',
+    pricingStrategy: 'fixed-quality',
+    pricingConfig: {
+      strategy: 'fixed-quality',
+      qualityPricesRmb: { low: 0.1, medium: 0.15, high: 0.2 }
+    },
+    enabled: true,
+    isDefault: false
+  });
+
+  const high = await invoke({
+    method: 'GET',
+    query: { size: '4096x4096', quality: 'high', providerId: provider.id }
+  });
+  assert.equal(high.statusCode, 200);
+  assert.equal(high.payload.pricing.resolutionTier, '4K');
+  assert.equal(high.payload.pricing.billedPixels, 4096 * 4096);
+  assert.equal(high.payload.pricing.maximumPixels, 4096 * 4096);
+  assert.equal(high.payload.pricing.billedQuality, 'high');
+  assert.equal(high.payload.pricing.credits, 20);
+
+  const auto = await invoke({
+    method: 'GET',
+    query: { size: 'auto', quality: 'auto', providerId: provider.id }
+  });
+  assert.equal(auto.statusCode, 200);
+  assert.equal(auto.payload.pricing.resolutionTier, '2K');
+  assert.equal(auto.payload.pricing.billedPixels, 2048 * 2048);
+  assert.equal(auto.payload.pricing.billedQuality, 'medium');
+  assert.equal(auto.payload.pricing.credits, 15);
+});
+
 test('pricing does not require decrypting the provider API key', async () => {
   const originalSecret = process.env.PROVIDER_CONFIG_SECRET;
   process.env.PROVIDER_CONFIG_SECRET = 'pricing-encryption-key-a';

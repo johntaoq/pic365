@@ -1,5 +1,5 @@
 import { authenticateRequest } from './_lib/local-auth.js';
-import { createUploadedAsset, emptyAssetTrash, getAssetStats, listAssets } from './_lib/media-assets.js';
+import { createUploadedAsset, emptyAssetTrash, getAssetStats, listAssets, repairMissingAssetFileMetadata } from './_lib/media-assets.js';
 import { readBufferBody } from './_lib/request.js';
 import { startMediaProcessingWorker } from '../server/media-processing-worker.js';
 
@@ -18,6 +18,7 @@ export default async function handler(req, res) {
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
 
   if (req.method === 'GET') {
+    await repairMissingAssetFileMetadata(auth.user.id);
     const result = listAssets(auth.user.id, {
       limit: req.query?.limit,
       offset: req.query?.offset,

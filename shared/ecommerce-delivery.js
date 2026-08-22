@@ -323,7 +323,9 @@ function estimateDeliveryTextHeight(content, panelWidth, targetWidth, targetHeig
   const lineCount = (value, fontSize, maximum) => {
     if (!value) return 0;
     const unitsPerLine = Math.max(6, widthPixels / Math.max(1, fontSize * 0.82));
-    return Math.max(1, Math.min(maximum, Math.ceil(String(value).length / unitsPerLine)));
+    const explicitLines = String(value).replace(/\r\n?/g, '\n').split('\n');
+    const count = explicitLines.reduce((total, line) => total + Math.max(1, Math.ceil(line.length / unitsPerLine)), 0);
+    return Math.max(1, Math.min(maximum, count));
   };
   const headlineLines = lineCount(normalized.headline, headlineSize, 2);
   const subtitleLines = lineCount(normalized.subtitle, subtitleSize, 2);
