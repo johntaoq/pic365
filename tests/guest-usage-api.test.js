@@ -34,13 +34,13 @@ function invoke(headers) {
     .then(() => ({ statusCode, payload }));
 }
 
-test('server-side guest usage survives missing cookies and trusts proxy real IP over spoofed forwarding', async () => {
+test('server-side guest usage allows three images and trusts proxy real IP over spoofed forwarding', async () => {
   const userAgent = 'pic365-guest-test';
   const realIp = '203.0.113.7';
   const fingerprint = createHash('sha256')
     .update(`${process.env.GUEST_USAGE_SECRET}\n${realIp}\n${userAgent}`)
     .digest('hex');
-  db.recordGuestGenerationUsage(fingerprint);
+  db.claimGuestGenerationUsage(fingerprint, { limit: 3 });
 
   const result = await invoke({
     'x-real-ip': realIp,
@@ -48,6 +48,20 @@ test('server-side guest usage survives missing cookies and trusts proxy real IP 
     'user-agent': userAgent
   });
   assert.equal(result.statusCode, 200);
-  assert.equal(result.payload.guestAllowed, false);
-  assert.equal(result.payload.guestFreeUsed, true);
+  assert.equal(result.payload.guestAllowed, true);
+  assert.equal(result.payload.guestFreeUsed, false);
+  assert.equal(result.payload.guestGenerationsUsed, 1);
+  assert.equal(result.payload.guestGenerationsRemaining, 2);
+
+  db.claimGuestGenerationUsage(fingerprint, { limit: 3 });
+  db.claimGuestGenerationUsage(fingerprint, { limit: 3 });
+  const exhausted = await invoke({
+    'x-real-ip': realIp,
+    'x-forwarded-for': '198.51.100.99, 10.0.0.4',
+    'user-agent': userAgent
+  });
+  assert.equal(exhausted.payload.guestAllowed, false);
+  assert.equal(exhausted.payload.guestFreeUsed, true);
+  assert.equal(exhausted.payload.guestGenerationsUsed, 3);
+  assert.equal(exhausted.payload.guestGenerationsRemaining, 0);
 });

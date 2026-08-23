@@ -76,6 +76,31 @@ test('each AI magic tool call deducts one credit outside image promotions', () =
   );
 });
 
+test('failed AI magic calls refund once using the request reference', () => {
+  const user = localDb.createUser({
+    email: `ai-magic-refund-${Date.now()}@example.com`,
+    password: 'testing-1234',
+    fullName: 'AI Magic Refund Test'
+  });
+  localDb.getDb().prepare('UPDATE users SET credit_balance = 2 WHERE id = ?').run(user.id);
+  const referenceId = `prompt-${Date.now()}`;
+
+  localDb.chargeAiToolCredit(user.id, {
+    source: 'ai_magic_prompt',
+    referenceId,
+    metadata: { model: 'gpt-5.6-luna' }
+  });
+  assert.equal(localDb.getUserProfile(user.id).creditBalance, 1);
+
+  localDb.refundAiToolCredit(user.id, { referenceId, errorCode: 'MODEL_FAILED' });
+  localDb.refundAiToolCredit(user.id, { referenceId, errorCode: 'MODEL_FAILED' });
+  assert.equal(localDb.getUserProfile(user.id).creditBalance, 2);
+  assert.equal(localDb.getDb().prepare(`
+    SELECT COUNT(*) AS count FROM credit_ledger
+    WHERE user_id = ? AND reference_id = ? AND type = 'refund' AND source = 'ai_tool_refund'
+  `).get(user.id, referenceId).count, 1);
+});
+
 test('image promotion settings persist and retain an audit trail', () => {
   const updated = localDb.updateImagePromotionConfig({
     enabled: true,

@@ -29,6 +29,7 @@ import {
   Copy,
   CreditCard,
   Eye,
+  EyeOff,
   Heart,
   HardDrive,
   ImageIcon,
@@ -146,12 +147,12 @@ const copy = {
     sanitizeFailed: 'A local safe rewrite template was applied.',
     contentModerationBlocked: 'Content review blocked this prompt.',
     sanitizeNoChange: 'The prompt did not change.',
-    oneFreeGeneration: '1 free test image',
+    oneFreeGeneration: '3 free test images',
     superAdminGeneration: (credits) => `Super admin reference price: ${credits} credits; balance is not deducted.`,
     generationCost: (credits) => `Estimated cost: ${credits} credits`,
     freeLimitReached: 'Free generation used. Buy credits to keep generating.',
     creditsRequired: 'Credits required. Buy credits to keep generating.',
-    guestFreeLimitReached: 'Your free guest image has been used. Sign in with credits to continue.',
+    guestFreeLimitReached: 'All 3 free guest images have been used. Sign in with credits to continue.',
     generationBusy: 'The image service is busy. Please try again in a moment.',
     generationFailed: 'Generation failed. Please try again later.',
     generationTimeout: 'Generation exceeded the 300-second wait limit. Please try again.',
@@ -173,6 +174,8 @@ const copy = {
     authBackToLogin: 'Back to sign in',
     authEmail: 'Email',
     authPassword: 'Password',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
     authNewPassword: 'New password',
     authConfirmPassword: 'Confirm new password',
     authPasswordMismatch: 'The two passwords do not match.',
@@ -221,6 +224,16 @@ const copy = {
     saveProfile: 'Save profile',
     profileSaved: 'Profile saved.',
     profileUpdateFailed: 'Profile update failed. Please try again.',
+    changePassword: 'Change password',
+    changePasswordHint: 'Enter your current password, then enter the new password twice to confirm it.',
+    currentPassword: 'Current password',
+    confirmNewPassword: 'Confirm new password',
+    saveNewPassword: 'Change password',
+    passwordChanged: 'Password changed.',
+    passwordChangedSessions: 'Password changed. Other devices have been signed out.',
+    currentPasswordWrong: 'The current password is incorrect.',
+    passwordUnchanged: 'The new password must be different from the current password.',
+    passwordChangeFailed: 'Password could not be changed. Please try again.',
     googleAvatarSource: 'Avatar is synced from your login provider.',
     accountOverview: 'Account overview',
     totalGenerations: 'Generated tests',
@@ -408,7 +421,7 @@ const copy = {
     sanitizeFailed: '已使用本地安全模板完成改写。',
     contentModerationBlocked: '内容审核未通过。',
     sanitizeNoChange: '提示词未发生变化。',
-    oneFreeGeneration: '免费生成 1 张测试图',
+    oneFreeGeneration: '免费生成 3 张测试图',
     superAdminGeneration: (credits) => `超级管理员参考价 ${credits} 积分，不扣账户余额。`,
     generationCost: (credits) => `预计消耗 ${credits} 积分`,
     freeLimitReached: '免费额度已用完，可购买积分继续生成。',
@@ -435,6 +448,8 @@ const copy = {
     authBackToLogin: '返回登录',
     authEmail: '邮箱',
     authPassword: '密码',
+    showPassword: '显示密码',
+    hidePassword: '隐藏密码',
     authNewPassword: '新密码',
     authConfirmPassword: '确认新密码',
     authPasswordMismatch: '两次输入的密码不一致。',
@@ -483,6 +498,16 @@ const copy = {
     saveProfile: '保存资料',
     profileSaved: '资料已保存。',
     profileUpdateFailed: '资料保存失败，请稍后再试。',
+    changePassword: '修改密码',
+    changePasswordHint: '先验证当前密码，新密码需要输入两次进行确认。',
+    currentPassword: '当前密码',
+    confirmNewPassword: '再次输入新密码',
+    saveNewPassword: '确认修改密码',
+    passwordChanged: '密码已修改。',
+    passwordChangedSessions: '密码已修改，其他设备已退出登录。',
+    currentPasswordWrong: '当前密码不正确。',
+    passwordUnchanged: '新密码不能与当前密码相同。',
+    passwordChangeFailed: '密码修改失败，请稍后重试。',
     googleAvatarSource: '头像会同步你的登录账号头像。',
     accountOverview: '账户概览',
     totalGenerations: '生成测试数',
@@ -1419,6 +1444,7 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [codeCooldown, setCodeCooldown] = useState(0);
@@ -1439,6 +1465,7 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setShowLoginPassword(false);
     setFullName('');
     setVerificationCode('');
     setCodeCooldown(0);
@@ -1464,6 +1491,7 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
     setMessage('');
     setPassword('');
     setConfirmPassword('');
+    setShowLoginPassword(false);
     setVerificationCode('');
     setVerifiedEmail('');
     setCodeCooldown(0);
@@ -1622,7 +1650,20 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
           ) : null}
           <label>
             <span>{mode === 'reset' ? t.authNewPassword : t.authPassword}</span>
-            <input type="password" value={password} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
+            <div className="passwordInputWrap">
+              <input type={mode === 'login' && showLoginPassword ? 'text' : 'password'} value={password} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
+              {mode === 'login' ? (
+                <button
+                  className="passwordVisibilityButton"
+                  type="button"
+                  aria-label={showLoginPassword ? t.hidePassword : t.showPassword}
+                  title={showLoginPassword ? t.hidePassword : t.showPassword}
+                  onClick={() => setShowLoginPassword((current) => !current)}
+                >
+                  {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              ) : null}
+            </div>
           </label>
           {mode === 'reset' ? (
             <label>
@@ -1785,6 +1826,11 @@ function AccountPanel({
   const [fullName, setFullName] = useState('');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState('idle');
+  const [passwordMessage, setPasswordMessage] = useState('');
   const favoritesRef = useRef(null);
   useBodyScrollLock(open);
 
@@ -1793,6 +1839,11 @@ function AccountPanel({
     setFullName(profile?.fullName || session?.user?.user_metadata?.name || '');
     setStatus('idle');
     setMessage('');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordStatus('idle');
+    setPasswordMessage('');
   }, [open, profile?.fullName, session?.user?.user_metadata?.name]);
 
   useEffect(() => {
@@ -1847,6 +1898,56 @@ function AccountPanel({
     } catch {
       setStatus('error');
       setMessage(t.profileUpdateFailed);
+    }
+  }
+
+  async function handlePasswordSubmit(event) {
+    event.preventDefault();
+    if (newPassword !== confirmNewPassword) {
+      setPasswordStatus('error');
+      setPasswordMessage(t.authPasswordMismatch);
+      return;
+    }
+    if (currentPassword.length < 8 || newPassword.length < 8) {
+      setPasswordStatus('error');
+      setPasswordMessage(t.authInvalidPassword);
+      return;
+    }
+    setPasswordStatus('loading');
+    setPasswordMessage('');
+    try {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(session)
+        },
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword: confirmNewPassword })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        const error = new Error(payload.error || 'PASSWORD_CHANGE_FAILED');
+        error.code = payload.error || 'PASSWORD_CHANGE_FAILED';
+        throw error;
+      }
+      if (payload.user) onProfileChange(payload.user);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordStatus('success');
+      setPasswordMessage(payload.otherSessionsRevoked ? t.passwordChangedSessions : t.passwordChanged);
+    } catch (error) {
+      const code = error?.code || '';
+      setPasswordStatus('error');
+      setPasswordMessage(code === 'INVALID_CURRENT_PASSWORD'
+        ? t.currentPasswordWrong
+        : code === 'PASSWORD_MISMATCH'
+          ? t.authPasswordMismatch
+          : code === 'PASSWORD_UNCHANGED'
+            ? t.passwordUnchanged
+            : code === 'INVALID_PASSWORD'
+              ? t.authInvalidPassword
+              : t.passwordChangeFailed);
     }
   }
 
@@ -1924,6 +2025,38 @@ function AccountPanel({
             </button>
           </section>
         </div>
+
+        <section className="accountPasswordCard">
+          <header>
+            <div>
+              <h3><KeyRound size={18} />{t.changePassword}</h3>
+              <p>{t.changePasswordHint}</p>
+            </div>
+          </header>
+          <form className="accountPasswordForm" onSubmit={handlePasswordSubmit}>
+            <label>
+              <span>{t.currentPassword}</span>
+              <input type="password" autoComplete="current-password" minLength={8} maxLength={128} value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
+            </label>
+            <label>
+              <span>{t.authNewPassword}</span>
+              <input type="password" autoComplete="new-password" minLength={8} maxLength={128} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
+            </label>
+            <label>
+              <span>{t.confirmNewPassword}</span>
+              <input type="password" autoComplete="new-password" minLength={8} maxLength={128} value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} required />
+            </label>
+            <button type="submit" disabled={passwordStatus === 'loading'}>
+              {passwordStatus === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <KeyRound size={16} />}
+              {t.saveNewPassword}
+            </button>
+          </form>
+          {passwordMessage ? (
+            <p className={cx('authMessage', passwordStatus === 'error' && 'error', passwordStatus === 'success' && 'sent')}>
+              {passwordMessage}
+            </p>
+          ) : null}
+        </section>
 
         <PersonalMenuSettings
           language={language}

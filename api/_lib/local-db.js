@@ -1126,6 +1126,7 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   `);
 
   ensureColumn(db, 'generations', 'project_id', 'TEXT');
+  ensureColumn(db, 'guest_generation_usage', 'usage_count', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'user_ui_preferences', 'hide_ecommerce', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'users', 'admin_note', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'users', 'last_login_at', 'TEXT');
@@ -2200,16 +2201,61 @@ export function getOrCreateWatchaUser(watchaUser, token = {}) {
 }
 
 export function hasGuestGenerationUsage(fingerprint) {
-  if (!fingerprint) return false;
-  return Boolean(getDb().prepare('SELECT 1 FROM guest_generation_usage WHERE fingerprint = ?').get(fingerprint));
+  return getGuestGenerationUsageCount(fingerprint) > 0;
+}
+
+export function getGuestGenerationUsageCount(fingerprint) {
+  if (!fingerprint) return 0;
+  const row = getDb().prepare('SELECT usage_count FROM guest_generation_usage WHERE fingerprint = ?').get(fingerprint);
+  return Math.max(0, Number(row?.usage_count || 0));
 }
 
 export function recordGuestGenerationUsage(fingerprint) {
   if (!fingerprint) return false;
   return Boolean(getDb().prepare(`
-    INSERT INTO guest_generation_usage (fingerprint, used_at) VALUES (?, ?)
+    INSERT INTO guest_generation_usage (fingerprint, used_at, usage_count) VALUES (?, ?, 1)
     ON CONFLICT(fingerprint) DO NOTHING
   `).run(fingerprint, now()).changes);
+}
+
+export function claimGuestGenerationUsage(fingerprint, { limit = 1, minimumUsed = 0 } = {}) {
+  if (!fingerprint) return { claimed: false, count: 0 };
+  const normalizedLimit = Math.max(1, Math.min(100, Math.floor(Number(limit) || 1)));
+  const normalizedMinimum = Math.max(0, Math.min(normalizedLimit, Math.floor(Number(minimumUsed) || 0)));
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const existing = db.prepare('SELECT usage_count FROM guest_generation_usage WHERE fingerprint = ?').get(fingerprint);
+    if (!existing) {
+      db.prepare('INSERT INTO guest_generation_usage (fingerprint, used_at, usage_count) VALUES (?, ?, ?)')
+        .run(fingerprint, now(), normalizedMinimum);
+    } else if (Number(existing.usage_count || 0) < normalizedMinimum) {
+      db.prepare('UPDATE guest_generation_usage SET usage_count = ?, used_at = ? WHERE fingerprint = ?')
+        .run(normalizedMinimum, now(), fingerprint);
+    }
+    const result = db.prepare(`
+      UPDATE guest_generation_usage
+      SET usage_count = usage_count + 1, used_at = ?
+      WHERE fingerprint = ? AND usage_count < ?
+    `).run(now(), fingerprint, normalizedLimit);
+    const count = getGuestGenerationUsageCount(fingerprint);
+    db.exec('COMMIT');
+    return { claimed: Boolean(result.changes), count };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function releaseGuestGenerationUsage(fingerprint) {
+  if (!fingerprint) return 0;
+  const db = getDb();
+  db.prepare(`
+    UPDATE guest_generation_usage
+    SET usage_count = MAX(0, usage_count - 1), used_at = ?
+    WHERE fingerprint = ? AND usage_count > 0
+  `).run(now(), fingerprint);
+  return getGuestGenerationUsageCount(fingerprint);
 }
 
 export function listCreditLedger(userId, limit = 30) {
@@ -2224,7 +2270,7 @@ export function listCreditLedger(userId, limit = 30) {
   `).all(userId, Math.max(1, Math.min(Number(limit) || 30, 500)));
 }
 
-export function chargeAiToolCredit(userId, { source = 'ai_magic', amount = 1, metadata = {} } = {}) {
+export function chargeAiToolCredit(userId, { source = 'ai_magic', amount = 1, metadata = {}, referenceId = null } = {}) {
   const creditAmount = Math.round(Number(amount));
   if (!userId || !Number.isFinite(creditAmount) || creditAmount <= 0 || creditAmount > 100) {
     const error = new Error('INVALID_AI_TOOL_CHARGE');
@@ -2252,17 +2298,71 @@ export function chargeAiToolCredit(userId, { source = 'ai_magic', amount = 1, me
     }
     db.prepare(`
       INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
-      VALUES (?, ?, ?, 'ai_tool', ?, NULL, ?, ?)
+      VALUES (?, ?, ?, 'ai_tool', ?, ?, ?, ?)
     `).run(
       randomUUID(),
       userId,
       -creditAmount,
       String(source || 'ai_magic').slice(0, 80),
+      referenceId ? String(referenceId).slice(0, 160) : null,
       JSON.stringify(metadata && typeof metadata === 'object' ? metadata : {}),
       createdAt
     );
     db.exec('COMMIT');
     monitorLowCreditBalance(userId);
+    return getUserProfile(userId);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function refundAiToolCredit(userId, { referenceId, errorCode = 'AI_TOOL_FAILED', metadata = {} } = {}) {
+  const normalizedReferenceId = String(referenceId || '').trim().slice(0, 160);
+  if (!userId || !normalizedReferenceId) {
+    const error = new Error('INVALID_AI_TOOL_REFUND');
+    error.code = 'INVALID_AI_TOOL_REFUND';
+    throw error;
+  }
+  const db = getDb();
+  const createdAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const charge = db.prepare(`
+      SELECT amount, source FROM credit_ledger
+      WHERE user_id = ? AND reference_id = ? AND type = 'ai_tool'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(userId, normalizedReferenceId);
+    const existingRefund = db.prepare(`
+      SELECT id FROM credit_ledger
+      WHERE user_id = ? AND reference_id = ? AND type = 'refund' AND source = 'ai_tool_refund'
+      LIMIT 1
+    `).get(userId, normalizedReferenceId);
+    if (!charge || existingRefund) {
+      db.exec('COMMIT');
+      return getUserProfile(userId);
+    }
+    const creditAmount = Math.abs(Number(charge.amount) || 0);
+    if (creditAmount > 0) {
+      db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance + ?, 1), updated_at = ? WHERE id = ?')
+        .run(creditAmount, createdAt, userId);
+      db.prepare(`
+        INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+        VALUES (?, ?, ?, 'refund', 'ai_tool_refund', ?, ?, ?)
+      `).run(
+        randomUUID(),
+        userId,
+        creditAmount,
+        normalizedReferenceId,
+        JSON.stringify({
+          originalSource: charge.source,
+          errorCode: String(errorCode || 'AI_TOOL_FAILED').slice(0, 120),
+          ...(metadata && typeof metadata === 'object' ? metadata : {})
+        }),
+        createdAt
+      );
+    }
+    db.exec('COMMIT');
     return getUserProfile(userId);
   } catch (error) {
     db.exec('ROLLBACK');

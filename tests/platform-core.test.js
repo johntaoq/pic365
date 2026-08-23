@@ -100,6 +100,11 @@ test('guest usage and admin alerts are durable and deduplicated', () => {
   assert.equal(db.recordGuestGenerationUsage('fingerprint-one'), true);
   assert.equal(db.recordGuestGenerationUsage('fingerprint-one'), false);
   assert.equal(db.hasGuestGenerationUsage('fingerprint-one'), true);
+  assert.equal(db.getGuestGenerationUsageCount('fingerprint-one'), 1);
+  assert.deepEqual(db.claimGuestGenerationUsage('fingerprint-one', { limit: 3 }), { claimed: true, count: 2 });
+  assert.deepEqual(db.claimGuestGenerationUsage('fingerprint-one', { limit: 3 }), { claimed: true, count: 3 });
+  assert.deepEqual(db.claimGuestGenerationUsage('fingerprint-one', { limit: 3 }), { claimed: false, count: 3 });
+  assert.equal(db.releaseGuestGenerationUsage('fingerprint-one'), 2);
 
   db.recordAdminAlert({ type: 'channel-failure', severity: 'critical', dedupeKey: 'provider:test', message: 'Provider unavailable.' });
   db.recordAdminAlert({ type: 'channel-failure', severity: 'warning', dedupeKey: 'provider:test', message: 'Provider still unavailable.' });

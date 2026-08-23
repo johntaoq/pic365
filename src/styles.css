@@ -5206,6 +5206,38 @@ button {
   outline: 3px solid rgba(141, 244, 204, 0.12);
 }
 
+.passwordInputWrap {
+  position: relative;
+  display: block;
+}
+
+.passwordInputWrap input {
+  padding-right: 48px;
+}
+
+.passwordVisibilityButton {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 7px;
+  padding: 0;
+  background: transparent;
+  color: #95a6bf;
+  place-items: center;
+}
+
+.passwordVisibilityButton:hover,
+.passwordVisibilityButton:focus-visible {
+  background: rgba(141, 244, 204, 0.1);
+  color: #d9fff0;
+  outline: none;
+}
+
 .authVerificationRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -6403,6 +6435,85 @@ button {
 .portalButton:disabled,
 .accountForm button:disabled,
 .adminAdjustForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.accountPasswordCard {
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.accountPasswordCard header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #eaf3ff;
+  font-size: 16px;
+}
+
+.accountPasswordCard header p {
+  margin-top: 6px;
+  color: #93a4bc;
+  font-size: 12px;
+}
+
+.accountPasswordForm {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.accountPasswordForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.accountPasswordForm label span {
+  color: #8eeeff;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.accountPasswordForm input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 12px;
+  background: rgba(3, 7, 15, 0.72);
+  color: #ffffff;
+  font: inherit;
+}
+
+.accountPasswordForm input:focus {
+  border-color: rgba(103, 232, 249, 0.72);
+  box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.1);
+}
+
+.accountPasswordForm button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  min-height: 42px;
+  border: 1px solid rgba(120, 255, 185, 0.32);
+  border-radius: 8px;
+  background: rgba(120, 255, 185, 0.1);
+  color: #d8ffe4;
+  font-weight: 900;
+}
+
+.accountPasswordForm button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -13601,6 +13712,10 @@ body.deliveryObjectDragging * {
   }
 
   .accountGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .accountPasswordForm {
     grid-template-columns: 1fr;
   }
 

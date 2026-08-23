@@ -35,6 +35,7 @@ import {
   resolveSourceImageSizeForModel,
   validateImageSizeForModel
 } from '../shared/image-generation.js';
+import { GUEST_FREE_GENERATION_LIMIT } from '../shared/guest-generation.js';
 import { generatedImageUrl, GENERATED_THUMBNAIL_VARIANT } from '../shared/image-thumbnails.js';
 import FreeImageReferenceEditor from './free-image-reference-editor';
 import { fetchImageGeneration, isImageGenerationTimeout } from './image-generation-client.js';
@@ -300,21 +301,6 @@ async function imageItemToFile(item) {
   return new File([blob], item?.sourceName || previewDownloadFilename({ ...item, mimeType }), { type: mimeType });
 }
 
-function localPromptPolish(prompt, language, referenceCount, hasAnnotations) {
-  const additions = language === 'zh'
-    ? [
-        '主体明确，构图关系清晰；光线、材质、色彩、背景和细节自然协调。',
-        referenceCount ? `按输入顺序使用 ${referenceCount} 张参考图，保留用户指向的关键视觉特征。` : '',
-        hasAnnotations ? '彩色线框仅标记需要修改的区域，成图中不保留标记，未标记区域尽量保持不变。' : ''
-      ]
-    : [
-        'Keep the subject clear and the composition intentional, with coherent lighting, materials, color, background, and natural detail.',
-        referenceCount ? `Use all ${referenceCount} reference images in input order and preserve the visual features the user points to.` : '',
-        hasAnnotations ? 'Colored outlines only mark regions to change; remove the marks from the final image and preserve unmarked areas where possible.' : ''
-      ];
-  return [prompt, ...additions.filter(Boolean)].join('\n\n').slice(0, 6000);
-}
-
 const copy = {
   zh: {
     taskList: '任务列表',
@@ -358,6 +344,7 @@ const copy = {
     placeholderNoReferences: '输入画面主体、构图、风格、光线、文字和细节要求。',
     optimize: 'AI 魔笔 · 1 积分',
     optimizing: '优化中',
+    optimizeFailed: 'AI 魔笔暂时无法完成优化，本次积分已退回，请稍后重试。',
     references: '参考图',
     referenceHint: '点击上传，或粘贴、拖拽多张图片；也可从历史生图中点击 @ 添加',
     uploadReference: '上传图片',
@@ -383,7 +370,7 @@ const copy = {
     quality: '质量',
     drawCount: '抽卡张数',
     generate: '立即生图',
-    generateFree: '免费生成 1 张',
+    generateFree: (remaining) => `免费生成（剩余 ${remaining} 张）`,
     generating: '生成中',
     credits: '积分',
     creditCost: '预计消耗',
@@ -422,7 +409,7 @@ const copy = {
     loadingHistory: '正在加载',
     noHistory: '登录并生成图片后，历史记录会显示在这里。',
     fullLocked: '登录并拥有积分后可使用参考图、自定义尺寸、AI 魔笔和多张抽卡。',
-    guestUsed: '游客免费次数已使用，请登录继续。',
+    guestUsed: '3 张游客免费图片已用完，请登录继续。',
     creditsRequired: '积分不足，请先充值。',
     signIn: '登录使用完整功能',
     caseTitle: '范例美图',
@@ -456,6 +443,7 @@ const copy = {
     placeholderNoReferences: 'Describe the subject, composition, style, lighting, text, and visual details.',
     optimize: 'AI polish · 1 credit',
     optimizing: 'Polishing',
+    optimizeFailed: 'AI polish is temporarily unavailable. This credit was refunded; please try again.',
     references: 'References',
     referenceHint: 'Upload, paste, or drop multiple images; or click @ on a previous generation',
     uploadReference: 'Upload images',
@@ -481,7 +469,7 @@ const copy = {
     quality: 'Quality',
     drawCount: 'Images',
     generate: 'Generate now',
-    generateFree: 'Generate 1 free image',
+    generateFree: (remaining) => `Generate free (${remaining} left)`,
     generating: 'Generating',
     credits: 'credits',
     creditCost: 'Estimated cost',
@@ -520,7 +508,7 @@ const copy = {
     loadingHistory: 'Loading',
     noHistory: 'Sign in and generate an image to build your history.',
     fullLocked: 'Sign in with credits to use references, custom sizes, AI polish, and multi-image draws.',
-    guestUsed: 'Your free guest image has been used. Sign in to continue.',
+    guestUsed: 'All 3 free guest images have been used. Sign in to continue.',
     creditsRequired: 'More credits are required.',
     signIn: 'Sign in for full tools',
     caseTitle: 'Example images',
@@ -655,6 +643,7 @@ export default function FreeImageWorkspace({
   const [providerId, setProviderId] = useState('');
   const [count, setCount] = useState(1);
   const [guestUsed, setGuestUsed] = useState(false);
+  const [guestRemaining, setGuestRemaining] = useState(GUEST_FREE_GENERATION_LIMIT);
   const [state, setState] = useState({ status: 'idle', results: [], message: '' });
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -1056,7 +1045,13 @@ export default function FreeImageWorkspace({
     fetch('/api/generate-image')
       .then((response) => response.json())
       .then((payload) => {
-        if (active && payload?.ok) setGuestUsed(Boolean(payload.guestFreeUsed));
+        if (active && payload?.ok) {
+          const remaining = Number.isFinite(Number(payload.guestGenerationsRemaining))
+            ? Number(payload.guestGenerationsRemaining)
+            : (payload.guestFreeUsed ? 0 : GUEST_FREE_GENERATION_LIMIT);
+          setGuestRemaining(Math.max(0, Math.min(GUEST_FREE_GENERATION_LIMIT, remaining)));
+          setGuestUsed(Boolean(payload.guestFreeUsed) || remaining <= 0);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -2030,16 +2025,13 @@ export default function FreeImageWorkspace({
         }
         throw new Error(payload.error || 'PROMPT_OPTIMIZATION_FAILED');
       }
-      const optimizedPrompt = payload?.ok && payload.prompt
-        ? payload.prompt
-        : localPromptPolish(trimmed, language, optimizationReferenceCount, hasAnnotations);
+      const optimizedPrompt = payload.prompt;
       setPrompt(optimizedPrompt);
       setPromptOptimized(true);
       setMention(null);
     } catch {
-      setPrompt(localPromptPolish(trimmed, language, optimizationReferenceCount, hasAnnotations));
-      setPromptOptimized(true);
-      setMention(null);
+      setState((current) => ({ ...current, message: t.optimizeFailed }));
+      textareaRef.current?.focus();
     } finally {
       setOptimizing(false);
     }
@@ -2132,6 +2124,7 @@ export default function FreeImageWorkspace({
         }
         if (payload.error === 'GUEST_FREE_LIMIT_REACHED') {
           setGuestUsed(true);
+          setGuestRemaining(0);
           onSignIn?.();
           setState((current) => ({ ...current, status: 'error', message: t.guestUsed }));
           return;
@@ -2162,7 +2155,13 @@ export default function FreeImageWorkspace({
         createdAt: new Date().toISOString(),
         status: 'succeeded'
       }));
-      if (payload.guest) setGuestUsed(true);
+      if (payload.guest) {
+        const remaining = Number.isFinite(Number(payload.guestGenerationsRemaining))
+          ? Number(payload.guestGenerationsRemaining)
+          : Math.max(0, guestRemaining - 1);
+        setGuestRemaining(remaining);
+        setGuestUsed(Boolean(payload.guestFreeUsed) || remaining <= 0);
+      }
       else {
         setHistory((current) => [
           ...resultItems.map((item) => ({ ...item, imageUrl: item.imageUrl })),
@@ -2541,7 +2540,7 @@ export default function FreeImageWorkspace({
               <><span className="freeImageGenerateLabel">{t.generating}</span>{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact showPromotionName={false} /> : null}</>
             ) : hasFullWorkspace ? (
               <><span className="freeImageGenerateLabel">{t.generate}</span><ImageCreditPrice pricing={pricing} quantity={count} language={language} compact showPromotionName={false} /></>
-            ) : guestUsed ? t.signIn : t.generateFree}
+            ) : guestUsed ? t.signIn : t.generateFree(guestRemaining)}
           </button>
           <button
             className="freeImageQueueButton"

@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import {
+  claimGuestGenerationUsage,
   completeCreditReservation,
   createGeneration,
+  getGuestGenerationUsageCount,
   getImageProviderConfig,
   getImagePromotionConfig,
   getUserProfile,
-  hasGuestGenerationUsage,
-  recordGuestGenerationUsage,
   recordGenerationFailureAlert,
   recordPromptAuditLog,
+  releaseGuestGenerationUsage,
   releaseCreditReservation,
   reserveCredit,
   updateGeneration
@@ -28,6 +29,7 @@ import {
   normalizeReferenceRequests
 } from './_lib/reference-images.js';
 import { deleteStoredFile, persistImage } from './_lib/storage.js';
+import { addFreeImageWatermark } from './_lib/free-image-watermark.js';
 import {
   normalizeImageCount,
   normalizeImageQuality,
@@ -35,6 +37,7 @@ import {
   validateImageSizeForModel
 } from '../shared/image-generation.js';
 import { applyImagePromotion, getImageGenerationPricing } from '../shared/image-pricing.js';
+import { GUEST_FREE_GENERATION_LIMIT, guestGenerationRemaining } from '../shared/guest-generation.js';
 
 const MAX_PROMPT_LENGTH = 6000;
 const GUEST_GENERATION_COOKIE = 'gpt_image_guest_generation';
@@ -55,8 +58,15 @@ function readCookies(req) {
   );
 }
 
-function hasUsedGuestGeneration(req) {
-  return readCookies(req)[GUEST_GENERATION_COOKIE] === '1' || hasGuestGenerationUsage(guestFingerprint(req));
+function guestCookieUsageCount(req) {
+  return Math.max(0, Math.min(
+    GUEST_FREE_GENERATION_LIMIT,
+    Math.floor(Number(readCookies(req)[GUEST_GENERATION_COOKIE]) || 0)
+  ));
+}
+
+function guestGenerationUsage(req) {
+  return Math.max(guestCookieUsageCount(req), getGuestGenerationUsageCount(guestFingerprint(req)));
 }
 
 function guestFingerprint(req) {
@@ -72,14 +82,25 @@ function guestFingerprint(req) {
   return createHash('sha256').update(`${secret}\n${address}\n${userAgent}`).digest('hex');
 }
 
-function markGuestGenerationUsed(req, res) {
+function setGuestGenerationCookie(req, res, usageCount) {
   const forwardedProto = String(req.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
   const secureFlag = forwardedProto === 'https' ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
-    `${GUEST_GENERATION_COOKIE}=1; Path=/; Max-Age=${GUEST_GENERATION_MAX_AGE}; HttpOnly; SameSite=Lax${secureFlag}`
+    `${GUEST_GENERATION_COOKIE}=${Math.max(0, Math.min(GUEST_FREE_GENERATION_LIMIT, Number(usageCount) || 0))}; Path=/; Max-Age=${GUEST_GENERATION_MAX_AGE}; HttpOnly; SameSite=Lax${secureFlag}`
   );
-  recordGuestGenerationUsage(guestFingerprint(req));
+}
+
+function guestUsagePayload(used) {
+  const normalizedUsed = Math.max(0, Math.min(GUEST_FREE_GENERATION_LIMIT, Number(used) || 0));
+  const remaining = guestGenerationRemaining(normalizedUsed);
+  return {
+    guestAllowed: remaining > 0,
+    guestFreeUsed: remaining === 0,
+    guestGenerationsUsed: normalizedUsed,
+    guestGenerationsLimit: GUEST_FREE_GENERATION_LIMIT,
+    guestGenerationsRemaining: remaining
+  };
 }
 
 function hasFullWorkspaceAccess(profile) {
@@ -222,11 +243,11 @@ export default async function handler(req, res) {
   });
 
   if (req.method === 'GET') {
+    const guestUsed = guestGenerationUsage(req);
     return json(res, 200, {
       ok: true,
       authRequired: false,
-      guestAllowed: !hasUsedGuestGeneration(req),
-      guestFreeUsed: hasUsedGuestGeneration(req),
+      ...guestUsagePayload(guestUsed),
       fullWorkspace: hasFullWorkspaceAccess(auth.profile),
       user: auth.profile || null
     });
@@ -247,29 +268,54 @@ export default async function handler(req, res) {
     if (!guestProviderConfig || !isProviderConfigured(guestProviderConfig)) {
       return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
     }
-    if (hasUsedGuestGeneration(req)) {
-      return json(res, 402, { ok: false, error: 'GUEST_FREE_LIMIT_REACHED', guest: true, downloadAllowed: false });
+    const fingerprint = guestFingerprint(req);
+    const previousUsage = guestGenerationUsage(req);
+    if (previousUsage >= GUEST_FREE_GENERATION_LIMIT) {
+      return json(res, 402, {
+        ok: false,
+        error: 'GUEST_FREE_LIMIT_REACHED',
+        guest: true,
+        downloadAllowed: false,
+        ...guestUsagePayload(previousUsage)
+      });
+    }
+    const claim = claimGuestGenerationUsage(fingerprint, {
+      limit: GUEST_FREE_GENERATION_LIMIT,
+      minimumUsed: previousUsage
+    });
+    if (!claim.claimed) {
+      return json(res, 402, {
+        ok: false,
+        error: 'GUEST_FREE_LIMIT_REACHED',
+        guest: true,
+        downloadAllowed: false,
+        ...guestUsagePayload(claim.count)
+      });
     }
     try {
       const providerResult = await generateProviderImage({ prompt, size: '1024x1024', quality: 'low', providerConfig: guestProviderConfig, signal: requestController.signal });
-      markGuestGenerationUsed(req, res);
+      const watermarkedResult = await addFreeImageWatermark(providerResult.image);
+      setGuestGenerationCookie(req, res, claim.count);
       const guestImage = {
         generationId: null,
-        image: providerResult.image,
+        image: watermarkedResult.image,
         size: '1024x1024',
         quality: 'low',
         cloudSaved: false,
         downloadAllowed: false,
         creditsCharged: 0,
+        watermarked: true,
         prompt
       };
       return json(res, 200, {
         ok: true,
         guest: true,
+        ...guestUsagePayload(claim.count),
         ...guestImage,
         images: [guestImage]
       });
     } catch (error) {
+      releaseGuestGenerationUsage(fingerprint);
       const errorCode = generationErrorCode(error);
       console.warn('Guest image generation failed', {
         status: error?.status || null,
