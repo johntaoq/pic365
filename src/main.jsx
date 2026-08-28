@@ -21,6 +21,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Bell,
+  Building2,
   Calculator,
   Cat,
   ChevronDown,
@@ -62,6 +63,7 @@ import { SITE_NOTICE_EXAMPLES } from '../shared/site-notice.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import AdminChatProvider from './admin-chat-provider.jsx';
 import ChatCompanion from './chat-companion.jsx';
+import GroupAccountPanel from './group-account-panel.jsx';
 import {
   AuditEventsPanel,
   CreditAdjustmentDialog,
@@ -94,7 +96,6 @@ const copy = {
     cooperationTitle: 'Support & Cooperation',
     cooperationTechnical: 'Technical support',
     cooperationCustomer: 'Customer service / Business cooperation',
-    cooperationRecharge: 'Online recharge is not available yet. Contact customer service to recharge.',
     qq: 'QQ',
     wechat: 'WeChat',
     eyebrow: 'Live GPT-Image2 prompt gallery',
@@ -158,10 +159,11 @@ const copy = {
     generationTimeout: 'Generation exceeded the 300-second wait limit. Please try again.',
     promptRequired: 'Prompt is required and must stay under 6000 characters.',
     serverUnavailable: 'Generation service is not configured yet.',
-    checkoutUnavailable: 'The recharge plan is ready. Online payment will be connected later.',
+    checkoutUnavailable: 'Online recharge is not configured yet.',
     checkoutFailed: 'Checkout failed. Please try again later.',
     billingSuccess: 'Payment is processing. Credits will appear after confirmation.',
     billingCancelled: 'Payment was cancelled. You can choose another pack anytime.',
+    billingFailed: 'Payment verification failed. No credits were added.',
     authRequired: 'Sign in to generate a test image.',
     signIn: 'Sign in',
     signInTitle: 'Sign in to continue creating',
@@ -250,14 +252,14 @@ const copy = {
     creditPacks: 'Recharge packs',
     packCredits: (count) => `${count} credits`,
     billingTitle: 'Recharge credits',
-    billingSubtitle: 'Choose a fixed pack or preview a custom amount. Online payment will be added later.',
+    billingSubtitle: 'Choose a fixed pack or custom amount, then pay with Alipay or WeChat Pay.',
     balanceTitle: 'Current balance',
     transactionHistory: 'Credit history',
     noTransactions: 'No credit history yet.',
     loadBilling: 'Loading billing...',
     openBilling: 'Open credit center',
     paymentReady: 'Online recharge is available.',
-    billingNotReady: 'Recharge interface coming soon.',
+    billingNotReady: 'Online recharge is not configured.',
     adminAdjust: 'Adjust credits',
     editUser: 'Edit user',
     creditAmount: 'Amount',
@@ -368,7 +370,6 @@ const copy = {
     cooperationTitle: '合作与支持',
     cooperationTechnical: '技术支持',
     cooperationCustomer: '客服 / 商务合作',
-    cooperationRecharge: '目前暂不支持线上充值，充值请联系客服。',
     qq: 'QQ',
     wechat: '微信',
     eyebrow: '实时更新的 GPT-Image2 提示词画廊',
@@ -432,10 +433,11 @@ const copy = {
     generationTimeout: '生图等待超过 300 秒，请重新尝试。',
     promptRequired: 'Prompt 不能为空，并且不能超过 6000 字符。',
     serverUnavailable: '生成服务还没有完成配置。',
-    checkoutUnavailable: '充值方案已配置，在线支付接口后续接入。',
+    checkoutUnavailable: '在线充值尚未完成配置。',
     checkoutFailed: '创建支付失败，请稍后再试。',
     billingSuccess: '支付正在处理中，确认后积分会自动到账。',
     billingCancelled: '已取消支付，你可以随时购买积分包。',
+    billingFailed: '支付校验失败，本次没有增加积分。',
     authRequired: '登录后即可生成测试图。',
     signIn: '登录',
     signInTitle: '登录后继续创作',
@@ -524,14 +526,14 @@ const copy = {
     creditPacks: '充值套餐',
     packCredits: (count) => `${count} 积分`,
     billingTitle: '积分充值',
-    billingSubtitle: '可选择固定套餐或预览自定义金额，在线支付接口后续接入。',
+    billingSubtitle: '选择固定套餐或自定义金额，可使用支付宝或微信支付。',
     balanceTitle: '当前余额',
     transactionHistory: '积分流水',
     noTransactions: '暂无积分流水。',
     loadBilling: '正在加载积分中心...',
     openBilling: '打开积分中心',
     paymentReady: '在线充值已开放。',
-    billingNotReady: '充值接口即将开放。',
+    billingNotReady: '在线充值尚未配置。',
     adminAdjust: '调整积分',
     editUser: '编辑用户',
     creditAmount: '数量',
@@ -1019,6 +1021,9 @@ function generationErrorMessage(error, language) {
   if (error === 'CLIENT_GENERATION_TIMEOUT') return t.generationTimeout;
   if (error === 'SERVER_NOT_CONFIGURED') return t.serverUnavailable;
   if (error === 'BILLING_NOT_CONFIGURED') return t.checkoutUnavailable;
+  if (error === 'INVALID_PAYMENT_METHOD') return language === 'zh' ? '请选择有效的支付方式。' : 'Choose a valid payment method.';
+  if (error === 'INVALID_RECHARGE_AMOUNT') return language === 'zh' ? '充值金额无效。' : 'The recharge amount is invalid.';
+  if (error === 'RECHARGE_CONTACT_REQUIRED') return language === 'zh' ? '该金额超过自助充值上限，请联系客服。' : 'This amount exceeds the self-service limit. Contact support.';
   if (error === 'CHECKOUT_FAILED') return t.checkoutFailed;
   if (error === 'INVALID_PROMPT') return t.promptRequired;
   if (error === 'CONTENT_MODERATION_BLOCKED') return t.contentModerationBlocked;
@@ -1054,7 +1059,7 @@ function amountInputValue(amountCents) {
   return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function createRechargeDraft(value = {}) {
+function createRechargeDraft(value = {}, payment = {}) {
   const normalized = normalizeRechargeConfig(value);
   return {
     signupBonusCredits: String(normalized.signupBonusCredits),
@@ -1073,6 +1078,14 @@ function createRechargeDraft(value = {}) {
       maximumSelfServiceAmountYuan: amountInputValue(normalized.custom.maximumSelfServiceAmountCents),
       contactMessageZh: normalized.custom.contactMessageZh,
       contactMessageEn: normalized.custom.contactMessageEn
+    },
+    payment: {
+      enabled: Boolean(payment.enabled),
+      merchantId: String(payment.merchantId || ''),
+      gatewayUrl: String(payment.gatewayUrl || ''),
+      apiKey: '',
+      hasApiKey: Boolean(payment.hasApiKey),
+      apiKeyMasked: String(payment.apiKeyMasked || '')
     }
   };
 }
@@ -1098,6 +1111,15 @@ function rechargePayloadFromDraft(draft) {
   };
 }
 
+function yipayPayloadFromDraft(draft) {
+  return {
+    enabled: Boolean(draft.payment.enabled),
+    merchantId: String(draft.payment.merchantId || '').trim(),
+    gatewayUrl: String(draft.payment.gatewayUrl || '').trim(),
+    apiKey: String(draft.payment.apiKey || '').trim()
+  };
+}
+
 function rechargePackPreview(pack, creditsPerYuan = 100) {
   return calculateRechargeCredits(
     Math.round(Number(pack.amountYuan || 0) * 100),
@@ -1117,6 +1139,10 @@ function isAuthenticatedSession(session) {
 function getGenerationQuotaText(profile, language, requiredCredits = 0) {
   const t = copy[language];
   if (!profile) return t.authRequired;
+  if (profile.groupAccount) {
+    const accountLabel = language === 'zh' ? `集团账户：${profile.groupAccount.name}` : `Group account: ${profile.groupAccount.name}`;
+    return `${accountLabel} · ${t.generationCost(requiredCredits)} · ${t.creditsAvailable(profile.creditBalance)}`;
+  }
   if (profile.isSuperAdmin) {
     return `${t.superAdminGeneration(requiredCredits)} ${t.creditsAvailable(profile.creditBalance)}`;
   }
@@ -1746,7 +1772,7 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, 
             ) : null}
             <span className="userStat">
               <Coins size={15} />
-              {profile?.creditBalance || 0} {t.credits}
+              {profile?.creditBalance || 0} {t.credits}{profile?.groupAccount ? ` · ${profile.groupAccount.name}` : ''}
             </span>
             <span className="userStat">
               <ReceiptText size={15} />
@@ -2058,6 +2084,12 @@ function AccountPanel({
           ) : null}
         </section>
 
+        <GroupAccountPanel
+          language={language}
+          profile={profile}
+          onProfileChange={onProfileChange}
+        />
+
         <PersonalMenuSettings
           language={language}
           profile={profile}
@@ -2294,6 +2326,94 @@ function AdminRankList({ rows, type, language }) {
   );
 }
 
+function NotificationBell({ language, session, profile, onProfileChange }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [expandedId, setExpandedId] = useState('');
+  const [busyId, setBusyId] = useState('');
+  const ref = useDropdownDismiss(open, setOpen);
+  const signedIn = isAuthenticatedSession(session);
+
+  const refresh = useCallback(async () => {
+    if (!signedIn) { setItems([]); setUnreadCount(0); return; }
+    try {
+      const response = await fetch('/api/notifications?limit=100', { headers: getAuthHeaders(session), cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) return;
+      setItems(payload.notifications || []);
+      setUnreadCount(Number(payload.unreadCount || 0));
+    } catch { /* keep the last successful notification list */ }
+  }, [signedIn, session]);
+
+  useEffect(() => { refresh(); }, [refresh, profile?.groupInvitations?.length]);
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    const handleFocus = () => refresh();
+    window.addEventListener('focus', handleFocus);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { window.removeEventListener('focus', handleFocus); window.clearInterval(timer); };
+  }, [refresh, signedIn]);
+
+  async function markRead(notificationId, all = false) {
+    const response = await fetch('/api/notifications', {
+      method: 'PATCH', headers: { ...getAuthHeaders(session), 'Content-Type': 'application/json' },
+      body: JSON.stringify(all ? { all: true } : { notificationId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload.ok) { setItems(payload.notifications || []); setUnreadCount(Number(payload.unreadCount || 0)); }
+  }
+
+  async function openNotification(item) {
+    setExpandedId((current) => current === item.id ? '' : item.id);
+    if (item.unread) await markRead(item.id);
+  }
+
+  async function respond(item, accept) {
+    setBusyId(item.id);
+    try {
+      const action = item.type === 'group_admin_transfer' ? 'respond-admin-transfer' : 'respond-invitation';
+      const body = item.type === 'group_admin_transfer'
+        ? { action, transferId: item.entityId, accept }
+        : { action, invitationId: item.entityId, accept };
+      const response = await fetch('/api/groups', {
+        method: 'POST', headers: { ...getAuthHeaders(session), 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload.ok && payload.user) onProfileChange?.(payload.user);
+      await refresh();
+    } finally { setBusyId(''); }
+  }
+
+  if (!signedIn) return null;
+  return (
+    <div className="dropdownControl notificationMenu" ref={ref}>
+      <button className={cx('notificationTrigger', open && 'open', unreadCount > 0 && 'hasUnread')} type="button" aria-label={language === 'zh' ? `通知${unreadCount ? `，${unreadCount} 条未读` : ''}` : `Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <Bell size={20} />{unreadCount > 0 ? <span>{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+      </button>
+      {open ? <section className="notificationDropdown" aria-label={language === 'zh' ? '通知中心' : 'Notification center'}>
+        <header><div><strong>{language === 'zh' ? '通知' : 'Notifications'}</strong><span>{unreadCount ? (language === 'zh' ? `${unreadCount} 条未读` : `${unreadCount} unread`) : (language === 'zh' ? '全部已读' : 'All read')}</span></div>{unreadCount ? <button type="button" onClick={() => markRead('', true)}>{language === 'zh' ? '全部已读' : 'Mark all read'}</button> : null}</header>
+        <div className="notificationList">
+          {items.length ? items.map((item) => {
+            const expanded = expandedId === item.id;
+            return <article className={cx('notificationItem', item.unread && 'unread', expanded && 'expanded')} key={item.id}>
+              <button className="notificationItemSummary" type="button" onClick={() => openNotification(item)}>
+                <span className="notificationTypeIcon">{item.type.startsWith('group_') ? <Building2 size={17} /> : <Bell size={17} />}</span>
+                <span><strong>{item.title}</strong><small>{new Date(item.createdAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</small></span>
+                {item.unread ? <i /> : null}
+              </button>
+              {expanded ? <div className="notificationItemBody">
+                {item.format === 'plain' ? <p>{item.body}</p> : <RichSiteNoticeContent body={item.body} format={item.format} />}
+                {item.metadata?.actionAvailable ? <div className="notificationActions"><button type="button" disabled={busyId === item.id} onClick={() => respond(item, true)}>{language === 'zh' ? '接受' : 'Accept'}</button><button className="secondary" type="button" disabled={busyId === item.id} onClick={() => respond(item, false)}>{language === 'zh' ? '拒绝' : 'Decline'}</button></div> : item.metadata?.status && item.metadata.status !== 'pending' ? <em>{language === 'zh' ? `状态：${item.metadata.status}` : `Status: ${item.metadata.status}`}</em> : null}
+              </div> : null}
+            </article>;
+          }) : <p className="notificationEmpty">{language === 'zh' ? '暂无通知' : 'No notifications'}</p>}
+        </div>
+      </section> : null}
+    </div>
+  );
+}
+
 function formatPricingInputValue(value, precision) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '';
@@ -2425,16 +2545,24 @@ function createNotificationDraft(value = {}) {
 
 function RichSiteNoticeContent({ body, format, className = '' }) {
   return (
-    <Suspense fallback={<div className={className}>{body}</div>}>
+    <Suspense fallback={<div className={className}>通知内容加载中…</div>}>
       <SiteNoticeContent className={className} body={body} format={format} />
     </Suspense>
   );
 }
 
-function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteNoticeUpdated, onMenuSettingsChanged }) {
+function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuSettingsChanged }) {
   const t = copy[language];
   const can = useCallback((permission) => profile?.adminPermissions?.includes(permission) === true, [profile?.adminPermissions]);
-  const [activeSection, setActiveSection] = useState(() => profile?.role === 'operations' ? 'channels' : profile?.role === 'accountant' ? 'credits' : 'pricing');
+  const [activeSection, setActiveSection] = useState(() => {
+    try {
+      const saved = globalThis.localStorage?.getItem('pic365-admin-section');
+      if (saved) return saved;
+    } catch {
+      // Admin navigation persistence is optional.
+    }
+    return profile?.role === 'operations' ? 'channels' : profile?.role === 'accountant' ? 'credits' : 'pricing';
+  });
   const [users, setUsers] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [range, setRange] = useState('7d');
@@ -2489,7 +2617,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'RECHARGE_CONFIG_FAILED');
       const next = normalizeRechargeConfig(payload.recharge);
       setRecharge(next);
-      setRechargeDraft(createRechargeDraft(next));
+      setRechargeDraft(createRechargeDraft(next, payload.payment));
       setRechargeStatus('idle');
       setRechargeMessage('');
     } catch {
@@ -2524,15 +2652,21 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
 
   async function saveRecharge(event) {
     event.preventDefault();
-    const payload = rechargePayloadFromDraft(rechargeDraft);
-    const invalidPack = payload.packs.some((pack) => !Number.isFinite(pack.amountCents) || pack.amountCents < 100 || !Number.isFinite(pack.bonusPercent) || pack.bonusPercent < 0);
-    const invalidCustom = !Number.isFinite(payload.custom.minimumAmountCents)
-      || payload.custom.minimumAmountCents < 100
-      || !Number.isFinite(payload.custom.bonusThresholdCents)
-      || !Number.isFinite(payload.custom.maximumSelfServiceAmountCents);
-    if (!payload.packs.length || invalidPack || invalidCustom) {
+    const rechargePayload = rechargePayloadFromDraft(rechargeDraft);
+    const paymentPayload = yipayPayloadFromDraft(rechargeDraft);
+    const invalidPack = rechargePayload.packs.some((pack) => !Number.isFinite(pack.amountCents) || pack.amountCents < 100 || !Number.isFinite(pack.bonusPercent) || pack.bonusPercent < 0);
+    const invalidCustom = !Number.isFinite(rechargePayload.custom.minimumAmountCents)
+      || rechargePayload.custom.minimumAmountCents < 100
+      || !Number.isFinite(rechargePayload.custom.bonusThresholdCents)
+      || !Number.isFinite(rechargePayload.custom.maximumSelfServiceAmountCents);
+    if (!rechargePayload.packs.length || invalidPack || invalidCustom) {
       setRechargeStatus('error');
       setRechargeMessage(language === 'zh' ? '请填写有效的充值金额和赠送比例。' : 'Enter valid recharge amounts and bonus percentages.');
+      return;
+    }
+    if (paymentPayload.enabled && (!paymentPayload.merchantId || !paymentPayload.gatewayUrl || (!paymentPayload.apiKey && !rechargeDraft.payment.hasApiKey))) {
+      setRechargeStatus('error');
+      setRechargeMessage(language === 'zh' ? '启用在线充值前，请填写商户号、支付网关和 API KEY。' : 'Enter the merchant ID, gateway URL, and API key before enabling online recharge.');
       return;
     }
     setRechargeStatus('loading');
@@ -2541,18 +2675,24 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
       const response = await fetch('/api/admin/recharge', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ recharge: rechargePayload, payment: paymentPayload })
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || 'RECHARGE_CONFIG_FAILED');
       const next = normalizeRechargeConfig(result.recharge);
       setRecharge(next);
-      setRechargeDraft(createRechargeDraft(next));
+      setRechargeDraft(createRechargeDraft(next, result.payment));
       setRechargeStatus('success');
       setRechargeMessage(language === 'zh' ? '充值配置已保存。' : 'Recharge configuration saved.');
-    } catch {
+    } catch (error) {
       setRechargeStatus('error');
-      setRechargeMessage(language === 'zh' ? '充值配置保存失败。' : 'Recharge configuration could not be saved.');
+      const invalidGateway = error.message === 'INVALID_YIPAY_GATEWAY';
+      const incomplete = error.message === 'YIPAY_CONFIG_INCOMPLETE';
+      setRechargeMessage(invalidGateway
+        ? (language === 'zh' ? '支付网关必须是有效的 HTTPS 地址。' : 'The payment gateway must be a valid HTTPS URL.')
+        : incomplete
+          ? (language === 'zh' ? '易支付配置不完整。' : 'The Yipay configuration is incomplete.')
+          : (language === 'zh' ? '充值配置保存失败。' : 'Recharge configuration could not be saved.'));
     }
   }
 
@@ -2722,7 +2862,6 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
       setNotificationDraft(createNotificationDraft(payload.notifications));
       setNotificationStatus('success');
       setNotificationMessage(language === 'zh' ? '通知配置已保存。' : 'Notification settings saved.');
-      onSiteNoticeUpdated?.();
     } catch {
       setNotificationStatus('error');
       setNotificationMessage(language === 'zh' ? '通知配置保存失败。' : 'Notification settings could not be saved.');
@@ -3047,26 +3186,45 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
         ? t.promotionExpired
         : t.promotionInactive;
   const adminSections = [
-    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && { id: 'pricing', label: language === 'zh' ? '计费' : 'Pricing', Icon: Calculator },
-    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'chat-assistant', label: language === 'zh' ? '聊天精灵' : 'Chat assistant', Icon: Cat },
-    can(ADMIN_PERMISSIONS.ADJUST_CREDITS) && { id: 'credits', label: language === 'zh' ? '积分' : 'Credits', Icon: Coins },
-    can(ADMIN_PERMISSIONS.MANAGE_RECHARGE) && { id: 'recharge', label: language === 'zh' ? '充值设置' : 'Recharge', Icon: CreditCard },
-    can(ADMIN_PERMISSIONS.VIEW_USERS) && { id: 'users', label: language === 'zh' ? '用户管理' : 'Users', Icon: Users },
-    can(ADMIN_PERMISSIONS.CREATE_REDEMPTION_CODES) && { id: 'redemption', label: language === 'zh' ? '兑换码管理' : 'Redemption', Icon: KeyRound },
-    can(ADMIN_PERMISSIONS.VIEW_CREDIT_REPORTS) && { id: 'finance', label: language === 'zh' ? '财务报表' : 'Reports', Icon: ReceiptText },
-    can(ADMIN_PERMISSIONS.MANAGE_PROMOTIONS) && { id: 'promotion', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
-    can(ADMIN_PERMISSIONS.MANAGE_NOTIFICATIONS) && { id: 'notifications', label: language === 'zh' ? '通知' : 'Notifications', Icon: Bell },
-    profile?.isSuperAdmin && { id: 'prompt-records', label: language === 'zh' ? '提示词记录' : 'Prompt logs', Icon: ReceiptText },
-    can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'channels', label: language === 'zh' ? '渠道配置' : 'Channels', Icon: KeyRound },
-    can(ADMIN_PERMISSIONS.MANAGE_GLOBAL_SETTINGS) && { id: 'global-settings', label: language === 'zh' ? '全局设置' : 'Global settings', Icon: Settings },
-    (can(ADMIN_PERMISSIONS.VIEW_ALL_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_FINANCE_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_OPERATIONS_AUDIT)) && { id: 'audit', label: language === 'zh' ? '审计记录' : 'Audit', Icon: ShieldCheck }
+    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && { id: 'pricing', groupId: 'financial', label: language === 'zh' ? '计费规则' : 'Pricing rules', Icon: Calculator },
+    can(ADMIN_PERMISSIONS.ADJUST_CREDITS) && { id: 'credits', groupId: 'financial', label: language === 'zh' ? '积分管理' : 'Credit management', Icon: Coins },
+    can(ADMIN_PERMISSIONS.MANAGE_RECHARGE) && { id: 'recharge', groupId: 'financial', label: language === 'zh' ? '充值设置' : 'Recharge settings', Icon: CreditCard },
+    can(ADMIN_PERMISSIONS.CREATE_REDEMPTION_CODES) && { id: 'redemption', groupId: 'financial', label: language === 'zh' ? '兑换码管理' : 'Redemption codes', Icon: KeyRound },
+    can(ADMIN_PERMISSIONS.VIEW_CREDIT_REPORTS) && { id: 'finance', groupId: 'financial', label: language === 'zh' ? '财务报表' : 'Financial reports', Icon: ReceiptText },
+    can(ADMIN_PERMISSIONS.MANAGE_PROMOTIONS) && { id: 'promotion', groupId: 'financial', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
+    can(ADMIN_PERMISSIONS.VIEW_USERS) && { id: 'users', groupId: 'users-content', label: language === 'zh' ? '用户管理' : 'User management', Icon: Users },
+    profile?.isSuperAdmin && { id: 'prompt-records', groupId: 'users-content', label: language === 'zh' ? '提示词记录' : 'Prompt logs', Icon: ReceiptText },
+    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'chat-assistant', groupId: 'system', label: language === 'zh' ? '聊天精灵' : 'Chat assistant', Icon: Cat },
+    can(ADMIN_PERMISSIONS.MANAGE_NOTIFICATIONS) && { id: 'notifications', groupId: 'system', label: language === 'zh' ? '通知管理' : 'Notifications', Icon: Bell },
+    can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'channels', groupId: 'system', label: language === 'zh' ? '渠道配置' : 'Channels', Icon: KeyRound },
+    can(ADMIN_PERMISSIONS.MANAGE_GLOBAL_SETTINGS) && { id: 'global-settings', groupId: 'system', label: language === 'zh' ? '全局设置' : 'Global settings', Icon: Settings },
+    (can(ADMIN_PERMISSIONS.VIEW_ALL_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_FINANCE_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_OPERATIONS_AUDIT)) && { id: 'audit', groupId: 'security', label: language === 'zh' ? '审计记录' : 'Audit log', Icon: ShieldCheck }
   ].filter(Boolean);
+  const adminGroups = [
+    { id: 'financial', label: language === 'zh' ? '财务管理' : 'Finance', Icon: Calculator },
+    { id: 'users-content', label: language === 'zh' ? '用户与内容' : 'Users & content', Icon: Users },
+    { id: 'system', label: language === 'zh' ? '系统管理' : 'System', Icon: Settings },
+    { id: 'security', label: language === 'zh' ? '安全审计' : 'Security & audit', Icon: ShieldCheck }
+  ].map((group) => ({
+    ...group,
+    sections: adminSections.filter((section) => section.groupId === group.id)
+  })).filter((group) => group.sections.length > 0);
   const activeAdminSection = adminSections.find((item) => item.id === activeSection) || adminSections[0];
+  const activeAdminGroup = adminGroups.find((group) => group.sections.some((section) => section.id === activeAdminSection?.id)) || adminGroups[0];
 
   useEffect(() => {
     if (adminSections.some((item) => item.id === activeSection)) return;
     if (adminSections[0]) setActiveSection(adminSections[0].id);
   }, [activeSection, profile?.role]);
+
+  useEffect(() => {
+    if (!activeAdminSection?.id) return;
+    try {
+      globalThis.localStorage?.setItem('pic365-admin-section', activeAdminSection.id);
+    } catch {
+      // Admin navigation persistence is optional.
+    }
+  }, [activeAdminSection?.id]);
   const providerPricingStrategy = providerDraft.pricingStrategy || providerDraft.pricingConfig?.strategy;
   const formulaPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_FORMULA;
   const matrixPricingActive = providerPricingStrategy === IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX;
@@ -3144,18 +3302,46 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
         <div>
           <span className="eyebrow"><ShieldCheck size={16} />{t.superAdmin}</span>
           <h2 id="admin-title">{language === 'zh' ? '运营管理中心' : 'Operations admin'}</h2>
-          <p>{activeAdminSection.label} · {language === 'zh' ? '每个页面只处理一类核心工作' : 'Each page focuses on one operational responsibility.'}</p>
+          <p>{activeAdminGroup?.label} · {activeAdminSection?.label}</p>
         </div>
         <span className="adminEnvironmentBadge">{import.meta.env.DEV ? (language === 'zh' ? '本地环境' : 'Local environment') : (language === 'zh' ? '生产环境' : 'Production')}</span>
       </div>
 
-      <nav className="adminWorkspaceNav" style={{ '--admin-nav-columns': Math.min(adminSections.length, 6) }} aria-label={language === 'zh' ? '管理后台子菜单' : 'Admin sections'}>
-        {adminSections.map(({ id, label, Icon }) => (
-          <button className={activeSection === id ? 'active' : ''} type="button" onClick={() => setActiveSection(id)} key={id}>
-            <Icon size={16} /><span>{label}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="adminWorkspaceNavigation">
+        <nav className="adminWorkspacePrimaryNav" aria-label={language === 'zh' ? '管理后台一级菜单' : 'Admin categories'}>
+          {adminGroups.map(({ id, label, Icon, sections }) => {
+            const active = activeAdminGroup?.id === id;
+            return (
+              <button
+                className={active ? 'active' : ''}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => setActiveSection(sections[0].id)}
+                key={id}
+              >
+                <Icon size={18} /><span>{label}</span><em>{sections.length}</em>
+              </button>
+            );
+          })}
+        </nav>
+        <nav
+          className="adminWorkspaceNav adminWorkspaceSecondaryNav"
+          style={{ '--admin-nav-columns': Math.min(activeAdminGroup?.sections.length || 1, 6) }}
+          aria-label={language === 'zh' ? '管理后台二级菜单' : 'Admin sections'}
+        >
+          {(activeAdminGroup?.sections || []).map(({ id, label, Icon }) => (
+            <button
+              className={activeSection === id ? 'active' : ''}
+              type="button"
+              aria-current={activeSection === id ? 'page' : undefined}
+              onClick={() => setActiveSection(id)}
+              key={id}
+            >
+              <Icon size={16} /><span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
 
       <div className="adminWorkspaceContent">
         {['credits', 'users'].includes(activeSection) ? (
@@ -3238,10 +3424,23 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
             <div className="adminSectionHeading">
               <div>
                 <h3><CreditCard size={18} />{language === 'zh' ? '充值方案配置' : 'Recharge configuration'}</h3>
-                <p>{language === 'zh' ? '充值金额和赠送比例由管理员维护；支付接口暂不开放。' : 'Administrators maintain amounts and bonuses. Payment integration is not enabled yet.'}</p>
+                <p>{language === 'zh' ? '配置充值金额、赠送比例和易支付网关；API KEY 加密保存。' : 'Configure recharge amounts, bonuses, and the Yipay gateway. The API key is encrypted at rest.'}</p>
               </div>
               <span className="adminRechargeStatus">{language === 'zh' ? '100 积分 = 1 元' : '100 credits = ¥1'}</span>
             </div>
+
+            <section className="adminRechargeSection adminPaymentGatewaySection">
+              <header>
+                <div><strong>{language === 'zh' ? '易支付接口' : 'Yipay gateway'}</strong><span>{language === 'zh' ? '支持支付宝和微信支付；商户密钥只在服务端使用。' : 'Supports Alipay and WeChat Pay. The merchant secret is used only on the server.'}</span></div>
+                <label className="adminRechargeSwitch"><input type="checkbox" checked={rechargeDraft.payment.enabled} onChange={(event) => setRechargeDraft((current) => ({ ...current, payment: { ...current.payment, enabled: event.target.checked } }))} /><span>{language === 'zh' ? '启用在线充值' : 'Enable online recharge'}</span></label>
+              </header>
+              <div className="adminPaymentGatewayGrid">
+                <label><span>{language === 'zh' ? '商户名 / 商户号（PID）' : 'Merchant ID (PID)'}</span><input value={rechargeDraft.payment.merchantId} maxLength={128} onChange={(event) => setRechargeDraft((current) => ({ ...current, payment: { ...current.payment, merchantId: event.target.value } }))} placeholder="例如：20220715225121" /></label>
+                <label><span>{language === 'zh' ? '支付网关' : 'Payment gateway'}</span><input type="url" value={rechargeDraft.payment.gatewayUrl} maxLength={500} onChange={(event) => setRechargeDraft((current) => ({ ...current, payment: { ...current.payment, gatewayUrl: event.target.value } }))} placeholder="https://pay.example.com" /></label>
+                <label><span>API KEY</span><input type="password" value={rechargeDraft.payment.apiKey} maxLength={2000} autoComplete="new-password" onChange={(event) => setRechargeDraft((current) => ({ ...current, payment: { ...current.payment, apiKey: event.target.value } }))} placeholder={rechargeDraft.payment.hasApiKey ? (language === 'zh' ? `已保存 ${rechargeDraft.payment.apiKeyMasked}，留空保持不变` : `Saved as ${rechargeDraft.payment.apiKeyMasked}; leave blank to keep it`) : (language === 'zh' ? '输入易支付 API KEY' : 'Enter the Yipay API key')} /></label>
+              </div>
+              <p className={`adminPaymentGatewayState ${rechargeDraft.payment.enabled && rechargeDraft.payment.hasApiKey ? 'ready' : ''}`}>{rechargeDraft.payment.hasApiKey ? (language === 'zh' ? `API KEY 已安全保存：${rechargeDraft.payment.apiKeyMasked}` : `API key stored securely: ${rechargeDraft.payment.apiKeyMasked}`) : (language === 'zh' ? '尚未保存 API KEY。' : 'No API key has been saved.')}</p>
+            </section>
 
             <div className="adminRechargeBaseGrid">
               <label><span>{language === 'zh' ? '新用户注册赠送' : 'New-user sign-up bonus'}</span><div className="adminRechargeUnitInput"><input type="number" min="0" step="1" value={rechargeDraft.signupBonusCredits} onChange={(event) => setRechargeDraft((current) => ({ ...current, signupBonusCredits: event.target.value }))} /><b>{language === 'zh' ? '积分' : 'credits'}</b></div></label>
@@ -3331,13 +3530,13 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onSiteN
 
         {activeSection === 'notifications' ? (
           <form className="adminBlock adminNotificationForm" onSubmit={saveNotifications}>
-            <div className="adminSectionHeading"><div><h3><Bell size={18} />{language === 'zh' ? '通知管理' : 'Notifications'}</h3><p>{language === 'zh' ? '发布站内公告，并设置需要重点关注的运营提醒。' : 'Publish site notices and configure operational alerts.'}</p></div></div>
-            <label className="adminNotificationToggle"><input type="checkbox" checked={notificationDraft.siteNoticeEnabled} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeEnabled: event.target.checked }))} /><span>{language === 'zh' ? '启用站内公告' : 'Enable site notice'}</span></label>
+            <div className="adminSectionHeading"><div><h3><Bell size={18} />{language === 'zh' ? '通知管理' : 'Notifications'}</h3><p>{language === 'zh' ? '发布到用户顶部铃铛通知中心，并设置需要重点关注的运营提醒。' : 'Publish to the top notification bell and configure operational alerts.'}</p></div></div>
+            <label className="adminNotificationToggle"><input type="checkbox" checked={notificationDraft.siteNoticeEnabled} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeEnabled: event.target.checked }))} /><span>{language === 'zh' ? '发布站内通知' : 'Publish site notification'}</span></label>
             <div className="adminNotificationGrid">
               <label><span>{language === 'zh' ? '公告标题' : 'Notice title'}</span><input value={notificationDraft.siteNoticeTitle} maxLength={120} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeTitle: event.target.value }))} /></label>
               <label><span>{language === 'zh' ? '显示对象' : 'Audience'}</span><select value={notificationDraft.audience} onChange={(event) => setNotificationDraft((current) => ({ ...current, audience: event.target.value }))}><option value="all">{language === 'zh' ? '所有访客' : 'All visitors'}</option><option value="signed-in">{language === 'zh' ? '已登录用户' : 'Signed-in users'}</option><option value="members">{language === 'zh' ? '有积分用户' : 'Users with credits'}</option></select></label>
               <label><span>{language === 'zh' ? '内容格式' : 'Content format'}</span><select value={notificationDraft.siteNoticeFormat} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeFormat: event.target.value }))}><option value="markdown">Markdown</option><option value="html">HTML</option></select></label>
-              <label><span>{language === 'zh' ? '显示位置' : 'Placement'}</span><select value={notificationDraft.siteNoticePlacement} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticePlacement: event.target.value }))}><option value="banner">{language === 'zh' ? '顶部横幅' : 'Top banner'}</option><option value="modal">{language === 'zh' ? '居中弹窗' : 'Centered popup'}</option></select></label>
+              <label><span>{language === 'zh' ? '显示位置' : 'Placement'}</span><input value={language === 'zh' ? '顶部铃铛通知中心' : 'Top notification bell'} disabled /></label>
             </div>
             <label className="adminNotificationBody">
               <span>{language === 'zh' ? '公告内容' : 'Notice content'}</span>
@@ -3501,6 +3700,8 @@ function CreditPanel({
   const [rechargeConfig, setRechargeConfig] = useState(() => normalizeRechargeConfig());
   const [customAmount, setCustomAmount] = useState('10');
   const [checkoutAvailable, setCheckoutAvailable] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [paymentType, setPaymentType] = useState('alipay');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
   const [busyProduct, setBusyProduct] = useState('');
@@ -3528,6 +3729,9 @@ function CreditPanel({
       setRechargeConfig(nextRecharge);
       setCustomAmount((current) => current || amountInputValue(nextRecharge.custom.minimumAmountCents));
       setCheckoutAvailable(Boolean(catalogPayload.checkoutAvailable));
+      const nextPaymentMethods = Array.isArray(catalogPayload.paymentMethods) ? catalogPayload.paymentMethods : [];
+      setPaymentMethods(nextPaymentMethods);
+      setPaymentType((current) => nextPaymentMethods.some((method) => method.id === current) ? current : nextPaymentMethods[0]?.id || 'alipay');
       if (catalogPayload.user) onProfileChange(catalogPayload.user);
 
       if (historyResponse) {
@@ -3596,7 +3800,9 @@ function CreditPanel({
           ...getAuthHeaders(session)
         },
         body: JSON.stringify({
-          productId: product.id
+          productId: product.id,
+          amountCents: product.amountCents,
+          paymentType
         })
       });
       const payload = await response.json().catch(() => ({}));
@@ -3637,7 +3843,7 @@ function CreditPanel({
         <div className="billingSummary">
           <div>
             <span>{t.balanceTitle}</span>
-            <strong>{profile?.creditBalance || 0}</strong>
+            <strong>{profile?.groupAccount ? profile?.personalCreditBalance || 0 : profile?.creditBalance || 0}</strong>
             <em>{t.credits}</em>
           </div>
           <div>
@@ -3673,6 +3879,13 @@ function CreditPanel({
           <p className={cx('authMessage', status === 'error' && 'error')}>{message}</p>
         ) : null}
 
+        {checkoutAvailable && paymentMethods.length ? (
+          <div className="billingPaymentMethods" role="group" aria-label={language === 'zh' ? '支付方式' : 'Payment method'}>
+            <span>{language === 'zh' ? '支付方式' : 'Payment method'}</span>
+            <div>{paymentMethods.map((method) => <button className={paymentType === method.id ? 'active' : ''} type="button" key={method.id} onClick={() => setPaymentType(method.id)}>{language === 'zh' ? method.nameZh : method.nameEn}</button>)}</div>
+          </div>
+        ) : null}
+
         <div className="billingSections rechargeBillingSections">
           <section>
             <h3>
@@ -3686,11 +3899,20 @@ function CreditPanel({
                   <article className="billingCard" key={pack.id}>
                     <span>{productText(pack.name, language)}</span>
                     <strong>{pack.priceLabel}</strong>
-                    <p>{productText(pack.description, language)}</p>
+                        <p className="billingPackBreakdown">
+                          <span>
+                            {formatNumber(pack.baseCredits)} {language === 'zh' ? '基础积分' : 'base credits'}
+                          </span>
+                          {Number(pack.bonusCredits || 0) > 0 ? (
+                            <b className="billingPackBonus">
+                              + {formatNumber(pack.bonusCredits)} {language === 'zh' ? '赠送积分' : 'bonus credits'}
+                            </b>
+                          ) : null}
+                        </p>
                     <div className="billingCredits">{t.packCredits(pack.credits)}</div>
                     <button type="button" disabled={busy} onClick={() => handleCheckout(pack)}>
                       {busy ? <LoaderCircle className="spinIcon" size={16} /> : <Coins size={16} />}
-                      {checkoutAvailable ? t.buyCredits : (language === 'zh' ? '接口待接入' : 'Coming soon')}
+                      {checkoutAvailable ? t.buyCredits : (language === 'zh' ? '接口待配置' : 'Not configured')}
                     </button>
                   </article>
                 );
@@ -3712,7 +3934,7 @@ function CreditPanel({
                   <strong>{language === 'zh' ? '预计到账' : 'Estimated total'}<em>{formatNumber(customQuote.credits)}</em></strong>
                 </div>
                 <p className={customQuote.valid ? '' : 'warning'}>{customRechargeMessage}</p>
-                <button type="button" disabled={!customQuote.valid} onClick={() => setMessage(t.checkoutUnavailable)}><CreditCard size={16} />{checkoutAvailable ? t.buyCredits : (language === 'zh' ? '接口待接入' : 'Coming soon')}</button>
+                <button type="button" disabled={!customQuote.valid || busyProduct === 'custom_recharge:custom'} onClick={() => handleCheckout({ type: 'custom_recharge', id: 'custom', amountCents: customQuote.amountCents })}>{busyProduct === 'custom_recharge:custom' ? <LoaderCircle className="spinIcon" size={16} /> : <CreditCard size={16} />}{checkoutAvailable ? t.buyCredits : (language === 'zh' ? '接口待配置' : 'Not configured')}</button>
               </div>
             </section>
           ) : null}
@@ -4360,7 +4582,6 @@ function CooperationPage({ language }) {
           <div><em>{t.wechat}</em><strong>tzy20191024</strong></div>
         </article>
       </div>
-      <p className="cooperationRechargeNotice">{t.cooperationRecharge}</p>
     </section>
   );
 }
@@ -4371,7 +4592,7 @@ function App() {
   const [styleLibrary, setStyleLibrary] = useState(EMPTY_STYLE_LIBRARY);
   const [caseIndexLoading, setCaseIndexLoading] = useState(true);
   const [visibleCaseCount, setVisibleCaseCount] = useState(GALLERY_INITIAL_COUNT);
-  const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'en');
+  const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'zh');
   const [activePage, setActivePage] = useState(() => pageFromHash(window.location.hash));
   const [workspaceMode, setWorkspaceMode] = useState('single');
   const [pendingReferenceAsset, setPendingReferenceAsset] = useState(null);
@@ -4393,14 +4614,11 @@ function App() {
   const [accountInitialSection, setAccountInitialSection] = useState('overview');
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
-  const [siteNotice, setSiteNotice] = useState(null);
-  const [siteNoticeDismissed, setSiteNoticeDismissed] = useState(false);
   const [menuSettings, setMenuSettings] = useState({
     global: { templates: true, cases: true, api: true },
     personal: { hideEcommerce: false, hideTemplates: false, hideCases: false, hideApi: false },
     effective: { ecommerce: true, templates: true, cases: true, api: true }
   });
-  const lastSiteNoticeVersionRef = useRef('');
   const fullCaseDataPromiseRef = useRef(null);
   const gallerySentinelRef = useRef(null);
   const { copiedId, copyText } = useCopy();
@@ -4517,46 +4735,6 @@ function App() {
     refreshMenuSettings();
   }, [refreshMenuSettings, session?.user?.id]);
 
-  const refreshSiteNotice = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/site-notice?t=${Date.now()}`, { cache: 'no-store' });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'SITE_NOTICE_LOAD_FAILED');
-      setSiteNotice(payload.notice || null);
-    } catch {
-      setSiteNotice(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshSiteNotice();
-    const handleRefresh = () => refreshSiteNotice();
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') refreshSiteNotice();
-    };
-    window.addEventListener('focus', handleRefresh);
-    window.addEventListener('pic365:site-notice-updated', handleRefresh);
-    document.addEventListener('visibilitychange', handleVisibility);
-    const intervalId = window.setInterval(refreshSiteNotice, 60_000);
-    return () => {
-      window.removeEventListener('focus', handleRefresh);
-      window.removeEventListener('pic365:site-notice-updated', handleRefresh);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.clearInterval(intervalId);
-    };
-  }, [refreshSiteNotice]);
-
-  useEffect(() => {
-    refreshSiteNotice();
-  }, [refreshSiteNotice, session?.user?.id, profile?.creditBalance]);
-
-  useEffect(() => {
-    const nextVersion = String(siteNotice?.updatedAt || '');
-    if (nextVersion && nextVersion !== lastSiteNoticeVersionRef.current) {
-      setSiteNoticeDismissed(false);
-    }
-    lastSiteNoticeVersionRef.current = nextVersion;
-  }, [siteNotice?.updatedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4680,13 +4858,14 @@ function App() {
     if (!billing) return;
     if (billing === 'success') setBillingNotice(t.billingSuccess);
     if (billing === 'cancelled') setBillingNotice(t.billingCancelled);
+    if (billing === 'failed') setBillingNotice(t.billingFailed);
     setBillingOpen(true);
     params.delete('billing');
     params.delete('session_id');
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
     window.history.replaceState({}, '', nextUrl);
-  }, [t.billingCancelled, t.billingSuccess]);
+  }, [t.billingCancelled, t.billingFailed, t.billingSuccess]);
 
   const latestCases = useMemo(() => {
     if (!siteData) return [];
@@ -4938,16 +5117,6 @@ function App() {
     setAccountInitialSection('overview');
   }
 
-  const showSiteNotice = Boolean(
-    siteNotice
-    && !siteNoticeDismissed
-    && (
-      siteNotice.audience === 'all'
-      || (siteNotice.audience === 'signed-in' && isAuthenticatedSession(session))
-      || (siteNotice.audience === 'members' && isAuthenticatedSession(session) && Number(profile?.creditBalance || 0) > 0)
-    )
-  );
-
   return (
     <main>
       <header className={cx('topbar', `topbarPage-${activePage}`)}>
@@ -5024,6 +5193,7 @@ function App() {
             ) : null}
           </nav>
           <LanguageSwitch language={language} setLanguage={setLanguage} />
+          <NotificationBell language={language} session={session} profile={profile} onProfileChange={setProfile} />
           <UserMenu
             language={language}
             session={session}
@@ -5039,26 +5209,6 @@ function App() {
           />
         </div>
       </header>
-      {showSiteNotice && siteNotice.placement !== 'modal' ? (
-        <aside className="siteNoticeBanner" role="status">
-          <Bell size={17} />
-          <div><strong>{siteNotice.title || (language === 'zh' ? '站内通知' : 'Notice')}</strong><RichSiteNoticeContent className="siteNoticeRichContent" body={siteNotice.body} format={siteNotice.format} /></div>
-          <button type="button" onClick={() => setSiteNoticeDismissed(true)} aria-label={language === 'zh' ? '关闭通知' : 'Dismiss notice'}><X size={16} /></button>
-        </aside>
-      ) : null}
-      {showSiteNotice && siteNotice.placement === 'modal' ? (
-        <div className="siteNoticeModalBackdrop" role="presentation">
-          <section className="siteNoticeModal" role="dialog" aria-modal="true" aria-labelledby="site-notice-title">
-            <div className="siteNoticeModalIcon"><Bell size={22} /></div>
-            <div className="siteNoticeModalBody">
-              <strong id="site-notice-title">{siteNotice.title || (language === 'zh' ? '站内通知' : 'Notice')}</strong>
-              <RichSiteNoticeContent className="siteNoticeRichContent" body={siteNotice.body} format={siteNotice.format} />
-            </div>
-            <button type="button" onClick={() => setSiteNoticeDismissed(true)} aria-label={language === 'zh' ? '关闭通知' : 'Dismiss notice'}><X size={17} /></button>
-          </section>
-        </div>
-
-      ) : null}
       {favoriteMessage ? <div className="toastNotice">{favoriteMessage}</div> : null}
 
       {activePage === 'cases' ? (
@@ -5240,7 +5390,6 @@ function App() {
           casesById={casesById}
           onOpenAccount={() => handleOpenAccount('overview')}
           onOpenCase={handleOpenCaseFromAdmin}
-          onSiteNoticeUpdated={refreshSiteNotice}
           onMenuSettingsChanged={handleMenuSettingsChanged}
         />
       ) : null}

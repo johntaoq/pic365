@@ -89,6 +89,10 @@ function errorText(code, language) {
   const zh = {
     AUTH_REQUIRED: '登录后即可和精灵聊天。',
     CREDITS_REQUIRED: '积分不足，请充值后继续。',
+    GROUP_BUDGET_REQUIRED: '集团预算不足，请联系集团管理员增加预算。',
+    GROUP_BALANCE_REQUIRED: '集团可用余额不足，请先向集团账户转入积分。',
+    GROUP_ACCESS_SUSPENDED: '你的集团账户已暂停或正在退出。',
+    CHAT_REQUEST_IN_PROGRESS: '这条消息正在处理中，请稍候。',
     CHAT_PROVIDER_NOT_CONFIGURED: '聊天引擎暂未配置。',
     CHAT_PROVIDER_TIMEOUT: '精灵思考超时，请重试。',
     CHAT_USAGE_UNAVAILABLE: '渠道没有返回实际用量，本次未扣费。',
@@ -99,6 +103,10 @@ function errorText(code, language) {
   const en = {
     AUTH_REQUIRED: 'Sign in to chat.',
     CREDITS_REQUIRED: 'Not enough credits.',
+    GROUP_BUDGET_REQUIRED: 'Your group budget is insufficient. Contact the group administrator.',
+    GROUP_BALANCE_REQUIRED: 'The group balance is insufficient.',
+    GROUP_ACCESS_SUSPENDED: 'Your group access is paused or being removed.',
+    CHAT_REQUEST_IN_PROGRESS: 'This message is already being processed.',
     CHAT_PROVIDER_NOT_CONFIGURED: 'The chat engine is not configured.',
     CHAT_PROVIDER_TIMEOUT: 'The assistant timed out. Please retry.',
     CHAT_USAGE_UNAVAILABLE: 'The provider returned no usage data, so nothing was charged.',

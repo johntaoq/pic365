@@ -8,7 +8,12 @@ import {
   priceMicrosToRmb,
   priceRmbToMicros
 } from '../../shared/chat-billing.js';
-import { getDb, getUserProfile } from './local-db.js';
+import {
+  getDb,
+  getUserProfile,
+  reserveCreditCenti,
+  settleCreditReservationInTransaction
+} from './local-db.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
 
 const DEFAULT_CHAT_MODEL = 'gpt-5.6-luna';
@@ -450,19 +455,27 @@ export function buildChatMessages(userId, { text, images = [] }) {
   };
 }
 
-export function assertChatCreditCapacity(userId, { text, imageCount = 0, provider }) {
-  const db = getDb();
-  const user = db.prepare('SELECT role, credit_balance FROM users WHERE id = ? AND status = ?').get(userId, 'active');
-  if (!user) throw Object.assign(new Error('AUTH_REQUIRED'), { code: 'AUTH_REQUIRED' });
-  if (user.role === 'super_admin') return;
-  const estimatedInputTokens = Math.max(1, Math.ceil(String(text || '').length / 2) + imageCount * 20_000);
+export function reserveChatCreditCapacity(userId, { text, imageCount = 0, provider, clientRequestId }) {
+  const estimatedInputTokens = Math.max(1, String(text || '').length * 2 + imageCount * 50_000);
   const requiredCenti = calculateChatChargeCenti({
     usage: { input_tokens: estimatedInputTokens, output_tokens: provider.maxOutputTokens },
     pricing: provider.pricing
   });
-  if (Math.round(Number(user.credit_balance || 0) * 100) < requiredCenti) {
-    throw Object.assign(new Error('CREDITS_REQUIRED'), { code: 'CREDITS_REQUIRED' });
+  const reservation = reserveCreditCenti(userId, {
+    amountCenti: Math.max(1, requiredCenti),
+    source: 'chat_actual_usage',
+    requestKey: `chat:${String(clientRequestId || '').slice(0, 120)}`,
+    metadata: {
+      providerId: provider.id,
+      model: provider.model,
+      estimatedInputTokens,
+      maxOutputTokens: provider.maxOutputTokens
+    }
+  });
+  if (reservation.duplicate) {
+    throw Object.assign(new Error('CHAT_REQUEST_IN_PROGRESS'), { code: 'CHAT_REQUEST_IN_PROGRESS' });
   }
+  return reservation;
 }
 
 export function commitChatExchange({
@@ -474,12 +487,19 @@ export function commitChatExchange({
   assistantText,
   provider,
   usage,
+  reservationId,
   upstreamRequestId = ''
 }) {
   const duplicate = getChatResultByRequestId(userId, clientRequestId);
   if (duplicate) return duplicate;
   const db = getDb();
   const calculatedCenti = calculateChatChargeCenti({ usage, pricing: provider.pricing });
+  const effectiveReservationId = reservationId || reserveCreditCenti(userId, {
+    amountCenti: Math.max(1, calculatedCenti),
+    source: 'chat_actual_usage',
+    requestKey: `chat-commit:${String(clientRequestId || '').slice(0, 120)}`,
+    metadata: { providerId: provider.id, model: provider.model }
+  }).reservationId;
   const createdAt = now();
   const userMessageId = randomUUID();
   const assistantMessageId = randomUUID();
@@ -488,10 +508,8 @@ export function commitChatExchange({
   try {
     const user = db.prepare('SELECT id, role, credit_balance FROM users WHERE id = ? AND status = ?').get(userId, 'active');
     if (!user) throw Object.assign(new Error('AUTH_REQUIRED'), { code: 'AUTH_REQUIRED' });
-    const chargedCenti = user.role === 'super_admin' ? 0 : calculatedCenti;
-    const balanceBeforeCenti = Math.round(Number(user.credit_balance || 0) * 100);
-    if (balanceBeforeCenti < chargedCenti) throw Object.assign(new Error('CREDITS_REQUIRED'), { code: 'CREDITS_REQUIRED' });
-    const balanceAfterCenti = balanceBeforeCenti - chargedCenti;
+    const settledReservation = settleCreditReservationInTransaction(db, effectiveReservationId, calculatedCenti);
+    const chargedCenti = settledReservation.billing_scope === 'super_admin' ? 0 : calculatedCenti;
     const nextSequence = Number(db.prepare('SELECT COALESCE(MAX(sequence), 0) AS value FROM chat_messages WHERE conversation_id = ?').get(conversationId)?.value || 0) + 1;
     db.prepare(`
       INSERT INTO chat_messages
@@ -503,18 +521,6 @@ export function commitChatExchange({
         (id, conversation_id, user_id, role, content, attachments_json, usage_json, charged_credit_centi, sequence, created_at)
       VALUES (?, ?, ?, 'assistant', ?, '[]', ?, ?, ?, ?)
     `).run(assistantMessageId, conversationId, userId, assistantText, JSON.stringify(usage), chargedCenti, nextSequence + 1, createdAt);
-    if (chargedCenti > 0) {
-      db.prepare('UPDATE users SET credit_balance = ?, updated_at = ? WHERE id = ?')
-        .run(balanceAfterCenti / 100, createdAt, userId);
-      db.prepare(`
-        INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
-        VALUES (?, ?, ?, 'ai_chat', 'chat_actual_usage', ?, ?, ?)
-      `).run(randomUUID(), userId, -(chargedCenti / 100), usageId, JSON.stringify({
-        chargedCreditCenti: chargedCenti,
-        model: provider.model,
-        usage
-      }), createdAt);
-    }
     db.prepare(`
       INSERT INTO chat_usage_records
         (id, client_request_id, user_id, conversation_id, assistant_message_id, provider_id, model,

@@ -5,7 +5,7 @@ import {
   storageBillingRunPhase,
   storageCreditsForBytes
 } from '../../shared/storage-billing.js';
-import { getDb } from './local-db.js';
+import { chargeCreditImmediatelyInTransaction, getDb } from './local-db.js';
 import { repairMissingAssetFileMetadata } from './media-assets.js';
 
 const STORAGE_BILLING_SETTING_KEY = 'storage_billing';
@@ -184,29 +184,21 @@ export function billUserStorageForDate({
     const targetCredits = storageCreditsForBytes(candidatePeak, monthState.unit_price_cents_per_gb);
     const alreadyChargedCredits = Math.max(0, Number(monthState.charged_credits || 0));
     const incrementalCredits = Math.max(0, targetCredits - alreadyChargedCredits);
-    const balanceBefore = Number(user.credit_balance || 0);
+    let balanceBefore = Number(user.credit_balance || 0);
     let balanceAfter = balanceBefore;
     let resultStatus = 'below_minimum';
     let chargeId = null;
 
-    if (incrementalCredits >= 1 && balanceBefore < incrementalCredits) {
-      resultStatus = 'insufficient_credits';
-    } else if (incrementalCredits >= 1) {
+    if (incrementalCredits >= 1) {
       chargeId = randomUUID();
-      const ledgerId = randomUUID();
-      balanceAfter = balanceBefore - incrementalCredits;
       const previousBilledBytes = Math.max(0, Number(monthState.billed_peak_bytes || 0));
-      db.prepare(`UPDATE users SET credit_balance = ?, updated_at = ? WHERE id = ?`)
-        .run(balanceAfter, measuredAt, userId);
-      db.prepare(`
-        INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
-        VALUES (?, ?, ?, 'storage', 'storage_billing', ?, ?, ?)
-      `).run(
-        ledgerId,
-        userId,
-        -incrementalCredits,
-        chargeId,
-        JSON.stringify({
+      let charge;
+      try {
+        charge = chargeCreditImmediatelyInTransaction(db, userId, {
+          amountCenti: incrementalCredits * 100,
+          source: 'storage_billing',
+          referenceId: chargeId,
+          metadata: {
           labelZh: '存储消耗',
           labelEn: 'Storage usage',
           billingMonth,
@@ -215,10 +207,20 @@ export function billUserStorageForDate({
           billedPeakBytes: candidatePeak,
           incrementalBytes: Math.max(0, candidatePeak - previousBilledBytes),
           unitPriceCentsPerGb: Number(monthState.unit_price_cents_per_gb),
-          chargedCredits: incrementalCredits
-        }),
-        measuredAt
-      );
+            chargedCredits: incrementalCredits
+          }
+        });
+      } catch (error) {
+        if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED', 'GROUP_ACCESS_SUSPENDED'].includes(error?.code)) {
+          resultStatus = 'insufficient_credits';
+          chargeId = null;
+        } else {
+          throw error;
+        }
+      }
+      if (charge) {
+        balanceBefore = charge.balanceBefore;
+        balanceAfter = charge.balanceAfter;
       db.prepare(`
         INSERT INTO storage_billing_charges
           (id, user_id, billing_month, usage_date, previous_billed_bytes, billed_peak_bytes,
@@ -235,7 +237,7 @@ export function billUserStorageForDate({
         Math.max(0, candidatePeak - previousBilledBytes),
         Number(monthState.unit_price_cents_per_gb),
         incrementalCredits,
-        ledgerId,
+        charge.ledgerId,
         balanceBefore,
         balanceAfter,
         measuredAt
@@ -247,6 +249,7 @@ export function billUserStorageForDate({
         WHERE user_id = ? AND billing_month = ?
       `).run(candidatePeak, incrementalCredits, usageDate, measuredAt, measuredAt, userId, billingMonth);
       resultStatus = 'charged';
+      }
     } else {
       db.prepare(`
         UPDATE storage_billing_months SET last_run_date = ?, updated_at = ?

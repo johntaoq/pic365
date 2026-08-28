@@ -279,6 +279,7 @@ export default async function handler(req, res) {
       reservation = reserveCredit(auth.user.id, {
         prompt,
         amount: pricing.credits,
+        requestKey: `ecommerce:${taskId}`,
         metadata: {
           projectId,
           slotId,
@@ -302,10 +303,13 @@ export default async function handler(req, res) {
       });
     } catch (error) {
       const cancelled = isGenerationCancellation(error, taskController.signal);
-      const errorCode = cancelled ? 'GENERATION_CANCELLED' : error?.code === 'CREDITS_REQUIRED' ? 'CREDITS_REQUIRED' : 'GENERATION_FAILED';
+      const billingErrors = new Set(['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED']);
+      const errorCode = cancelled ? 'GENERATION_CANCELLED' : billingErrors.has(error?.code) ? error.code : error?.code === 'GROUP_ACCESS_SUSPENDED' ? error.code : 'GENERATION_FAILED';
       failTask(errorCode, cancelled ? 'cancelled' : 'failed');
       if (cancelled) return json(res, 409, { ok: false, error: errorCode, taskId, user: getUserProfile(auth.user.id) });
-      if (errorCode === 'CREDITS_REQUIRED') return json(res, 402, { ok: false, error: errorCode, taskId });
+      if (billingErrors.has(errorCode)) return json(res, 402, { ok: false, error: errorCode, taskId, user: getUserProfile(auth.user.id) });
+      if (errorCode === 'GROUP_ACCESS_SUSPENDED') return json(res, 403, { ok: false, error: errorCode, taskId, user: getUserProfile(auth.user.id) });
+      if (error?.code === 'BILLING_REQUEST_DUPLICATE') return json(res, 409, { ok: false, error: error.code, taskId, user: getUserProfile(auth.user.id) });
       return json(res, 500, { ok: false, error: errorCode, taskId });
     }
 

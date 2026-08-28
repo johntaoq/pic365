@@ -411,6 +411,9 @@ const copy = {
     fullLocked: '登录并拥有积分后可使用参考图、自定义尺寸、AI 魔笔和多张抽卡。',
     guestUsed: '3 张游客免费图片已用完，请登录继续。',
     creditsRequired: '积分不足，请先充值。',
+    groupBudgetRequired: '集团预算不足，请联系集团管理员增加预算。',
+    groupBalanceRequired: '集团可用余额不足，请由集团管理员转入积分。',
+    groupAccessSuspended: '你的集团账户已暂停或正在退出。',
     signIn: '登录使用完整功能',
     caseTitle: '范例美图',
     caseAll: '全部',
@@ -510,6 +513,9 @@ const copy = {
     fullLocked: 'Sign in with credits to use references, custom sizes, AI polish, and multi-image draws.',
     guestUsed: 'All 3 free guest images have been used. Sign in to continue.',
     creditsRequired: 'More credits are required.',
+    groupBudgetRequired: 'Your group budget is insufficient. Contact the group administrator.',
+    groupBalanceRequired: 'The group balance is insufficient. Ask the administrator to add funds.',
+    groupAccessSuspended: 'Your group access is paused or being removed.',
     signIn: 'Sign in for full tools',
     caseTitle: 'Example images',
     caseAll: 'All',
@@ -606,6 +612,15 @@ function taskFailureText(task, t) {
   if (task?.error === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceUploadFailed;
   if (task?.error === 'PROVIDER_REFERENCE_UNSUPPORTED') return t.providerReferenceUnsupported;
   return generationFailureText({ error: task?.error }, t);
+}
+
+function billingMessage(profile, t, code = '') {
+  if (code === 'GROUP_ACCESS_SUSPENDED') return t.groupAccessSuspended;
+  if (code === 'GROUP_BALANCE_REQUIRED') return t.groupBalanceRequired;
+  if (code === 'GROUP_BUDGET_REQUIRED') return t.groupBudgetRequired;
+  if (profile?.groupAccount?.role === 'member') return t.groupBudgetRequired;
+  if (profile?.groupAccount?.role === 'admin') return t.groupBalanceRequired;
+  return t.creditsRequired;
 }
 
 export default function FreeImageWorkspace({
@@ -1193,7 +1208,8 @@ export default function FreeImageWorkspace({
   function insertReference(item, { fromMention = false, promptOverride = null } = {}) {
     if (!hasFullWorkspace) {
       if (!isSignedIn) onSignIn?.();
-      else onBilling?.();
+      else if (!profile?.groupAccount) onBilling?.();
+      else setState((current) => ({ ...current, message: billingMessage(profile, t) }));
       return;
     }
     const existing = references.find((reference) => reference.id === item.id);
@@ -1570,8 +1586,8 @@ export default function FreeImageWorkspace({
       return;
     }
     if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < batchRepairTotalCredits) {
-      onBilling?.();
-      setState((current) => ({ ...current, message: t.creditsRequired }));
+      if (!profile?.groupAccount) onBilling?.();
+      setState((current) => ({ ...current, message: billingMessage(profile, t) }));
       return;
     }
 
@@ -1671,7 +1687,8 @@ export default function FreeImageWorkspace({
     }
     if (!hasFullWorkspace) {
       if (!isSignedIn) onSignIn?.();
-      else onBilling?.();
+      else if (!profile?.groupAccount) onBilling?.();
+      else setState((current) => ({ ...current, message: billingMessage(profile, t) }));
       return;
     }
     if (!sizeCheck.valid) {
@@ -2018,9 +2035,9 @@ export default function FreeImageWorkspace({
       const payload = await response.json().catch(() => ({}));
       if (payload.user) onProfileChange?.(payload.user);
       if (!response.ok || !payload?.ok) {
-        if (payload.error === 'CREDITS_REQUIRED') {
-          onBilling?.();
-          setState((current) => ({ ...current, message: t.creditsRequired }));
+        if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED', 'GROUP_ACCESS_SUSPENDED'].includes(payload.error)) {
+          if (payload.error === 'CREDITS_REQUIRED') onBilling?.();
+          setState((current) => ({ ...current, message: billingMessage(profile, t, payload.error) }));
           return;
         }
         throw new Error(payload.error || 'PROMPT_OPTIMIZATION_FAILED');
@@ -2049,8 +2066,8 @@ export default function FreeImageWorkspace({
       return;
     }
     if (isSignedIn && !hasFullWorkspace) {
-      onBilling?.();
-      setState((current) => ({ ...current, message: t.creditsRequired }));
+      if (!profile?.groupAccount) onBilling?.();
+      setState((current) => ({ ...current, message: billingMessage(profile, t) }));
       return;
     }
     if (isGuest && guestUsed) {
@@ -2077,8 +2094,8 @@ export default function FreeImageWorkspace({
       }
       const confirmedCredits = Number(confirmedPricing.credits || 0) * requestedCount;
       if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < confirmedCredits) {
-        onBilling?.();
-        setState((current) => ({ ...current, message: t.creditsRequired }));
+        if (!profile?.groupAccount) onBilling?.();
+        setState((current) => ({ ...current, message: billingMessage(profile, t) }));
         return;
       }
     }
@@ -2117,9 +2134,9 @@ export default function FreeImageWorkspace({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
         if (payload.user) onProfileChange?.(payload.user);
-        if (payload.error === 'CREDITS_REQUIRED') {
-          onBilling?.();
-          setState((current) => ({ ...current, status: 'idle', message: t.creditsRequired }));
+        if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED', 'GROUP_ACCESS_SUSPENDED'].includes(payload.error)) {
+          if (payload.error === 'CREDITS_REQUIRED') onBilling?.();
+          setState((current) => ({ ...current, status: 'idle', message: billingMessage(profile, t, payload.error) }));
           return;
         }
         if (payload.error === 'GUEST_FREE_LIMIT_REACHED') {
@@ -2531,7 +2548,7 @@ export default function FreeImageWorkspace({
           </section>
           )}
 
-          {!hasFullWorkspace ? <p className="freeImageAccessNote">{isGuest ? t.fullLocked : t.creditsRequired}</p> : null}
+          {!hasFullWorkspace ? <p className="freeImageAccessNote">{isGuest ? t.fullLocked : billingMessage(profile, t)}</p> : null}
           {creationMode === 'single' ? (
           <div className="freeImageGenerateActions">
           <button className="freeImageGenerateButton" type="submit" disabled={isGenerating || uploadingReferences || (hasFullWorkspace && (!sizeCheck.valid || !referencesValid || pricingLoading || !pricing))}>

@@ -87,7 +87,8 @@ export default async function handler(req, res) {
       metadata: { referenceCount, hasAnnotations, model: PROMPT_MODEL }
     });
   } catch (error) {
-    if (error?.code === 'CREDITS_REQUIRED') return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
+    if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED'].includes(error?.code)) return json(res, 402, { ok: false, error: error.code });
+    if (error?.code === 'GROUP_ACCESS_SUSPENDED') return json(res, 403, { ok: false, error: error.code });
     return json(res, 500, { ok: false, error: 'AI_TOOL_CHARGE_FAILED' });
   }
 

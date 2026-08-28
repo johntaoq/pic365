@@ -3,6 +3,7 @@ import { getRechargeConfig, updateRechargeConfig } from '../_lib/local-db.js';
 import { readJsonBody } from '../_lib/request.js';
 import { requirePermission } from '../_lib/governance.js';
 import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
+import { getYipayConfig, updateYipayConfig } from '../_lib/yipay.js';
 
 export default async function handler(req, res) {
   if (!['GET', 'PATCH'].includes(req.method)) {
@@ -19,19 +20,29 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    return res.status(200).json({ ok: true, recharge: getRechargeConfig() });
+    return res.status(200).json({
+      ok: true,
+      recharge: getRechargeConfig(),
+      payment: getYipayConfig()
+    });
   }
 
   try {
     const body = await readJsonBody(req);
+    const combinedPayload = Boolean(body?.recharge || body?.payment);
+    const payment = body?.payment ? updateYipayConfig(body.payment, auth.user.id) : getYipayConfig();
+    const recharge = combinedPayload
+      ? (body?.recharge ? updateRechargeConfig(body.recharge, auth.user.id) : getRechargeConfig())
+      : updateRechargeConfig(body, auth.user.id);
     return res.status(200).json({
       ok: true,
-      recharge: updateRechargeConfig(body, auth.user.id)
+      recharge,
+      payment
     });
   } catch (error) {
     console.warn('Failed to update recharge configuration', {
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-    return res.status(400).json({ ok: false, error: 'RECHARGE_CONFIG_FAILED' });
+    return res.status(400).json({ ok: false, error: error?.code || 'RECHARGE_CONFIG_FAILED' });
   }
 }

@@ -43,7 +43,9 @@ test('ecommerce generation system prompt defaults to the provided product-truth 
   const current = settings.getEcommerceGenerationSystemPromptSettings();
   assert.equal(current.isDefault, true);
   assert.equal(current.prompt, promptModule.DEFAULT_ECOMMERCE_GENERATION_SYSTEM_PROMPT);
-  assert.match(current.prompt, /如用户要求与真实商品资料冲突/);
+  assert.match(current.prompt, /用户要求与商品证据冲突时服从商品证据/);
+  assert.equal(promptModule.isKnownDefaultEcommerceGenerationSystemPrompt(current.prompt), true);
+  assert.equal(promptModule.isKnownDefaultEcommerceGenerationSystemPrompt('后台自定义约束'), false);
 });
 
 test('only global-settings administrators can update the ecommerce generation system prompt', async () => {

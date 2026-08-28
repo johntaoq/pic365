@@ -1,6 +1,5 @@
 import { authenticateRequest } from './_lib/local-auth.js';
 import {
-  assertChatCreditCapacity,
   buildChatMessages,
   clearChatConversation,
   commitChatExchange,
@@ -8,8 +7,10 @@ import {
   getChatProviderConfig,
   getChatResultByRequestId,
   listChatMessages,
-  requestChatCompletion
+  requestChatCompletion,
+  reserveChatCreditCapacity
 } from './_lib/chat-engine.js';
+import { releaseCreditReservation } from './_lib/local-db.js';
 import { readJsonBody } from './_lib/request.js';
 
 const MAX_TEXT_LENGTH = 6000;
@@ -86,35 +87,44 @@ export default async function handler(req, res) {
     const textualContext = chat.messages.map((item) => Array.isArray(item.content)
       ? item.content.filter((part) => part?.type === 'text').map((part) => part.text || '').join('\n')
       : String(item.content || '')).join('\n');
-    assertChatCreditCapacity(auth.user.id, {
+    const reservation = reserveChatCreditCapacity(auth.user.id, {
       text: textualContext,
       imageCount: images.length,
-      provider
-    });
-    const result = await requestChatCompletion({
       provider,
-      messages: [{ role: 'system', content: provider.systemPrompt }, ...chat.messages]
+      clientRequestId
     });
-    const committed = commitChatExchange({
-      userId: auth.user.id,
-      conversationId: chat.conversationId,
-      clientRequestId,
-      userText: text,
-      attachments: images.map((item, index) => ({
-        name: clean(rawImages[index]?.name, 120) || `image-${index + 1}`,
-        mimeType: item.mimeType,
-        byteLength: item.byteLength
-      })),
-      assistantText: result.content,
-      provider,
-      usage: result.usage,
-      upstreamRequestId: result.upstreamRequestId
-    });
-    return res.status(200).json({ ok: true, ...committed });
+    try {
+      const result = await requestChatCompletion({
+        provider,
+        messages: [{ role: 'system', content: provider.systemPrompt }, ...chat.messages]
+      });
+      const committed = commitChatExchange({
+        userId: auth.user.id,
+        conversationId: chat.conversationId,
+        clientRequestId,
+        userText: text,
+        attachments: images.map((item, index) => ({
+          name: clean(rawImages[index]?.name, 120) || `image-${index + 1}`,
+          mimeType: item.mimeType,
+          byteLength: item.byteLength
+        })),
+        assistantText: result.content,
+        provider,
+        usage: result.usage,
+        reservationId: reservation.reservationId,
+        upstreamRequestId: result.upstreamRequestId
+      });
+      return res.status(200).json({ ok: true, ...committed });
+    } catch (error) {
+      releaseCreditReservation(reservation.reservationId, error?.code || 'CHAT_FAILED');
+      throw error;
+    }
   } catch (error) {
     const code = error?.code || (error?.name === 'AbortError' ? 'CHAT_PROVIDER_TIMEOUT' : 'CHAT_FAILED');
-    const status = code === 'CREDITS_REQUIRED' ? 402
+    const status = ['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED'].includes(code) ? 402
       : code === 'AUTH_REQUIRED' ? 401
+        : code === 'GROUP_ACCESS_SUSPENDED' ? 403
+          : code === 'CHAT_REQUEST_IN_PROGRESS' ? 409
         : code === 'CHAT_USAGE_UNAVAILABLE' ? 502
           : Number(error?.status) >= 400 ? Number(error.status)
             : 500;

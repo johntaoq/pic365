@@ -387,6 +387,7 @@ export default async function handler(req, res) {
         caseId,
         prompt,
         amount: pricing.credits,
+        requestKey: clientTaskId ? `free-image:${clientTaskId}:${index}` : '',
         metadata: {
           size,
           quality,
@@ -411,8 +412,14 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     reservations.forEach((reservation) => releaseCreditReservation(reservation.reservationId, 'BATCH_RESERVATION_FAILED'));
-    if (error?.code === 'CREDITS_REQUIRED') {
-      return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED', user: getUserProfile(auth.user.id) });
+    if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED'].includes(error?.code)) {
+      return json(res, 402, { ok: false, error: error.code, user: getUserProfile(auth.user.id) });
+    }
+    if (error?.code === 'GROUP_ACCESS_SUSPENDED') {
+      return json(res, 403, { ok: false, error: error.code, user: getUserProfile(auth.user.id) });
+    }
+    if (error?.code === 'BILLING_REQUEST_DUPLICATE') {
+      return json(res, 409, { ok: false, error: error.code, user: getUserProfile(auth.user.id) });
     }
     console.warn('Failed to reserve batch credits', {
       userId: auth.user.id,

@@ -43,6 +43,310 @@ option {
   font-family: var(--font-ui);
 }
 
+.groupAccountCard {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid rgba(111, 134, 168, .24);
+  border-radius: 22px;
+  background: rgba(13, 21, 37, .72);
+}
+
+.groupAccountHeading,
+.groupAccountTitle,
+.groupInvitationList article,
+.groupTransferNotice,
+.groupMemberSelf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.groupAccountHeading h3,
+.groupLedger h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.groupAccountHeading p,
+.groupAccountTitle span,
+.groupInvitationList span,
+.groupMemberIdentity span,
+.groupMemberSelf p {
+  margin: 5px 0 0;
+  color: #91a1b9;
+  font-size: 13px;
+}
+
+.groupAccountTitle {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(31, 45, 66, .62);
+}
+
+.groupAccountTitle div {
+  display: grid;
+}
+
+.groupAccountTitle strong {
+  font-size: 20px;
+}
+
+.groupAccountTitle em {
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #9ff0d4;
+  background: rgba(79, 201, 164, .12);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.groupAccountMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.groupAccountMetrics div {
+  display: grid;
+  gap: 6px;
+  padding: 15px;
+  border: 1px solid rgba(111, 134, 168, .18);
+  border-radius: 15px;
+  background: rgba(20, 31, 49, .66);
+}
+
+.groupAccountMetrics span,
+.groupMemberNumbers span {
+  color: #91a1b9;
+  font-size: 12px;
+}
+
+.groupAccountMetrics strong {
+  font-size: 22px;
+}
+
+.groupAdminForms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.groupInlineForm,
+.groupTransferForm {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.groupInlineForm label,
+.groupTransferForm label {
+  display: grid;
+  flex: 1;
+  gap: 7px;
+  min-width: 0;
+}
+
+.groupInlineForm label span,
+.groupTransferForm label span {
+  color: #c4cfdf;
+  font-size: 13px;
+}
+
+.groupInlineForm input,
+.groupTransferForm input,
+.groupTransferForm select,
+.groupBudgetControls input {
+  min-width: 0;
+  height: 43px;
+  padding: 0 12px;
+  border: 1px solid rgba(111, 134, 168, .3);
+  border-radius: 12px;
+  color: #eff6ff;
+  background: #10192a;
+}
+
+.groupAccountCard button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 15px;
+  border: 1px solid rgba(105, 225, 191, .35);
+  border-radius: 12px;
+  color: #07151d;
+  background: linear-gradient(135deg, #99ead1, #a8d8ff);
+  font-weight: 750;
+}
+
+.groupAccountCard button.secondary {
+  color: #dce7f5;
+  border-color: rgba(111, 134, 168, .3);
+  background: rgba(28, 40, 60, .7);
+}
+
+.groupAccountCard button.danger {
+  color: #ffc1c1;
+  border-color: rgba(255, 115, 115, .28);
+  background: rgba(103, 33, 42, .28);
+}
+
+.groupAccountCard button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.groupInvitationList,
+.groupMemberList,
+.groupLedger,
+.groupPendingInvites {
+  display: grid;
+  gap: 10px;
+}
+
+.groupInvitationList article,
+.groupTransferNotice {
+  padding: 13px 15px;
+  border: 1px solid rgba(100, 211, 181, .24);
+  border-radius: 14px;
+  background: rgba(48, 104, 91, .13);
+}
+
+.groupInvitationList article > div {
+  display: grid;
+  flex: 1;
+}
+
+.groupPendingInvites {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.groupPendingInvites > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(31, 45, 66, .5);
+}
+.groupPendingInvites span {
+  flex: 1;
+  color: #aebcd0;
+  font-size: 12px;
+}
+.groupPendingInvites button { min-height: 32px; width: auto; padding: 0 10px; }
+
+.groupMemberList article {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.3fr) minmax(190px, 1fr) minmax(250px, 1.2fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(111, 134, 168, .18);
+  border-radius: 15px;
+  background: rgba(20, 31, 49, .54);
+}
+
+.groupMemberIdentity {
+  display: grid;
+  min-width: 0;
+}
+
+.groupMemberIdentity strong,
+.groupMemberIdentity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupMemberNumbers,
+.groupBudgetControls,
+.groupMemberActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.groupMemberNumbers span {
+  display: grid;
+}
+
+.groupMemberNumbers b {
+  color: #e7effa;
+  font-size: 14px;
+}
+
+.groupBudgetControls input {
+  width: 90px;
+}
+
+.groupTransferForm {
+  padding-top: 16px;
+  border-top: 1px solid rgba(111, 134, 168, .18);
+}
+
+.groupLedger {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.groupLedger > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(111, 134, 168, .13);
+  font-size: 13px;
+}
+
+.groupLedger .positive { color: #8ce5bf; }
+.groupLedger .negative { color: #ffad9c; }
+.groupEmpty,
+.groupAccountMessage { margin: 0; color: #91a1b9; }
+.groupAccountMessage.error { color: #ff9d9d; }
+.avatarBadge { position: relative; }
+.groupInviteBadge {
+  position: absolute;
+  top: -8px;
+  right: -9px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: #07151d;
+  background: #91efd0;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+}
+.groupInviteAction { color: #9ff0d4; }
+
+@media (max-width: 900px) {
+  .groupAccountMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .groupAdminForms { grid-template-columns: 1fr; }
+  .groupMemberList article { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .groupAccountCard { padding: 17px; }
+  .groupAccountMetrics { grid-template-columns: 1fr 1fr; }
+  .groupInlineForm,
+  .groupTransferForm,
+  .groupInvitationList article,
+  .groupTransferNotice,
+  .groupMemberSelf { align-items: stretch; flex-direction: column; }
+  .groupAccountCard button { width: 100%; }
+  .groupBudgetControls input { width: 100%; }
+  .groupBudgetControls > * { flex: 1 1 100%; }
+}
+
 button {
   cursor: pointer;
 }
@@ -1029,13 +1333,103 @@ button {
   font-weight: 900;
 }
 
+.adminWorkspaceNavigation {
+  border-inline: 1px solid rgba(103, 232, 249, 0.16);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(141, 244, 204, 0.055), transparent 48%),
+    rgba(5, 10, 22, 0.97);
+}
+
+.adminWorkspacePrimaryNav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  padding: 12px 14px 11px;
+}
+
+.adminWorkspacePrimaryNav button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 52px;
+  border: 1px solid rgba(135, 157, 190, 0.18);
+  border-radius: 12px;
+  background: rgba(12, 20, 38, 0.72);
+  color: #96a7bf;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.adminWorkspacePrimaryNav button:hover {
+  border-color: rgba(103, 232, 249, 0.34);
+  background: rgba(20, 34, 57, 0.9);
+  color: #e7fbff;
+  transform: translateY(-1px);
+}
+
+.adminWorkspacePrimaryNav button.active {
+  border-color: rgba(141, 244, 204, 0.76);
+  background:
+    radial-gradient(circle at 50% 120%, rgba(103, 232, 249, 0.22), transparent 60%),
+    linear-gradient(135deg, rgba(141, 244, 204, 0.22), rgba(103, 232, 249, 0.12));
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(190, 255, 230, 0.14),
+    inset 0 -3px 0 #8df4cc,
+    0 0 22px rgba(103, 232, 249, 0.14);
+}
+
+.adminWorkspacePrimaryNav button.active::after {
+  position: absolute;
+  right: 18%;
+  bottom: -1px;
+  left: 18%;
+  height: 2px;
+  border-radius: 999px;
+  background: #c8ffe8;
+  box-shadow: 0 0 12px rgba(141, 244, 204, 0.9);
+  content: '';
+}
+
+.adminWorkspacePrimaryNav button.active svg {
+  color: #a8ffdf;
+  filter: drop-shadow(0 0 8px rgba(141, 244, 204, 0.55));
+}
+
+.adminWorkspacePrimaryNav button em {
+  display: inline-grid;
+  place-items: center;
+  min-width: 21px;
+  height: 21px;
+  border: 1px solid rgba(148, 165, 189, 0.18);
+  border-radius: 999px;
+  padding: 0 6px;
+  background: rgba(3, 8, 19, 0.42);
+  color: #8294ad;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.adminWorkspacePrimaryNav button.active em {
+  border-color: rgba(168, 255, 223, 0.34);
+  background: rgba(168, 255, 223, 0.14);
+  color: #d9fff0;
+}
+
 .adminWorkspaceNav {
   display: grid;
   grid-template-columns: repeat(var(--admin-nav-columns, 6), minmax(0, 1fr));
   gap: 1px;
-  border-inline: 1px solid rgba(103, 232, 249, 0.16);
   padding: 0 14px;
-  background: rgba(5, 10, 22, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.065);
+  background: rgba(3, 8, 18, 0.56);
 }
 
 .adminWorkspaceNav button {
@@ -1063,9 +1457,13 @@ button {
 }
 
 .adminWorkspaceNav button.active {
-  border-bottom-color: #78ffb9;
-  background: linear-gradient(180deg, rgba(103, 232, 249, 0.11), rgba(103, 232, 249, 0.02));
+  border-bottom-color: #8df4cc;
+  background: linear-gradient(180deg, rgba(103, 232, 249, 0.17), rgba(141, 244, 204, 0.065));
   color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(141, 244, 204, 0.14),
+    inset 0 -2px 0 rgba(141, 244, 204, 0.76);
+  text-shadow: 0 0 12px rgba(223, 250, 255, 0.22);
 }
 
 .adminWorkspaceNav button.active svg {
@@ -1499,6 +1897,13 @@ button {
   font-size: 12px;
 }
 
+.siteNoticeBanner > .siteNoticeBannerActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .siteNoticeRichContent {
   color: #c7d1df;
   font-size: 12px;
@@ -1569,7 +1974,8 @@ button {
   font-size: 17px;
 }
 
-.siteNoticeModal > button {
+.siteNoticeModal .siteNoticeCloseButton,
+.siteNoticeBanner .siteNoticeCloseButton {
   align-items: center;
   background: rgba(255,255,255,.045);
   border: 1px solid rgba(255,255,255,.1);
@@ -1582,16 +1988,29 @@ button {
   width: 32px;
 }
 
-.siteNoticeBanner button {
+.siteNoticeBanner .siteNoticeCloseButton {
   display: grid;
-  place-items: center;
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.siteNoticeSnoozeButton {
+  justify-self: start;
+  border: 1px solid rgba(255, 209, 92, 0.32);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
-  color: #cbd5e4;
+  padding: 7px 11px;
+  background: rgba(255, 209, 92, 0.09);
+  color: #ffe7a8;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
   cursor: pointer;
+}
+
+.siteNoticeSnoozeButton:hover {
+  border-color: rgba(255, 224, 145, 0.56);
+  background: rgba(255, 209, 92, 0.16);
+  color: #fff4ce;
 }
 
 .topbar nav button.adminPageTab {
@@ -1601,6 +2020,16 @@ button {
 }
 
 @media (max-width: 1000px) {
+  .adminWorkspacePrimaryNav {
+    gap: 7px;
+  }
+
+  .adminWorkspacePrimaryNav button {
+    gap: 6px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
   .adminWorkspaceNav {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1651,6 +2080,38 @@ button {
 
   .adminEnvironmentBadge {
     display: none;
+  }
+
+  .adminWorkspacePrimaryNav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 9px 8px 10px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(141, 244, 204, 0.68) rgba(8, 15, 29, 0.72);
+    scroll-snap-type: x proximity;
+  }
+
+  .adminWorkspacePrimaryNav::-webkit-scrollbar {
+    height: 5px;
+  }
+
+  .adminWorkspacePrimaryNav::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: rgba(8, 15, 29, 0.72);
+  }
+
+  .adminWorkspacePrimaryNav::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(90deg, #67e8f9, #8df4cc);
+  }
+
+  .adminWorkspacePrimaryNav button {
+    flex: 0 0 auto;
+    min-width: 132px;
+    min-height: 46px;
+    padding-inline: 12px;
+    scroll-snap-align: start;
   }
 
   .adminWorkspaceNav {
@@ -1742,7 +2203,19 @@ button {
   }
 
   .siteNoticeBanner {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
     width: calc(100% - 20px);
+  }
+
+  .siteNoticeBanner > .siteNoticeBannerActions {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .siteNoticeModalBody .siteNoticeSnoozeButton {
+    width: 100%;
+    justify-content: center;
   }
 }
 
@@ -1960,6 +2433,47 @@ button {
   max-width: 190px;
   padding: 0 9px 0 8px;
 }
+
+.notificationMenu { border: 0; background: transparent; }
+.notificationTrigger {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; min-width: 44px; height: 42px; border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px; background: rgba(9,15,32,.68); color: #aebdd3; cursor: pointer;
+}
+.notificationTrigger:hover, .notificationTrigger.open { border-color: rgba(103,232,249,.62); color: #fff; background: rgba(103,232,249,.13); }
+.notificationTrigger.hasUnread { color: #a8ffe0; border-color: rgba(130,244,201,.55); box-shadow: 0 0 20px rgba(100,235,190,.18); }
+.notificationTrigger > span {
+  position: absolute; top: -7px; right: -7px; min-width: 20px; height: 20px; padding: 0 5px;
+  display: grid; place-items: center; border: 2px solid #090f20; border-radius: 999px;
+  background: #8ff0cc; color: #07121c; font-size: 11px; font-weight: 900;
+}
+.notificationDropdown {
+  position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; width: min(390px, calc(100vw - 24px));
+  overflow: hidden; border: 1px solid rgba(124,160,202,.28); border-radius: 14px;
+  background: rgba(7,12,26,.98); box-shadow: 0 24px 80px rgba(0,0,0,.5); backdrop-filter: blur(20px);
+}
+.notificationDropdown > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 16px; border-bottom: 1px solid rgba(126,158,196,.16); }
+.notificationDropdown > header div { display: grid; gap: 2px; }
+.notificationDropdown > header strong { color: #f5f8ff; font-size: 16px; }
+.notificationDropdown > header span { color: #8fa1bc; font-size: 12px; }
+.notificationDropdown > header button { border: 0; background: transparent; color: #9fe9d1; font-weight: 800; cursor: pointer; }
+.notificationList { max-height: min(560px, calc(100vh - 130px)); overflow-y: auto; padding: 7px; }
+.notificationItem { border-bottom: 1px solid rgba(126,158,196,.12); }
+.notificationItem:last-child { border-bottom: 0; }
+.notificationItem.unread { background: rgba(89,216,181,.065); }
+.notificationItemSummary { width: 100%; display: grid; grid-template-columns: 34px minmax(0,1fr) 8px; align-items: center; gap: 10px; padding: 12px 10px; border: 0; background: transparent; color: #dce8f8; text-align: left; cursor: pointer; }
+.notificationTypeIcon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #a7ffe0; background: rgba(91,214,181,.12); }
+.notificationItemSummary > span:nth-child(2) { min-width: 0; display: grid; gap: 4px; }
+.notificationItemSummary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.notificationItemSummary small { color: #8192ad; font-size: 11px; }
+.notificationItemSummary > i { width: 7px; height: 7px; border-radius: 50%; background: #8ff0cc; box-shadow: 0 0 9px rgba(143,240,204,.8); }
+.notificationItemBody { padding: 0 14px 14px 58px; color: #c3d0e2; font-size: 13px; line-height: 1.65; }
+.notificationItemBody p { margin: 0; white-space: pre-wrap; }
+.notificationItemBody em { display: block; margin-top: 8px; color: #8292aa; font-style: normal; }
+.notificationActions { display: flex; gap: 8px; margin-top: 12px; }
+.notificationActions button { min-height: 34px; padding: 0 14px; border: 1px solid rgba(114,235,198,.42); border-radius: 8px; background: rgba(114,235,198,.15); color: #c9ffed; font-weight: 800; cursor: pointer; }
+.notificationActions button.secondary { border-color: rgba(148,163,184,.25); background: rgba(148,163,184,.08); color: #bdc8d9; }
+.notificationEmpty { margin: 0; padding: 34px 16px; color: #7f8ea6; text-align: center; }
 
 .userTriggerName {
   min-width: 0;
@@ -4699,17 +5213,6 @@ button {
   letter-spacing: 0.02em;
 }
 
-.cooperationRechargeNotice {
-  margin: 14px 0 0;
-  padding: 15px 18px;
-  border: 1px solid rgba(255, 208, 112, 0.2);
-  border-radius: 14px;
-  background: rgba(255, 193, 73, 0.07);
-  color: #f4d68f;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
 .previewActions.moderationLocked button:disabled,
 .previewActions.moderationLocked .moderationLockedAction {
   border-color: rgba(148, 163, 184, 0.18);
@@ -6415,6 +6918,21 @@ button {
   line-height: 1.55;
 }
 
+.billingPackBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px 8px;
+}
+
+.billingPackBonus {
+  color: #ffe16b;
+  font-size: inherit;
+  font-weight: 900;
+  line-height: inherit;
+  text-shadow: 0 0 14px rgba(255, 211, 78, 0.36);
+}
+
 .billingCredits {
   width: fit-content;
   border-radius: 999px;
@@ -6528,6 +7046,47 @@ button {
 
 .rechargePackGrid .billingCard p {
   min-height: 48px;
+}
+
+.billingPaymentMethods {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(3, 7, 15, 0.34);
+}
+
+.billingPaymentMethods > span {
+  color: #a9b9cf;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.billingPaymentMethods > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.billingPaymentMethods button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #aebcd0;
+  font-weight: 850;
+}
+
+.billingPaymentMethods button.active {
+  border-color: rgba(120, 255, 185, 0.5);
+  background: rgba(120, 255, 185, 0.12);
+  box-shadow: 0 0 0 1px rgba(120, 255, 185, 0.08) inset;
+  color: #d8ffe4;
 }
 
 .customRechargeSection {
@@ -6678,6 +7237,47 @@ button {
 .adminRechargeForm {
   display: grid;
   gap: 16px;
+}
+
+.adminPaymentGatewayGrid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.75fr) minmax(260px, 1.3fr) minmax(220px, 1fr);
+  gap: 12px;
+}
+
+.adminPaymentGatewayGrid > label {
+  display: grid;
+  gap: 7px;
+  color: #a9b9cf;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.adminPaymentGatewayGrid input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  outline: 0;
+  padding: 0 10px;
+  background: rgba(3, 7, 15, 0.62);
+  color: #ffffff;
+}
+
+.adminPaymentGatewayGrid input:focus {
+  border-color: rgba(103, 232, 249, 0.52);
+  box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.08);
+}
+
+.adminPaymentGatewayState {
+  margin: 0;
+  color: #91a5bf;
+  font-size: 12px;
+}
+
+.adminPaymentGatewayState.ready {
+  color: #8fffd5;
 }
 
 .adminStorageBilling {
@@ -6943,6 +7543,10 @@ button {
     min-width: 800px;
   }
 
+  .adminPaymentGatewayGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .adminStorageBillingGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -6952,8 +7556,19 @@ button {
   .rechargePackGrid,
   .customRechargeCard,
   .adminRechargeBaseGrid,
-  .adminRechargeCustomGrid {
+  .adminRechargeCustomGrid,
+  .adminPaymentGatewayGrid {
     grid-template-columns: 1fr;
+  }
+
+  .billingPaymentMethods {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .billingPaymentMethods > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .customRechargeCard {
@@ -13883,11 +14498,6 @@ body.deliveryObjectDragging * {
     padding: 17px;
   }
 
-  .cooperationRechargeNotice {
-    padding: 13px 14px;
-    font-size: 12px;
-  }
-
   .createWorkspaceSection,
   .createWorkspaceSection.freeMode {
     padding-top: 12px;
@@ -13912,6 +14522,10 @@ body.deliveryObjectDragging * {
     justify-self: end;
     margin-left: 0;
   }
+
+  .notificationMenu { grid-column: 3; grid-row: 1; justify-self: start; margin-left: -48px; }
+  .notificationTrigger { width: 38px; min-width: 38px; height: 38px; }
+  .notificationDropdown { position: fixed; top: 64px; right: 12px; width: min(390px, calc(100vw - 24px)); }
 
   .dropdownTrigger {
     min-width: 70px;

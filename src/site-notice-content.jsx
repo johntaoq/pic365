@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { normalizeSiteNoticeFormat } from '../shared/site-notice.js';
+import { inferSiteNoticeFormat } from '../shared/site-notice.js';
 
 const NOTICE_TAGS = [
   'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'del',
@@ -12,7 +12,7 @@ const NOTICE_TAGS = [
 export function renderSiteNoticeContent(value, format = 'markdown') {
   const source = String(value || '').trim();
   if (!source) return '';
-  const markup = normalizeSiteNoticeFormat(format) === 'html'
+  const markup = inferSiteNoticeFormat(source, format) === 'html'
     ? source
     : marked.parse(source, { async: false, breaks: true, gfm: true });
   return DOMPurify.sanitize(markup, {

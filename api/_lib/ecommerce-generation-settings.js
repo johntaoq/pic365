@@ -4,6 +4,7 @@ import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
 import {
   DEFAULT_ECOMMERCE_GENERATION_SYSTEM_PROMPT,
   ECOMMERCE_GENERATION_SYSTEM_PROMPT_MAX_LENGTH,
+  isKnownDefaultEcommerceGenerationSystemPrompt,
   normalizeEcommerceGenerationSystemPrompt
 } from '../../shared/ecommerce-generation-system-prompt.js';
 import { getDb, getUserById } from './local-db.js';
@@ -31,7 +32,10 @@ export function getEcommerceGenerationSystemPromptSettings() {
     WHERE setting_key = ?
   `).get(ECOMMERCE_GENERATION_SYSTEM_PROMPT_SETTING_KEY);
   const value = parseJson(row?.value_json);
-  const prompt = normalizeEcommerceGenerationSystemPrompt(value.prompt);
+  const storedPrompt = String(value.prompt || '').trim();
+  const prompt = !storedPrompt || isKnownDefaultEcommerceGenerationSystemPrompt(storedPrompt)
+    ? DEFAULT_ECOMMERCE_GENERATION_SYSTEM_PROMPT
+    : normalizeEcommerceGenerationSystemPrompt(storedPrompt);
   return {
     prompt,
     defaultPrompt: DEFAULT_ECOMMERCE_GENERATION_SYSTEM_PROMPT,

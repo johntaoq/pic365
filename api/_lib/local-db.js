@@ -8,6 +8,7 @@ import {
   normalizeImagePromotionConfig
 } from '../../shared/image-pricing.js';
 import { normalizeRechargeConfig } from '../../shared/recharge-config.js';
+import { inferSiteNoticeFormat } from '../../shared/site-notice.js';
 import {
   ADMIN_PERMISSIONS,
   isAdministrativeRole,
@@ -272,7 +273,7 @@ export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_REST
     interruptedFreeTasks = Number(freeTaskResult.changes || 0);
 
     const reservations = db.prepare(`
-      SELECT r.id, r.user_id, r.amount, u.role
+      SELECT r.id, r.user_id, r.amount, r.amount_centi, r.billing_scope, r.group_id, r.charged_user_id, u.role
       FROM credit_reservations r
       JOIN users u ON u.id = r.user_id
       WHERE r.status = 'reserved'
@@ -292,7 +293,15 @@ export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_REST
 
     for (const reservation of reservations) {
       const amount = Number(reservation.amount || 0);
-      if (reservation.role !== 'super_admin' && amount > 0) {
+      const amountCenti = Math.max(0, Number(reservation.amount_centi || Math.round(amount * 100)));
+      if (reservation.billing_scope === 'group') {
+        const member = db.prepare(`SELECT id, role, status FROM group_memberships WHERE group_id = ? AND user_id = ?`)
+          .get(reservation.group_id, reservation.charged_user_id);
+        if (member?.role === 'member' && ['active', 'paused'].includes(member.status)) {
+          db.prepare('UPDATE group_memberships SET budget_centi = budget_centi + ?, updated_at = ? WHERE id = ?')
+            .run(amountCenti, completedAt, member.id);
+        }
+      } else if (reservation.billing_scope !== 'super_admin' && reservation.role !== 'super_admin' && amount > 0) {
         refundUser.run(amount, completedAt, reservation.user_id);
         insertRefund.run(
           randomUUID(),
@@ -305,6 +314,9 @@ export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_REST
       }
       const result = releaseReservation.run(errorCode, completedAt, reservation.id);
       releasedReservations += Number(result.changes || 0);
+      if (reservation.billing_scope === 'group') {
+        finalizeLeavingMembershipInTransaction(db, reservation.group_id, reservation.charged_user_id, completedAt);
+      }
     }
 
     db.exec('COMMIT');
@@ -446,6 +458,86 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      admin_user_id TEXT NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+      balance_centi INTEGER NOT NULL DEFAULT 0 CHECK (balance_centi >= 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS group_memberships (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'leaving', 'removed')),
+      budget_centi INTEGER NOT NULL DEFAULT 0 CHECK (budget_centi >= 0),
+      spent_centi INTEGER NOT NULL DEFAULT 0 CHECK (spent_centi >= 0),
+      joined_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      removed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS group_invitations (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      inviter_user_id TEXT NOT NULL REFERENCES users(id),
+      invitee_user_id TEXT NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'revoked', 'expired')),
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      responded_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS group_admin_transfers (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      from_user_id TEXT NOT NULL REFERENCES users(id),
+      to_user_id TEXT NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'revoked', 'expired')),
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      responded_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS group_credit_ledger (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      amount_centi INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      actor_user_id TEXT REFERENCES users(id),
+      charged_user_id TEXT REFERENCES users(id),
+      reference_id TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_events (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      recipient_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      audience TEXT NOT NULL DEFAULT 'signed-in' CHECK (audience IN ('all', 'signed-in', 'members', 'user')),
+      title TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      format TEXT NOT NULL DEFAULT 'plain' CHECK (format IN ('plain', 'markdown', 'html')),
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      expires_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_receipts (
+      notification_id TEXT NOT NULL REFERENCES notification_events(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      read_at TEXT NOT NULL,
+      PRIMARY KEY (notification_id, user_id)
     );
 
     CREATE TABLE IF NOT EXISTS email_verification_codes (
@@ -964,6 +1056,18 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       SELECT RAISE(ABORT, 'CREDIT_LEDGER_IMMUTABLE');
     END;
 
+    CREATE TRIGGER IF NOT EXISTS group_credit_ledger_block_update
+    BEFORE UPDATE ON group_credit_ledger
+    BEGIN
+      SELECT RAISE(ABORT, 'GROUP_CREDIT_LEDGER_IMMUTABLE');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS group_credit_ledger_block_delete
+    BEFORE DELETE ON group_credit_ledger
+    BEGIN
+      SELECT RAISE(ABORT, 'GROUP_CREDIT_LEDGER_IMMUTABLE');
+    END;
+
     CREATE TRIGGER IF NOT EXISTS credit_ledger_audit_insert
     AFTER INSERT ON credit_ledger
     BEGIN
@@ -1079,6 +1183,36 @@ function migrate(db, { recoverInterrupted = true } = {}) {
     );
 
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS group_memberships_one_current_group_idx
+      ON group_memberships(user_id)
+      WHERE status IN ('active', 'paused', 'leaving');
+    CREATE UNIQUE INDEX IF NOT EXISTS group_memberships_group_user_idx
+      ON group_memberships(group_id, user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS group_memberships_one_admin_idx
+      ON group_memberships(group_id)
+      WHERE role = 'admin' AND status IN ('active', 'paused', 'leaving');
+    CREATE INDEX IF NOT EXISTS group_memberships_group_status_idx
+      ON group_memberships(group_id, status, joined_at);
+    CREATE INDEX IF NOT EXISTS group_invitations_invitee_status_idx
+      ON group_invitations(invitee_user_id, status, expires_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS group_invitations_pending_unique_idx
+      ON group_invitations(group_id, invitee_user_id)
+      WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS group_credit_ledger_group_created_idx
+      ON group_credit_ledger(group_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS group_admin_transfers_pending_unique_idx
+      ON group_admin_transfers(group_id)
+      WHERE status = 'pending';
+    CREATE UNIQUE INDEX IF NOT EXISTS group_credit_ledger_idempotency_idx
+      ON group_credit_ledger(group_id, type, reference_id)
+      WHERE reference_id IS NOT NULL AND reference_id != '' AND type IN ('funding', 'budget_adjustment');
+    CREATE UNIQUE INDEX IF NOT EXISTS notification_events_entity_unique_idx
+      ON notification_events(type, entity_type, entity_id)
+      WHERE entity_id != '';
+    CREATE INDEX IF NOT EXISTS notification_events_recipient_created_idx
+      ON notification_events(recipient_user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS notification_receipts_user_read_idx
+      ON notification_receipts(user_id, read_at DESC);
     CREATE INDEX IF NOT EXISTS email_verification_email_created_idx
       ON email_verification_codes(email, purpose, created_at DESC);
     CREATE INDEX IF NOT EXISTS email_verification_expiry_idx
@@ -1126,6 +1260,14 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   `);
 
   ensureColumn(db, 'generations', 'project_id', 'TEXT');
+  ensureColumn(db, 'credit_reservations', 'amount_centi', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'credit_reservations', 'settled_centi', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'credit_reservations', 'billing_scope', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'credit_reservations', 'group_id', 'TEXT');
+  ensureColumn(db, 'credit_reservations', 'charged_user_id', 'TEXT');
+  ensureColumn(db, 'credit_reservations', 'billing_source', "TEXT NOT NULL DEFAULT 'generation'");
+  ensureColumn(db, 'credit_reservations', 'request_key', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'credit_reservations', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'guest_generation_usage', 'usage_count', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'user_ui_preferences', 'hide_ecommerce', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'users', 'admin_note', "TEXT NOT NULL DEFAULT ''");
@@ -1195,6 +1337,9 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'free_generation_tasks', 'source_thumbnail', "TEXT NOT NULL DEFAULT ''");
   db.exec('CREATE INDEX IF NOT EXISTS generations_project_slot_idx ON generations(project_id, slot_id, created_at DESC)');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ecommerce_outputs_project_slot_unique_idx ON ecommerce_project_outputs(project_id, slot_id)');
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_reservations_scope_request_unique_idx ON credit_reservations(billing_scope, COALESCE(group_id, ''), request_key) WHERE request_key != ''");
+  db.prepare('UPDATE credit_reservations SET amount_centi = amount * 100 WHERE amount_centi = 0 AND amount > 0').run();
+  db.prepare('UPDATE credit_reservations SET charged_user_id = user_id WHERE charged_user_id IS NULL').run();
 
   migrateUnifiedMediaAssets(db);
 
@@ -1530,7 +1675,7 @@ function normalizeAdminNotificationConfig(value = {}) {
     siteNoticeEnabled: Boolean(value.siteNoticeEnabled),
     siteNoticeTitle: String(value.siteNoticeTitle || '').trim().slice(0, 120),
     siteNoticeBody: String(value.siteNoticeBody || '').trim().slice(0, 5000),
-    siteNoticeFormat: ['markdown', 'html'].includes(value.siteNoticeFormat) ? value.siteNoticeFormat : 'markdown',
+    siteNoticeFormat: inferSiteNoticeFormat(value.siteNoticeBody, value.siteNoticeFormat),
     siteNoticePlacement: ['banner', 'modal'].includes(value.siteNoticePlacement) ? value.siteNoticePlacement : 'banner',
     audience,
     notifyGenerationFailure: value.notifyGenerationFailure !== false,
@@ -1572,12 +1717,121 @@ export function updateAdminNotificationConfig(values, adminUserId = null) {
         (id, setting_key, previous_value_json, next_value_json, updated_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(randomUUID(), ADMIN_NOTIFICATION_SETTING_KEY, JSON.stringify(previous), JSON.stringify({ ...next, updatedAt }), adminUserId, updatedAt);
+    const publishChanged = next.siteNoticeEnabled && next.siteNoticeBody && (
+      !previous.siteNoticeEnabled
+      || previous.siteNoticeTitle !== next.siteNoticeTitle
+      || previous.siteNoticeBody !== next.siteNoticeBody
+      || previous.siteNoticeFormat !== next.siteNoticeFormat
+      || previous.audience !== next.audience
+    );
+    if (publishChanged) {
+      db.prepare(`
+        INSERT OR IGNORE INTO notification_events
+          (id, type, recipient_user_id, audience, title, body, format, entity_type, entity_id, metadata_json, created_at)
+        VALUES (?, 'site_notice', NULL, ?, ?, ?, ?, 'admin_notice', ?, '{}', ?)
+      `).run(randomUUID(), next.audience, next.siteNoticeTitle || '站内通知', next.siteNoticeBody, next.siteNoticeFormat, updatedAt, updatedAt);
+    }
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
   }
   return getAdminNotificationConfig();
+}
+
+function ensureCurrentSiteNoticeEvent(db) {
+  const row = db.prepare('SELECT value_json, updated_at FROM app_settings WHERE setting_key = ?').get(ADMIN_NOTIFICATION_SETTING_KEY);
+  const config = normalizeAdminNotificationConfig({ ...parseJsonSetting(row?.value_json), updatedAt: row?.updated_at || null });
+  if (!config.siteNoticeEnabled || !config.siteNoticeBody || !config.updatedAt) return;
+  db.prepare(`
+    INSERT OR IGNORE INTO notification_events
+      (id, type, recipient_user_id, audience, title, body, format, entity_type, entity_id, metadata_json, created_at)
+    VALUES (?, 'site_notice', NULL, ?, ?, ?, ?, 'admin_notice', ?, '{}', ?)
+  `).run(randomUUID(), config.audience, config.siteNoticeTitle || '站内通知', config.siteNoticeBody, config.siteNoticeFormat, config.updatedAt, config.updatedAt);
+}
+
+function upsertUserNotificationInTransaction(db, {
+  type, recipientUserId, title, body, entityType, entityId, metadata = {}, createdAt = now(), expiresAt = null
+}) {
+  const existing = db.prepare('SELECT id FROM notification_events WHERE type = ? AND entity_type = ? AND entity_id = ?')
+    .get(type, entityType, entityId);
+  const id = existing?.id || randomUUID();
+  db.prepare(`
+    INSERT INTO notification_events
+      (id, type, recipient_user_id, audience, title, body, format, entity_type, entity_id, metadata_json, created_at, expires_at)
+    VALUES (?, ?, ?, 'user', ?, ?, 'plain', ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET recipient_user_id = excluded.recipient_user_id, title = excluded.title,
+      body = excluded.body, metadata_json = excluded.metadata_json, created_at = excluded.created_at, expires_at = excluded.expires_at
+  `).run(id, type, recipientUserId, title, body, entityType, entityId, JSON.stringify(metadata), createdAt, expiresAt);
+  db.prepare('DELETE FROM notification_receipts WHERE notification_id = ? AND user_id = ?').run(id, recipientUserId);
+  return id;
+}
+
+function markEntityNotificationReadInTransaction(db, userId, type, entityType, entityId, readAt = now()) {
+  db.prepare(`
+    INSERT INTO notification_receipts (notification_id, user_id, read_at)
+    SELECT id, ?, ? FROM notification_events WHERE type = ? AND entity_type = ? AND entity_id = ?
+    ON CONFLICT(notification_id, user_id) DO UPDATE SET read_at = excluded.read_at
+  `).run(userId, readAt, type, entityType, entityId);
+}
+
+export function listUserNotifications(userId, limit = 100) {
+  const db = getDb();
+  ensureCurrentSiteNoticeEvent(db);
+  const user = db.prepare("SELECT credit_balance FROM users WHERE id = ? AND status = 'active'").get(userId);
+  if (!user) throw Object.assign(new Error('AUTH_REQUIRED'), { code: 'AUTH_REQUIRED' });
+  const membership = currentGroupMembership(db, userId);
+  const hasCredits = membership
+    ? (membership.role === 'admin' ? groupAdminAvailableCenti(db, membership.group_id) : Number(membership.budget_centi || 0)) > 0
+    : Number(user.credit_balance || 0) > 0;
+  const rows = db.prepare(`
+    SELECT event.*, receipt.read_at
+    FROM notification_events event
+    LEFT JOIN notification_receipts receipt ON receipt.notification_id = event.id AND receipt.user_id = ?
+    WHERE event.recipient_user_id = ?
+       OR (event.recipient_user_id IS NULL AND event.audience IN ('all','signed-in'))
+       OR (event.recipient_user_id IS NULL AND event.audience = 'members' AND ? = 1)
+    ORDER BY event.created_at DESC LIMIT ?
+  `).all(userId, userId, hasCredits ? 1 : 0, Math.max(1, Math.min(200, Number(limit) || 100)));
+  const notifications = rows.map((row) => {
+    const metadata = parseJsonObject(row.metadata_json);
+    if (row.type === 'group_invitation') {
+      const invitation = db.prepare('SELECT status, expires_at FROM group_invitations WHERE id = ?').get(row.entity_id);
+      metadata.status = invitation?.status || 'unavailable';
+      metadata.actionAvailable = invitation?.status === 'pending' && Date.parse(invitation.expires_at) > Date.now();
+    } else if (row.type === 'group_admin_transfer') {
+      const transfer = db.prepare('SELECT status, expires_at FROM group_admin_transfers WHERE id = ?').get(row.entity_id);
+      metadata.status = transfer?.status || 'unavailable';
+      metadata.actionAvailable = transfer?.status === 'pending' && Date.parse(transfer.expires_at) > Date.now();
+    }
+    return {
+      id: row.id, type: row.type, title: row.title, body: row.body, format: inferSiteNoticeFormat(row.body, row.format),
+      entityType: row.entity_type, entityId: row.entity_id, metadata,
+      createdAt: row.created_at, readAt: row.read_at || null, unread: !row.read_at
+    };
+  });
+  return { notifications, unreadCount: notifications.filter((item) => item.unread).length };
+}
+
+export function markUserNotificationRead(userId, notificationId) {
+  const db = getDb();
+  const visible = listUserNotifications(userId, 200).notifications.some((item) => item.id === notificationId);
+  if (!visible) throw Object.assign(new Error('NOTIFICATION_NOT_FOUND'), { code: 'NOTIFICATION_NOT_FOUND' });
+  db.prepare(`INSERT INTO notification_receipts (notification_id, user_id, read_at) VALUES (?, ?, ?)
+    ON CONFLICT(notification_id, user_id) DO UPDATE SET read_at = excluded.read_at`).run(notificationId, userId, now());
+  return listUserNotifications(userId);
+}
+
+export function markAllUserNotificationsRead(userId) {
+  const db = getDb();
+  const visible = listUserNotifications(userId, 200).notifications;
+  const readAt = now();
+  const statement = db.prepare(`INSERT INTO notification_receipts (notification_id, user_id, read_at) VALUES (?, ?, ?)
+    ON CONFLICT(notification_id, user_id) DO UPDATE SET read_at = excluded.read_at`);
+  db.exec('BEGIN IMMEDIATE');
+  try { for (const item of visible) statement.run(item.id, userId, readAt); db.exec('COMMIT'); }
+  catch (error) { db.exec('ROLLBACK'); throw error; }
+  return listUserNotifications(userId);
 }
 
 export function recordAdminAlert({ type, severity = 'warning', dedupeKey, message, metadata = {} }) {
@@ -1883,6 +2137,495 @@ export function getUserUsage(userId) {
   };
 }
 
+function creditsToCenti(value) {
+  return Math.max(0, Math.min(100_000_000_00, Math.round(Number(value || 0) * 100)));
+}
+
+function centiToCredits(value) {
+  return Number((Math.max(0, Number(value || 0)) / 100).toFixed(2));
+}
+
+function currentGroupMembership(db, userId, { includeUnavailable = true } = {}) {
+  const statuses = includeUnavailable ? "'active','paused','leaving'" : "'active'";
+  return db.prepare(`
+    SELECT membership.*, company.name AS group_name, company.admin_user_id, company.balance_centi,
+      company.status AS group_status, admin.email AS admin_email, admin.full_name AS admin_name
+    FROM group_memberships membership
+    JOIN groups company ON company.id = membership.group_id
+    JOIN users admin ON admin.id = company.admin_user_id
+    WHERE membership.user_id = ? AND membership.status IN (${statuses}) AND company.status = 'active'
+    LIMIT 1
+  `).get(userId);
+}
+
+function groupReservedCenti(db, groupId, userId = '') {
+  const row = userId
+    ? db.prepare(`
+        SELECT COALESCE(SUM(amount_centi), 0) AS value FROM credit_reservations
+        WHERE billing_scope = 'group' AND group_id = ? AND charged_user_id = ? AND status = 'reserved'
+      `).get(groupId, userId)
+    : db.prepare(`
+        SELECT COALESCE(SUM(amount_centi), 0) AS value FROM credit_reservations
+        WHERE billing_scope = 'group' AND group_id = ? AND status = 'reserved'
+      `).get(groupId);
+  return Math.max(0, Number(row?.value || 0));
+}
+
+function groupAllocatedBudgetCenti(db, groupId) {
+  return Math.max(0, Number(db.prepare(`
+    SELECT COALESCE(SUM(budget_centi), 0) AS value FROM group_memberships
+    WHERE group_id = ? AND role = 'member' AND status IN ('active','paused','leaving')
+  `).get(groupId)?.value || 0));
+}
+
+function groupAdminAvailableCenti(db, groupId) {
+  const group = db.prepare("SELECT balance_centi FROM groups WHERE id = ? AND status = 'active'").get(groupId);
+  if (!group) return 0;
+  return Math.max(0, Number(group.balance_centi || 0) - groupAllocatedBudgetCenti(db, groupId) - groupReservedCenti(db, groupId));
+}
+
+function normalizeGroupMember(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    email: row.email || '',
+    fullName: row.full_name || '',
+    role: row.role === 'admin' ? 'admin' : 'member',
+    status: row.status || 'active',
+    budget: centiToCredits(row.budget_centi),
+    reserved: centiToCredits(row.reserved_centi),
+    spent: centiToCredits(row.spent_centi),
+    joinedAt: row.joined_at || '',
+    updatedAt: row.updated_at || ''
+  };
+}
+
+function pendingGroupInvitations(db, userId) {
+  return db.prepare(`
+    SELECT invitation.*, company.name AS group_name, inviter.email AS inviter_email, inviter.full_name AS inviter_name
+    FROM group_invitations invitation
+    JOIN groups company ON company.id = invitation.group_id
+    JOIN users inviter ON inviter.id = invitation.inviter_user_id
+    WHERE invitation.invitee_user_id = ? AND invitation.status = 'pending' AND invitation.expires_at > ?
+    ORDER BY invitation.created_at DESC
+  `).all(userId, now()).map((row) => ({
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    inviterEmail: row.inviter_email,
+    inviterName: row.inviter_name || '',
+    expiresAt: row.expires_at,
+    createdAt: row.created_at
+  }));
+}
+
+export function getGroupAccountSummary(userId, { includeMembers = false, ledgerLimit = 30 } = {}) {
+  const db = getDb();
+  const membership = currentGroupMembership(db, userId);
+  const invitations = pendingGroupInvitations(db, userId);
+  if (!membership) return { membership: null, invitations };
+  const reservedCenti = groupReservedCenti(db, membership.group_id, userId);
+  const groupReserved = groupReservedCenti(db, membership.group_id);
+  const allocated = groupAllocatedBudgetCenti(db, membership.group_id);
+  const adminAvailable = groupAdminAvailableCenti(db, membership.group_id);
+  const personalBalance = Number(db.prepare('SELECT credit_balance FROM users WHERE id = ?').get(userId)?.credit_balance || 0);
+  const isAdmin = membership.role === 'admin';
+  const availableCenti = membership.status === 'active'
+    ? isAdmin ? adminAvailable : Number(membership.budget_centi || 0)
+    : 0;
+  const summary = {
+    id: membership.group_id,
+    name: membership.group_name,
+    role: isAdmin ? 'admin' : 'member',
+    status: membership.status,
+    adminUserId: membership.admin_user_id,
+    adminName: membership.admin_name || '',
+    adminEmail: membership.admin_email || '',
+    balance: centiToCredits(membership.balance_centi),
+    available: centiToCredits(availableCenti),
+    budget: isAdmin ? null : centiToCredits(membership.budget_centi),
+    reserved: centiToCredits(reservedCenti),
+    spent: centiToCredits(membership.spent_centi),
+    allocatedBudget: centiToCredits(allocated),
+    totalReserved: centiToCredits(groupReserved),
+    adminAvailable: centiToCredits(adminAvailable),
+    personalBalance,
+    invitations
+  };
+  const pendingTransfer = db.prepare(`
+    SELECT transfer.*, source.email AS from_email, source.full_name AS from_name
+    FROM group_admin_transfers transfer JOIN users source ON source.id = transfer.from_user_id
+    WHERE transfer.group_id = ? AND transfer.to_user_id = ? AND transfer.status = 'pending' AND transfer.expires_at > ?
+    ORDER BY transfer.created_at DESC LIMIT 1
+  `).get(membership.group_id, userId, now());
+  summary.pendingAdminTransfer = pendingTransfer ? {
+    id: pendingTransfer.id,
+    fromEmail: pendingTransfer.from_email,
+    fromName: pendingTransfer.from_name || '',
+    expiresAt: pendingTransfer.expires_at,
+    createdAt: pendingTransfer.created_at
+  } : null;
+  if (includeMembers && isAdmin) {
+    summary.members = db.prepare(`
+      SELECT membership.*, user.email, user.full_name,
+        COALESCE((SELECT SUM(reservation.amount_centi) FROM credit_reservations reservation
+          WHERE reservation.billing_scope = 'group' AND reservation.group_id = membership.group_id
+            AND reservation.charged_user_id = membership.user_id AND reservation.status = 'reserved'), 0) AS reserved_centi
+      FROM group_memberships membership
+      JOIN users user ON user.id = membership.user_id
+      WHERE membership.group_id = ? AND membership.status != 'removed'
+      ORDER BY CASE membership.role WHEN 'admin' THEN 0 ELSE 1 END, membership.joined_at ASC
+    `).all(membership.group_id).map(normalizeGroupMember);
+    summary.outgoingInvitations = db.prepare(`
+      SELECT invitation.*, user.email, user.full_name
+      FROM group_invitations invitation JOIN users user ON user.id = invitation.invitee_user_id
+      WHERE invitation.group_id = ? AND invitation.status = 'pending' AND invitation.expires_at > ?
+      ORDER BY invitation.created_at DESC
+    `).all(membership.group_id, now()).map((row) => ({
+      id: row.id, email: row.email, fullName: row.full_name || '', expiresAt: row.expires_at, createdAt: row.created_at
+    }));
+    summary.ledger = db.prepare(`
+      SELECT ledger.*, actor.email AS actor_email, charged.email AS charged_email
+      FROM group_credit_ledger ledger
+      LEFT JOIN users actor ON actor.id = ledger.actor_user_id
+      LEFT JOIN users charged ON charged.id = ledger.charged_user_id
+      WHERE ledger.group_id = ? ORDER BY ledger.created_at DESC LIMIT ?
+    `).all(membership.group_id, Math.max(1, Math.min(100, Number(ledgerLimit) || 30))).map((row) => ({
+      id: row.id,
+      amount: Number((Number(row.amount_centi || 0) / 100).toFixed(2)),
+      type: row.type,
+      source: row.source,
+      actorEmail: row.actor_email || '',
+      chargedEmail: row.charged_email || '',
+      referenceId: row.reference_id || '',
+      metadata: parseJsonObject(row.metadata_json),
+      createdAt: row.created_at
+    }));
+  }
+  return { membership: summary, invitations };
+}
+
+function requireGroupAdmin(db, userId) {
+  const membership = currentGroupMembership(db, userId);
+  if (!membership || membership.role !== 'admin' || membership.status !== 'active' || membership.admin_user_id !== userId) {
+    throw Object.assign(new Error('GROUP_ADMIN_REQUIRED'), { code: 'GROUP_ADMIN_REQUIRED' });
+  }
+  return membership;
+}
+
+export function createGroupAccount(userId, name) {
+  const db = getDb();
+  const groupName = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (!groupName) throw Object.assign(new Error('GROUP_NAME_REQUIRED'), { code: 'GROUP_NAME_REQUIRED' });
+  const groupId = randomUUID();
+  const createdAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (currentGroupMembership(db, userId)) throw Object.assign(new Error('GROUP_MEMBERSHIP_EXISTS'), { code: 'GROUP_MEMBERSHIP_EXISTS' });
+    db.prepare(`INSERT INTO groups (id, name, admin_user_id, balance_centi, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`)
+      .run(groupId, groupName, userId, createdAt, createdAt);
+    db.prepare(`
+      INSERT INTO group_memberships (id, group_id, user_id, role, status, budget_centi, spent_centi, joined_at, updated_at)
+      VALUES (?, ?, ?, 'admin', 'active', 0, 0, ?, ?)
+    `).run(randomUUID(), groupId, userId, createdAt, createdAt);
+    db.prepare("UPDATE group_invitations SET status = 'revoked', responded_at = ? WHERE invitee_user_id = ? AND status = 'pending'")
+      .run(createdAt, userId);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getGroupAccountSummary(userId, { includeMembers: true });
+}
+
+export function fundGroupAccount(userId, amount, requestId = '') {
+  const db = getDb();
+  const membership = requireGroupAdmin(db, userId);
+  const amountCenti = creditsToCenti(amount);
+  const key = String(requestId || '').trim().slice(0, 160) || randomUUID();
+  if (amountCenti < 1) throw Object.assign(new Error('INVALID_GROUP_FUNDING'), { code: 'INVALID_GROUP_FUNDING' });
+  const createdAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const duplicate = db.prepare("SELECT id FROM group_credit_ledger WHERE group_id = ? AND type = 'funding' AND reference_id = ?").get(membership.group_id, key);
+    if (!duplicate) {
+      const user = db.prepare('SELECT credit_balance FROM users WHERE id = ? AND status = ?').get(userId, 'active');
+      if (!user || creditsToCenti(user.credit_balance) < amountCenti) throw Object.assign(new Error('CREDITS_REQUIRED'), { code: 'CREDITS_REQUIRED' });
+      db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance - ?, 2), updated_at = ? WHERE id = ?')
+        .run(amountCenti / 100, createdAt, userId);
+      db.prepare('UPDATE groups SET balance_centi = balance_centi + ?, updated_at = ? WHERE id = ?')
+        .run(amountCenti, createdAt, membership.group_id);
+      db.prepare(`
+        INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+        VALUES (?, ?, ?, 'group_transfer', 'group_funding', ?, ?, ?)
+      `).run(randomUUID(), userId, -(amountCenti / 100), key, JSON.stringify({ groupId: membership.group_id }), createdAt);
+      db.prepare(`
+        INSERT INTO group_credit_ledger
+          (id, group_id, amount_centi, type, source, actor_user_id, charged_user_id, reference_id, metadata_json, created_at)
+        VALUES (?, ?, ?, 'funding', 'personal_transfer', ?, ?, ?, '{}', ?)
+      `).run(randomUUID(), membership.group_id, amountCenti, userId, userId, key, createdAt);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return { ...getGroupAccountSummary(userId, { includeMembers: true }), user: getUserProfile(userId) };
+}
+
+export function inviteGroupMember(userId, email) {
+  const db = getDb();
+  const membership = requireGroupAdmin(db, userId);
+  const target = getUserByEmail(email);
+  if (!target || target.status !== 'active') throw Object.assign(new Error('USER_NOT_FOUND'), { code: 'USER_NOT_FOUND' });
+  if (target.id === userId) throw Object.assign(new Error('GROUP_CANNOT_INVITE_SELF'), { code: 'GROUP_CANNOT_INVITE_SELF' });
+  if (currentGroupMembership(db, target.id)) throw Object.assign(new Error('GROUP_MEMBERSHIP_EXISTS'), { code: 'GROUP_MEMBERSHIP_EXISTS' });
+  const createdAt = now();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const inviter = getUserById(userId);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`UPDATE group_invitations SET status = 'expired', responded_at = ? WHERE invitee_user_id = ? AND status = 'pending' AND expires_at <= ?`)
+      .run(createdAt, target.id, createdAt);
+    const existing = db.prepare("SELECT id FROM group_invitations WHERE group_id = ? AND invitee_user_id = ? AND status = 'pending'").get(membership.group_id, target.id);
+    const invitationId = existing?.id || randomUUID();
+    if (existing) {
+      db.prepare('UPDATE group_invitations SET inviter_user_id = ?, expires_at = ?, created_at = ? WHERE id = ?')
+        .run(userId, expiresAt, createdAt, existing.id);
+    } else {
+      db.prepare(`
+        INSERT INTO group_invitations (id, group_id, inviter_user_id, invitee_user_id, status, expires_at, created_at)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+      `).run(invitationId, membership.group_id, userId, target.id, expiresAt, createdAt);
+    }
+    upsertUserNotificationInTransaction(db, {
+      type: 'group_invitation', recipientUserId: target.id, title: '集团邀请',
+      body: `${inviter?.fullName || inviter?.email || '集团管理员'} 邀请你加入「${membership.group_name}」`,
+      entityType: 'group_invitation', entityId: invitationId,
+      metadata: { groupId: membership.group_id, groupName: membership.group_name, inviterName: inviter?.fullName || '', inviterEmail: inviter?.email || '' },
+      createdAt, expiresAt
+    });
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getGroupAccountSummary(userId, { includeMembers: true });
+}
+
+export function revokeGroupInvitation(userId, invitationId) {
+  const db = getDb();
+  const membership = requireGroupAdmin(db, userId);
+  const result = db.prepare(`
+    UPDATE group_invitations SET status = 'revoked', responded_at = ?
+    WHERE id = ? AND group_id = ? AND status = 'pending'
+  `).run(now(), invitationId, membership.group_id);
+  if (!result.changes) throw Object.assign(new Error('GROUP_INVITATION_UNAVAILABLE'), { code: 'GROUP_INVITATION_UNAVAILABLE' });
+  const invitation = db.prepare('SELECT invitee_user_id FROM group_invitations WHERE id = ?').get(invitationId);
+  if (invitation) markEntityNotificationReadInTransaction(db, invitation.invitee_user_id, 'group_invitation', 'group_invitation', invitationId);
+  return getGroupAccountSummary(userId, { includeMembers: true });
+}
+
+export function respondGroupInvitation(userId, invitationId, accept) {
+  const db = getDb();
+  const respondedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const invitation = db.prepare(`
+      SELECT invitation.*, company.status AS group_status FROM group_invitations invitation
+      JOIN groups company ON company.id = invitation.group_id
+      WHERE invitation.id = ? AND invitation.invitee_user_id = ?
+    `).get(invitationId, userId);
+    if (!invitation || invitation.status !== 'pending') throw Object.assign(new Error('GROUP_INVITATION_UNAVAILABLE'), { code: 'GROUP_INVITATION_UNAVAILABLE' });
+    if (invitation.group_status !== 'active' || Date.parse(invitation.expires_at) <= Date.now()) {
+      db.prepare("UPDATE group_invitations SET status = 'expired', responded_at = ? WHERE id = ?").run(respondedAt, invitation.id);
+      throw Object.assign(new Error('GROUP_INVITATION_EXPIRED'), { code: 'GROUP_INVITATION_EXPIRED' });
+    }
+    if (accept) {
+      if (currentGroupMembership(db, userId)) throw Object.assign(new Error('GROUP_MEMBERSHIP_EXISTS'), { code: 'GROUP_MEMBERSHIP_EXISTS' });
+      db.prepare(`
+        INSERT INTO group_memberships (id, group_id, user_id, role, status, budget_centi, spent_centi, joined_at, updated_at)
+        VALUES (?, ?, ?, 'member', 'active', 0, 0, ?, ?)
+        ON CONFLICT(group_id, user_id) DO UPDATE SET
+          role = 'member', status = 'active', budget_centi = 0, removed_at = NULL, joined_at = excluded.joined_at, updated_at = excluded.updated_at
+      `).run(randomUUID(), invitation.group_id, userId, respondedAt, respondedAt);
+      db.prepare("UPDATE group_invitations SET status = 'accepted', responded_at = ? WHERE id = ?").run(respondedAt, invitation.id);
+      db.prepare("UPDATE group_invitations SET status = 'revoked', responded_at = ? WHERE invitee_user_id = ? AND status = 'pending' AND id != ?")
+        .run(respondedAt, userId, invitation.id);
+    } else {
+      db.prepare("UPDATE group_invitations SET status = 'rejected', responded_at = ? WHERE id = ?").run(respondedAt, invitation.id);
+    }
+    markEntityNotificationReadInTransaction(db, userId, 'group_invitation', 'group_invitation', invitation.id, respondedAt);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return { ...getGroupAccountSummary(userId, { includeMembers: true }), user: getUserProfile(userId) };
+}
+
+export function adjustGroupMemberBudget(userId, targetUserId, amount, requestId = '') {
+  const db = getDb();
+  const membership = requireGroupAdmin(db, userId);
+  const deltaCenti = Math.round(Number(amount || 0) * 100);
+  const key = String(requestId || '').trim().slice(0, 160) || randomUUID();
+  if (!deltaCenti || Math.abs(deltaCenti) > 100_000_000) throw Object.assign(new Error('INVALID_GROUP_BUDGET'), { code: 'INVALID_GROUP_BUDGET' });
+  const updatedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const duplicate = db.prepare("SELECT id FROM group_credit_ledger WHERE group_id = ? AND type = 'budget_adjustment' AND reference_id = ?").get(membership.group_id, key);
+    if (!duplicate) {
+      const target = db.prepare(`
+        SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ? AND role = 'member' AND status IN ('active','paused')
+      `).get(membership.group_id, targetUserId);
+      if (!target) throw Object.assign(new Error('GROUP_MEMBER_NOT_FOUND'), { code: 'GROUP_MEMBER_NOT_FOUND' });
+      if (deltaCenti > 0 && groupAdminAvailableCenti(db, membership.group_id) < deltaCenti) {
+        throw Object.assign(new Error('GROUP_BALANCE_REQUIRED'), { code: 'GROUP_BALANCE_REQUIRED' });
+      }
+      if (deltaCenti < 0 && Number(target.budget_centi || 0) < Math.abs(deltaCenti)) {
+        throw Object.assign(new Error('GROUP_BUDGET_IN_USE'), { code: 'GROUP_BUDGET_IN_USE' });
+      }
+      db.prepare('UPDATE group_memberships SET budget_centi = budget_centi + ?, updated_at = ? WHERE id = ?')
+        .run(deltaCenti, updatedAt, target.id);
+      db.prepare(`
+        INSERT INTO group_credit_ledger
+          (id, group_id, amount_centi, type, source, actor_user_id, charged_user_id, reference_id, metadata_json, created_at)
+        VALUES (?, ?, 0, 'budget_adjustment', 'admin_budget', ?, ?, ?, ?, ?)
+      `).run(randomUUID(), membership.group_id, userId, targetUserId, key, JSON.stringify({ deltaCenti }), updatedAt);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getGroupAccountSummary(userId, { includeMembers: true });
+}
+
+export function setGroupMemberStatus(userId, targetUserId, action) {
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const membership = requireGroupAdmin(db, userId);
+    const target = db.prepare(`SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ? AND role = 'member' AND status != 'removed'`)
+      .get(membership.group_id, targetUserId);
+    if (!target) throw Object.assign(new Error('GROUP_MEMBER_NOT_FOUND'), { code: 'GROUP_MEMBER_NOT_FOUND' });
+    const updatedAt = now();
+    if (action === 'pause' || action === 'resume') {
+      const nextStatus = action === 'pause' ? 'paused' : 'active';
+      db.prepare("UPDATE group_memberships SET status = ?, updated_at = ? WHERE id = ? AND status IN ('active','paused')")
+        .run(nextStatus, updatedAt, target.id);
+    } else if (action === 'remove') {
+      const reserved = groupReservedCenti(db, membership.group_id, targetUserId);
+      db.prepare(`
+        UPDATE group_memberships SET budget_centi = 0, status = ?, updated_at = ?, removed_at = CASE WHEN ? = 'removed' THEN ? ELSE NULL END
+        WHERE id = ?
+      `).run(reserved > 0 ? 'leaving' : 'removed', updatedAt, reserved > 0 ? 'leaving' : 'removed', updatedAt, target.id);
+    } else {
+      throw Object.assign(new Error('INVALID_GROUP_MEMBER_ACTION'), { code: 'INVALID_GROUP_MEMBER_ACTION' });
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return getGroupAccountSummary(userId, { includeMembers: true });
+}
+
+export function leaveGroupAccount(userId) {
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const membership = currentGroupMembership(db, userId);
+    if (!membership) throw Object.assign(new Error('GROUP_MEMBERSHIP_NOT_FOUND'), { code: 'GROUP_MEMBERSHIP_NOT_FOUND' });
+    if (membership.role === 'admin') throw Object.assign(new Error('GROUP_ADMIN_CANNOT_LEAVE'), { code: 'GROUP_ADMIN_CANNOT_LEAVE' });
+    const updatedAt = now();
+    const reserved = groupReservedCenti(db, membership.group_id, userId);
+    db.prepare(`
+      UPDATE group_memberships SET budget_centi = 0, status = ?, updated_at = ?, removed_at = CASE WHEN ? = 'removed' THEN ? ELSE NULL END
+      WHERE id = ?
+    `).run(reserved > 0 ? 'leaving' : 'removed', updatedAt, reserved > 0 ? 'leaving' : 'removed', updatedAt, membership.id);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return { ...getGroupAccountSummary(userId, { includeMembers: true }), user: getUserProfile(userId) };
+}
+
+export function requestGroupAdminTransfer(userId, targetUserId, currentPassword) {
+  const db = getDb();
+  const createdAt = now();
+  const id = randomUUID();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const membership = requireGroupAdmin(db, userId);
+    const rawUser = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId);
+    if (!rawUser || !verifyPassword(String(currentPassword || ''), rawUser.password_hash)) {
+      throw Object.assign(new Error('INVALID_CURRENT_PASSWORD'), { code: 'INVALID_CURRENT_PASSWORD' });
+    }
+    const target = db.prepare(`SELECT id FROM group_memberships WHERE group_id = ? AND user_id = ? AND role = 'member' AND status = 'active'`)
+      .get(membership.group_id, targetUserId);
+    if (!target) throw Object.assign(new Error('GROUP_MEMBER_NOT_FOUND'), { code: 'GROUP_MEMBER_NOT_FOUND' });
+    if (groupReservedCenti(db, membership.group_id, userId) > 0 || groupReservedCenti(db, membership.group_id, targetUserId) > 0) {
+      throw Object.assign(new Error('GROUP_ACTIVE_RESERVATIONS'), { code: 'GROUP_ACTIVE_RESERVATIONS' });
+    }
+    db.prepare("UPDATE group_admin_transfers SET status = 'revoked', responded_at = ? WHERE group_id = ? AND status = 'pending'")
+      .run(createdAt, membership.group_id);
+    db.prepare(`
+      INSERT INTO group_admin_transfers (id, group_id, from_user_id, to_user_id, status, expires_at, created_at)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?)
+    `).run(id, membership.group_id, userId, targetUserId, new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), createdAt);
+    const source = getUserById(userId);
+    upsertUserNotificationInTransaction(db, {
+      type: 'group_admin_transfer', recipientUserId: targetUserId, title: '集团管理员转让',
+      body: `${source?.fullName || source?.email || '集团管理员'} 邀请你接任「${membership.group_name}」集团管理员`,
+      entityType: 'group_admin_transfer', entityId: id,
+      metadata: { groupId: membership.group_id, groupName: membership.group_name, fromName: source?.fullName || '', fromEmail: source?.email || '' },
+      createdAt, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    });
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return { transferId: id, ...getGroupAccountSummary(userId, { includeMembers: true }) };
+}
+
+export function respondGroupAdminTransfer(userId, transferId, accept) {
+  const db = getDb();
+  const respondedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const transfer = db.prepare(`SELECT * FROM group_admin_transfers WHERE id = ? AND to_user_id = ?`).get(transferId, userId);
+    if (!transfer || transfer.status !== 'pending' || Date.parse(transfer.expires_at) <= Date.now()) {
+      throw Object.assign(new Error('GROUP_TRANSFER_UNAVAILABLE'), { code: 'GROUP_TRANSFER_UNAVAILABLE' });
+    }
+    if (!accept) {
+      db.prepare("UPDATE group_admin_transfers SET status = 'rejected', responded_at = ? WHERE id = ?").run(respondedAt, transfer.id);
+    } else {
+      const current = db.prepare("SELECT admin_user_id FROM groups WHERE id = ? AND status = 'active'").get(transfer.group_id);
+      const target = db.prepare("SELECT id FROM group_memberships WHERE group_id = ? AND user_id = ? AND role = 'member' AND status = 'active'")
+        .get(transfer.group_id, userId);
+      if (!current || current.admin_user_id !== transfer.from_user_id || !target) {
+        throw Object.assign(new Error('GROUP_TRANSFER_UNAVAILABLE'), { code: 'GROUP_TRANSFER_UNAVAILABLE' });
+      }
+      db.prepare("UPDATE group_memberships SET role = 'member', budget_centi = 0, updated_at = ? WHERE group_id = ? AND user_id = ?")
+        .run(respondedAt, transfer.group_id, transfer.from_user_id);
+      db.prepare("UPDATE group_memberships SET role = 'admin', budget_centi = 0, updated_at = ? WHERE group_id = ? AND user_id = ?")
+        .run(respondedAt, transfer.group_id, userId);
+      db.prepare('UPDATE groups SET admin_user_id = ?, updated_at = ? WHERE id = ?').run(userId, respondedAt, transfer.group_id);
+      db.prepare("UPDATE group_admin_transfers SET status = 'accepted', responded_at = ? WHERE id = ?").run(respondedAt, transfer.id);
+    }
+    markEntityNotificationReadInTransaction(db, userId, 'group_admin_transfer', 'group_admin_transfer', transfer.id, respondedAt);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return { ...getGroupAccountSummary(userId, { includeMembers: true }), user: getUserProfile(userId) };
+}
+
 export function getUserProfile(userId) {
   const user = getUserById(userId);
   if (!user) return null;
@@ -1899,8 +2642,15 @@ export function getUserProfile(userId) {
       createdAt: row.created_at || ''
     };
   });
+  const groupState = getGroupAccountSummary(userId);
+  const groupAccount = groupState.membership;
   return {
     ...user,
+    personalCreditBalance: Number(user.creditBalance || 0),
+    creditBalance: groupAccount ? Number(groupAccount.available || 0) : Number(user.creditBalance || 0),
+    billingMode: groupAccount ? 'group' : 'personal',
+    groupAccount,
+    groupInvitations: groupState.invitations,
     usage: getUserUsage(userId),
     recentTransactions,
     freeUsed: false,
@@ -1908,41 +2658,281 @@ export function getUserProfile(userId) {
   };
 }
 
-export function reserveCredit(userId, { caseId = null, prompt = '', generationId = null, amount = 1, metadata = {} } = {}) {
-  const db = getDb();
-  const reservationId = randomUUID();
+function billingLedgerType(source) {
+  const value = String(source || 'generation');
+  if (value.startsWith('storage')) return 'storage';
+  if (value.startsWith('chat')) return 'ai_chat';
+  if (value.startsWith('ai_') || value.includes('magic') || value.includes('brief')) return 'ai_tool';
+  return 'generation';
+}
+
+function finalizeLeavingMembershipInTransaction(db, groupId, userId, timestamp) {
+  const membership = db.prepare(`
+    SELECT id, status FROM group_memberships WHERE group_id = ? AND user_id = ?
+  `).get(groupId, userId);
+  if (!membership || membership.status !== 'leaving') return;
+  if (groupReservedCenti(db, groupId, userId) > 0) return;
+  db.prepare(`UPDATE group_memberships SET status = 'removed', removed_at = ?, updated_at = ? WHERE id = ?`)
+    .run(timestamp, timestamp, membership.id);
+}
+
+function reservationResult(db, reservation, duplicate = false) {
+  const chargedCenti = reservation.billing_scope === 'super_admin' ? 0 : Number(reservation.amount_centi || 0);
+  return {
+    reservationId: reservation.id,
+    creditAmount: centiToCredits(chargedCenti),
+    creditAmountCenti: chargedCenti,
+    billingScope: reservation.billing_scope || 'personal',
+    groupId: reservation.group_id || '',
+    chargedUserId: reservation.charged_user_id || reservation.user_id,
+    creditBalance: Number(getUserProfile(reservation.user_id)?.creditBalance || 0),
+    duplicate
+  };
+}
+
+export function chargeCreditImmediatelyInTransaction(db, userId, {
+  amountCenti,
+  source,
+  referenceId,
+  metadata = {},
+  fallbackGroupId = ''
+} = {}) {
+  const chargeCenti = Math.max(1, Math.round(Number(amountCenti) || 0));
   const createdAt = now();
-  const creditAmount = Math.max(1, Math.min(100000, Math.round(Number(amount) || 1)));
-  const ledgerMetadata = JSON.stringify(metadata && typeof metadata === 'object' ? metadata : {});
+  const user = db.prepare('SELECT id, role, credit_balance FROM users WHERE id = ? AND status = ?').get(userId, 'active');
+  if (!user) throw Object.assign(new Error('AUTH_REQUIRED'), { code: 'AUTH_REQUIRED' });
+  let membership = currentGroupMembership(db, userId);
+  let groupId = membership?.group_id || '';
+  let chargedUserId = userId;
+  if (membership && membership.status !== 'active') throw Object.assign(new Error('GROUP_ACCESS_SUSPENDED'), { code: 'GROUP_ACCESS_SUSPENDED' });
+  if (!membership && fallbackGroupId) {
+    const group = db.prepare("SELECT admin_user_id FROM groups WHERE id = ? AND status = 'active'").get(fallbackGroupId);
+    if (!group) throw Object.assign(new Error('GROUP_NOT_FOUND'), { code: 'GROUP_NOT_FOUND' });
+    membership = db.prepare("SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ? AND role = 'admin' AND status = 'active'")
+      .get(fallbackGroupId, group.admin_user_id);
+    groupId = fallbackGroupId;
+    chargedUserId = group.admin_user_id;
+  }
+  const ledgerId = randomUUID();
+  const normalizedSource = String(source || 'direct_charge').slice(0, 80);
+  const normalizedReferenceId = String(referenceId || randomUUID()).slice(0, 180);
+  const storedMetadata = JSON.stringify(metadata && typeof metadata === 'object' ? metadata : {});
+  if (membership) {
+    const balanceBeforeCenti = membership.role === 'member' ? Number(membership.budget_centi || 0) : groupAdminAvailableCenti(db, groupId);
+    if (balanceBeforeCenti < chargeCenti) {
+      throw Object.assign(new Error(membership.role === 'member' ? 'GROUP_BUDGET_REQUIRED' : 'GROUP_BALANCE_REQUIRED'), {
+        code: membership.role === 'member' ? 'GROUP_BUDGET_REQUIRED' : 'GROUP_BALANCE_REQUIRED'
+      });
+    }
+    if (membership.role === 'member') {
+      db.prepare(`UPDATE group_memberships SET budget_centi = budget_centi - ?, spent_centi = spent_centi + ?, updated_at = ? WHERE id = ? AND budget_centi >= ?`)
+        .run(chargeCenti, chargeCenti, createdAt, membership.id, chargeCenti);
+    }
+    const debit = db.prepare('UPDATE groups SET balance_centi = balance_centi - ?, updated_at = ? WHERE id = ? AND balance_centi >= ?')
+      .run(chargeCenti, createdAt, groupId, chargeCenti);
+    if (!debit.changes) throw Object.assign(new Error('GROUP_BALANCE_CHANGED'), { code: 'GROUP_BALANCE_CHANGED' });
+    db.prepare(`
+      INSERT INTO group_credit_ledger
+        (id, group_id, amount_centi, type, source, actor_user_id, charged_user_id, reference_id, metadata_json, created_at)
+      VALUES (?, ?, ?, 'charge', ?, ?, ?, ?, ?, ?)
+    `).run(randomUUID(), groupId, -chargeCenti, normalizedSource, userId, chargedUserId, normalizedReferenceId, storedMetadata, createdAt);
+    db.prepare(`
+      INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, chargedUserId, -(chargeCenti / 100), billingLedgerType(normalizedSource), normalizedSource, normalizedReferenceId, JSON.stringify({ ...metadata, groupId, actorUserId: userId }), createdAt);
+    return {
+      billingScope: 'group', groupId, chargedUserId, ledgerId,
+      balanceBefore: centiToCredits(balanceBeforeCenti),
+      balanceAfter: centiToCredits(balanceBeforeCenti - chargeCenti)
+    };
+  }
+  const balanceBeforeCenti = creditsToCenti(user.credit_balance);
+  if (user.role !== 'super_admin' && balanceBeforeCenti < chargeCenti) throw Object.assign(new Error('CREDITS_REQUIRED'), { code: 'CREDITS_REQUIRED' });
+  if (user.role !== 'super_admin') {
+    db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance - ?, 2), updated_at = ? WHERE id = ?')
+      .run(chargeCenti / 100, createdAt, userId);
+    db.prepare(`
+      INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, userId, -(chargeCenti / 100), billingLedgerType(normalizedSource), normalizedSource, normalizedReferenceId, storedMetadata, createdAt);
+  }
+  return {
+    billingScope: user.role === 'super_admin' ? 'super_admin' : 'personal',
+    groupId: '', chargedUserId: userId, ledgerId: user.role === 'super_admin' ? null : ledgerId,
+    balanceBefore: centiToCredits(balanceBeforeCenti),
+    balanceAfter: user.role === 'super_admin' ? centiToCredits(balanceBeforeCenti) : centiToCredits(balanceBeforeCenti - chargeCenti)
+  };
+}
+
+export function reserveCreditCenti(userId, {
+  amountCenti,
+  caseId = null,
+  prompt = '',
+  generationId = null,
+  source = 'generation_reservation',
+  requestKey = '',
+  metadata = {},
+  fallbackGroupId = ''
+} = {}) {
+  const db = getDb();
+  const requestedCenti = Math.max(1, Math.min(100_000_000_00, Math.round(Number(amountCenti) || 0)));
+  const createdAt = now();
+  const normalizedRequestKey = String(requestKey || '').trim().slice(0, 180);
+  const reservationId = randomUUID();
   db.exec('BEGIN IMMEDIATE');
   try {
     const user = db.prepare('SELECT id, role, credit_balance FROM users WHERE id = ? AND status = ?').get(userId, 'active');
-    if (!user || (user.role !== 'super_admin' && Number(user.credit_balance) < creditAmount)) {
-      const error = new Error('CREDITS_REQUIRED');
-      error.code = 'CREDITS_REQUIRED';
-      throw error;
+    if (!user) throw Object.assign(new Error('AUTH_REQUIRED'), { code: 'AUTH_REQUIRED' });
+    let membership = currentGroupMembership(db, userId);
+    let billingScope = 'personal';
+    let groupId = '';
+    let chargedUserId = userId;
+    if (membership) {
+      if (membership.status !== 'active') throw Object.assign(new Error('GROUP_ACCESS_SUSPENDED'), { code: 'GROUP_ACCESS_SUSPENDED' });
+      billingScope = 'group';
+      groupId = membership.group_id;
+    } else if (fallbackGroupId) {
+      const group = db.prepare("SELECT admin_user_id FROM groups WHERE id = ? AND status = 'active'").get(fallbackGroupId);
+      if (!group) throw Object.assign(new Error('GROUP_NOT_FOUND'), { code: 'GROUP_NOT_FOUND' });
+      membership = db.prepare("SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ? AND role = 'admin' AND status = 'active'")
+        .get(fallbackGroupId, group.admin_user_id);
+      billingScope = 'group';
+      groupId = fallbackGroupId;
+      chargedUserId = group.admin_user_id;
+    } else if (user.role === 'super_admin') {
+      billingScope = 'super_admin';
     }
-    if (user.role !== 'super_admin') {
-      db.prepare('UPDATE users SET credit_balance = credit_balance - ?, updated_at = ? WHERE id = ? AND credit_balance >= ?')
-        .run(creditAmount, createdAt, userId, creditAmount);
+    if (normalizedRequestKey) {
+      const duplicate = db.prepare(`
+        SELECT * FROM credit_reservations
+        WHERE billing_scope = ? AND COALESCE(group_id, '') = ? AND request_key = ?
+      `).get(billingScope, groupId, normalizedRequestKey);
+      if (duplicate) {
+        db.exec('COMMIT');
+        return reservationResult(db, duplicate, true);
+      }
     }
+    if (billingScope === 'group') {
+      if (membership.role === 'member') {
+        const result = db.prepare(`
+          UPDATE group_memberships SET budget_centi = budget_centi - ?, updated_at = ?
+          WHERE id = ? AND status = 'active' AND budget_centi >= ?
+        `).run(requestedCenti, createdAt, membership.id, requestedCenti);
+        if (!result.changes) throw Object.assign(new Error('GROUP_BUDGET_REQUIRED'), { code: 'GROUP_BUDGET_REQUIRED' });
+      } else if (groupAdminAvailableCenti(db, groupId) < requestedCenti) {
+        throw Object.assign(new Error('GROUP_BALANCE_REQUIRED'), { code: 'GROUP_BALANCE_REQUIRED' });
+      }
+    } else if (billingScope === 'personal') {
+      if (creditsToCenti(user.credit_balance) < requestedCenti) throw Object.assign(new Error('CREDITS_REQUIRED'), { code: 'CREDITS_REQUIRED' });
+      const result = db.prepare(`
+        UPDATE users SET credit_balance = ROUND(credit_balance - ?, 2), updated_at = ?
+        WHERE id = ? AND ROUND(credit_balance * 100) >= ?
+      `).run(requestedCenti / 100, createdAt, userId, requestedCenti);
+      if (!result.changes) throw Object.assign(new Error('CREDITS_REQUIRED'), { code: 'CREDITS_REQUIRED' });
+    }
+    const storedMetadata = JSON.stringify({ ...(metadata && typeof metadata === 'object' ? metadata : {}), groupId: groupId || undefined });
     db.prepare(`
-      INSERT INTO credit_reservations (id, user_id, generation_id, amount, status, case_id, prompt, created_at)
-      VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)
-    `).run(reservationId, userId, generationId, creditAmount, caseId, prompt, createdAt);
-    if (user.role !== 'super_admin') {
+      INSERT INTO credit_reservations
+        (id, user_id, generation_id, amount, amount_centi, settled_centi, billing_scope, group_id,
+         charged_user_id, billing_source, request_key, metadata_json, status, case_id, prompt, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, ?)
+    `).run(
+      reservationId, userId, generationId, requestedCenti / 100, requestedCenti, billingScope,
+      groupId || null, chargedUserId, String(source || 'generation_reservation').slice(0, 80), normalizedRequestKey,
+      storedMetadata, caseId, prompt, createdAt
+    );
+    if (billingScope === 'personal') {
+      const ledgerReferenceId = String(metadata?.externalReferenceId || reservationId).slice(0, 180);
       db.prepare(`
         INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
-        VALUES (?, ?, ?, 'generation', 'generation_reservation', ?, ?, ?)
-      `).run(randomUUID(), userId, -creditAmount, reservationId, ledgerMetadata, createdAt);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), userId, -(requestedCenti / 100), billingLedgerType(source), String(source || 'generation_reservation'), ledgerReferenceId, storedMetadata, createdAt);
     }
     db.exec('COMMIT');
-    if (user.role !== 'super_admin') monitorLowCreditBalance(userId);
-    return {
-      reservationId,
-      creditAmount: user.role === 'super_admin' ? 0 : creditAmount,
-      creditBalance: Number(getUserById(userId)?.creditBalance || 0)
-    };
+    if (billingScope === 'personal') monitorLowCreditBalance(userId);
+    return reservationResult(db, db.prepare('SELECT * FROM credit_reservations WHERE id = ?').get(reservationId));
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function reserveCredit(userId, { caseId = null, prompt = '', generationId = null, amount = 1, metadata = {}, requestKey = '' } = {}) {
+  const creditAmount = Math.max(1, Math.min(100000, Math.round(Number(amount) || 1)));
+  const reservation = reserveCreditCenti(userId, {
+    amountCenti: creditAmount * 100,
+    caseId,
+    prompt,
+    generationId,
+    metadata,
+    requestKey,
+    source: 'generation_reservation'
+  });
+  if (reservation.duplicate) throw Object.assign(new Error('BILLING_REQUEST_DUPLICATE'), { code: 'BILLING_REQUEST_DUPLICATE' });
+  return reservation;
+}
+
+export function settleCreditReservationInTransaction(db, reservationId, actualCenti = null) {
+  const reservation = db.prepare(`
+    SELECT reservation.*, user.role AS platform_role
+    FROM credit_reservations reservation JOIN users user ON user.id = reservation.user_id
+    WHERE reservation.id = ?
+  `).get(reservationId);
+  if (!reservation) throw Object.assign(new Error('RESERVATION_NOT_FOUND'), { code: 'RESERVATION_NOT_FOUND' });
+  if (reservation.status !== 'reserved') return reservation;
+  const reservedCenti = Math.max(0, Number(reservation.amount_centi || creditsToCenti(reservation.amount)));
+  const settledCenti = actualCenti == null ? reservedCenti : Math.max(0, Math.round(Number(actualCenti) || 0));
+  if (settledCenti > reservedCenti) throw Object.assign(new Error('RESERVATION_AMOUNT_EXCEEDED'), { code: 'RESERVATION_AMOUNT_EXCEEDED' });
+  const completedAt = now();
+  const refundCenti = reservedCenti - settledCenti;
+  const metadata = parseJsonObject(reservation.metadata_json);
+  const ledgerReferenceId = String(metadata.externalReferenceId || reservation.id).slice(0, 180);
+  if (reservation.billing_scope === 'group') {
+    const debit = db.prepare(`
+      UPDATE groups SET balance_centi = balance_centi - ?, updated_at = ?
+      WHERE id = ? AND balance_centi >= ?
+    `).run(settledCenti, completedAt, reservation.group_id, settledCenti);
+    if (!debit.changes) throw Object.assign(new Error('GROUP_BALANCE_CHANGED'), { code: 'GROUP_BALANCE_CHANGED' });
+    const member = db.prepare(`SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ?`).get(reservation.group_id, reservation.charged_user_id);
+    if (member?.role === 'member') {
+      const returnedCenti = ['active', 'paused'].includes(member.status) ? refundCenti : 0;
+      db.prepare(`
+        UPDATE group_memberships SET budget_centi = budget_centi + ?, spent_centi = spent_centi + ?, updated_at = ? WHERE id = ?
+      `).run(returnedCenti, settledCenti, completedAt, member.id);
+    }
+    if (settledCenti > 0) {
+      db.prepare(`
+        INSERT INTO group_credit_ledger
+          (id, group_id, amount_centi, type, source, actor_user_id, charged_user_id, reference_id, metadata_json, created_at)
+        VALUES (?, ?, ?, 'charge', ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), reservation.group_id, -settledCenti, reservation.billing_source, reservation.user_id, reservation.charged_user_id, ledgerReferenceId, JSON.stringify(metadata), completedAt);
+      db.prepare(`
+        INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), reservation.charged_user_id, -(settledCenti / 100), billingLedgerType(reservation.billing_source), reservation.billing_source, ledgerReferenceId, JSON.stringify({ ...metadata, groupId: reservation.group_id, actorUserId: reservation.user_id, reservationId: reservation.id }), completedAt);
+    }
+  } else if (reservation.billing_scope === 'personal' && refundCenti > 0) {
+    db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance + ?, 2), updated_at = ? WHERE id = ?')
+      .run(refundCenti / 100, completedAt, reservation.user_id);
+    db.prepare(`
+      INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
+      VALUES (?, ?, ?, 'refund', 'reservation_settlement_refund', ?, ?, ?)
+    `).run(randomUUID(), reservation.user_id, refundCenti / 100, reservation.id, JSON.stringify({ settledCenti }), completedAt);
+  }
+  db.prepare(`
+    UPDATE credit_reservations SET status = 'succeeded', settled_centi = ?, completed_at = ? WHERE id = ? AND status = 'reserved'
+  `).run(settledCenti, completedAt, reservation.id);
+  if (reservation.billing_scope === 'group') finalizeLeavingMembershipInTransaction(db, reservation.group_id, reservation.charged_user_id, completedAt);
+  return db.prepare('SELECT * FROM credit_reservations WHERE id = ?').get(reservation.id);
+}
+
+export function settleCreditReservation(reservationId, actualCenti = null) {
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const reservation = settleCreditReservationInTransaction(db, reservationId, actualCenti);
+    db.exec('COMMIT');
+    return reservation;
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
@@ -1950,11 +2940,7 @@ export function reserveCredit(userId, { caseId = null, prompt = '', generationId
 }
 
 export function completeCreditReservation(reservationId) {
-  getDb().prepare(`
-    UPDATE credit_reservations
-    SET status = 'succeeded', completed_at = ?
-    WHERE id = ? AND status = 'reserved'
-  `).run(now(), reservationId);
+  return settleCreditReservation(reservationId);
 }
 
 export function releaseCreditReservation(reservationId, errorCode = 'GENERATION_FAILED') {
@@ -1962,26 +2948,36 @@ export function releaseCreditReservation(reservationId, errorCode = 'GENERATION_
   db.exec('BEGIN IMMEDIATE');
   try {
     const reservation = db.prepare(`
-      SELECT r.*, u.role
-      FROM credit_reservations r
-      JOIN users u ON u.id = r.user_id
-      WHERE r.id = ? AND r.status = 'reserved'
+      SELECT reservation.*, user.role AS platform_role
+      FROM credit_reservations reservation JOIN users user ON user.id = reservation.user_id
+      WHERE reservation.id = ? AND reservation.status = 'reserved'
     `).get(reservationId);
     if (!reservation) {
       db.exec('COMMIT');
-      return;
+      return null;
     }
-    if (reservation.role !== 'super_admin' && Number(reservation.amount) > 0) {
-      db.prepare('UPDATE users SET credit_balance = credit_balance + ?, updated_at = ? WHERE id = ?').run(reservation.amount, now(), reservation.user_id);
+    const amountCenti = Math.max(0, Number(reservation.amount_centi || creditsToCenti(reservation.amount)));
+    const completedAt = now();
+    if (reservation.billing_scope === 'group') {
+      const member = db.prepare(`SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ?`).get(reservation.group_id, reservation.charged_user_id);
+      if (member?.role === 'member' && ['active', 'paused'].includes(member.status)) {
+        db.prepare('UPDATE group_memberships SET budget_centi = budget_centi + ?, updated_at = ? WHERE id = ?')
+          .run(amountCenti, completedAt, member.id);
+      }
+    } else if (reservation.billing_scope === 'personal' && amountCenti > 0) {
+      db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance + ?, 2), updated_at = ? WHERE id = ?')
+        .run(amountCenti / 100, completedAt, reservation.user_id);
       db.prepare(`
         INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
         VALUES (?, ?, ?, 'refund', 'generation_release', ?, ?, ?)
-      `).run(randomUUID(), reservation.user_id, reservation.amount, reservation.id, JSON.stringify({ errorCode }), now());
+      `).run(randomUUID(), reservation.user_id, amountCenti / 100, reservation.id, JSON.stringify({ errorCode }), completedAt);
     }
     db.prepare(`
-      UPDATE credit_reservations SET status = 'released', error_code = ?, completed_at = ? WHERE id = ?
-    `).run(errorCode, now(), reservation.id);
+      UPDATE credit_reservations SET status = 'released', error_code = ?, completed_at = ? WHERE id = ? AND status = 'reserved'
+    `).run(errorCode, completedAt, reservation.id);
+    if (reservation.billing_scope === 'group') finalizeLeavingMembershipInTransaction(db, reservation.group_id, reservation.charged_user_id, completedAt);
     db.exec('COMMIT');
+    return db.prepare('SELECT * FROM credit_reservations WHERE id = ?').get(reservation.id);
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
@@ -2271,50 +3267,24 @@ export function listCreditLedger(userId, limit = 30) {
 }
 
 export function chargeAiToolCredit(userId, { source = 'ai_magic', amount = 1, metadata = {}, referenceId = null } = {}) {
-  const creditAmount = Math.round(Number(amount));
-  if (!userId || !Number.isFinite(creditAmount) || creditAmount <= 0 || creditAmount > 100) {
+  const amountCenti = creditsToCenti(amount);
+  if (!userId || !amountCenti || amountCenti > 10_000) {
     const error = new Error('INVALID_AI_TOOL_CHARGE');
     error.code = 'INVALID_AI_TOOL_CHARGE';
     throw error;
   }
-  const db = getDb();
-  const createdAt = now();
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const user = db.prepare('SELECT id, credit_balance FROM users WHERE id = ? AND status = ?').get(userId, 'active');
-    if (!user || Number(user.credit_balance) + 1e-9 < creditAmount) {
-      const error = new Error('CREDITS_REQUIRED');
-      error.code = 'CREDITS_REQUIRED';
-      throw error;
+  const normalizedReferenceId = String(referenceId || randomUUID()).trim().slice(0, 160);
+  const reservation = reserveCreditCenti(userId, {
+    amountCenti,
+    source: String(source || 'ai_magic').slice(0, 80),
+    requestKey: `ai-tool:${normalizedReferenceId}`,
+    metadata: {
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      externalReferenceId: normalizedReferenceId
     }
-    const result = db.prepare(`
-      UPDATE users SET credit_balance = ROUND(credit_balance - ?, 1), updated_at = ?
-      WHERE id = ? AND credit_balance + 0.0000001 >= ?
-    `).run(creditAmount, createdAt, userId, creditAmount);
-    if (!result.changes) {
-      const error = new Error('CREDITS_REQUIRED');
-      error.code = 'CREDITS_REQUIRED';
-      throw error;
-    }
-    db.prepare(`
-      INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
-      VALUES (?, ?, ?, 'ai_tool', ?, ?, ?, ?)
-    `).run(
-      randomUUID(),
-      userId,
-      -creditAmount,
-      String(source || 'ai_magic').slice(0, 80),
-      referenceId ? String(referenceId).slice(0, 160) : null,
-      JSON.stringify(metadata && typeof metadata === 'object' ? metadata : {}),
-      createdAt
-    );
-    db.exec('COMMIT');
-    monitorLowCreditBalance(userId);
-    return getUserProfile(userId);
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
+  });
+  if (!reservation.duplicate) settleCreditReservation(reservation.reservationId, amountCenti);
+  return getUserProfile(userId);
 }
 
 export function refundAiToolCredit(userId, { referenceId, errorCode = 'AI_TOOL_FAILED', metadata = {} } = {}) {
@@ -2328,40 +3298,61 @@ export function refundAiToolCredit(userId, { referenceId, errorCode = 'AI_TOOL_F
   const createdAt = now();
   db.exec('BEGIN IMMEDIATE');
   try {
-    const charge = db.prepare(`
-      SELECT amount, source FROM credit_ledger
-      WHERE user_id = ? AND reference_id = ? AND type = 'ai_tool'
+    const reservation = db.prepare(`
+      SELECT * FROM credit_reservations
+      WHERE user_id = ? AND request_key = ? AND status = 'succeeded'
       ORDER BY created_at DESC LIMIT 1
-    `).get(userId, normalizedReferenceId);
+    `).get(userId, `ai-tool:${normalizedReferenceId}`);
     const existingRefund = db.prepare(`
       SELECT id FROM credit_ledger
       WHERE user_id = ? AND reference_id = ? AND type = 'refund' AND source = 'ai_tool_refund'
       LIMIT 1
     `).get(userId, normalizedReferenceId);
-    if (!charge || existingRefund) {
+    if (!reservation || existingRefund) {
       db.exec('COMMIT');
       return getUserProfile(userId);
     }
-    const creditAmount = Math.abs(Number(charge.amount) || 0);
-    if (creditAmount > 0) {
-      db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance + ?, 1), updated_at = ? WHERE id = ?')
-        .run(creditAmount, createdAt, userId);
+    const refundCenti = Math.max(0, Number(reservation.settled_centi || reservation.amount_centi || 0));
+    const refundCredits = refundCenti / 100;
+    if (refundCenti > 0) {
+      if (reservation.billing_scope === 'group') {
+        db.prepare('UPDATE groups SET balance_centi = balance_centi + ?, updated_at = ? WHERE id = ?')
+          .run(refundCenti, createdAt, reservation.group_id);
+        const member = db.prepare('SELECT * FROM group_memberships WHERE group_id = ? AND user_id = ?')
+          .get(reservation.group_id, reservation.charged_user_id);
+        if (member?.role === 'member') {
+          const budgetRefund = ['active', 'paused'].includes(member.status) ? refundCenti : 0;
+          db.prepare(`UPDATE group_memberships SET budget_centi = budget_centi + ?, spent_centi = MAX(0, spent_centi - ?), updated_at = ? WHERE id = ?`)
+            .run(budgetRefund, refundCenti, createdAt, member.id);
+        }
+        db.prepare(`
+          INSERT INTO group_credit_ledger
+            (id, group_id, amount_centi, type, source, actor_user_id, charged_user_id, reference_id, metadata_json, created_at)
+          VALUES (?, ?, ?, 'refund', 'ai_tool_refund', ?, ?, ?, ?, ?)
+        `).run(randomUUID(), reservation.group_id, refundCenti, userId, reservation.charged_user_id, normalizedReferenceId, JSON.stringify({ errorCode }), createdAt);
+      } else if (reservation.billing_scope === 'personal') {
+        db.prepare('UPDATE users SET credit_balance = ROUND(credit_balance + ?, 2), updated_at = ? WHERE id = ?')
+          .run(refundCredits, createdAt, userId);
+      }
       db.prepare(`
         INSERT INTO credit_ledger (id, user_id, amount, type, source, reference_id, metadata, created_at)
         VALUES (?, ?, ?, 'refund', 'ai_tool_refund', ?, ?, ?)
       `).run(
         randomUUID(),
-        userId,
-        creditAmount,
+        reservation.charged_user_id || userId,
+        refundCredits,
         normalizedReferenceId,
         JSON.stringify({
-          originalSource: charge.source,
+          originalSource: reservation.billing_source,
           errorCode: String(errorCode || 'AI_TOOL_FAILED').slice(0, 120),
           ...(metadata && typeof metadata === 'object' ? metadata : {})
         }),
         createdAt
       );
     }
+    db.prepare("UPDATE credit_reservations SET status = 'refunded', error_code = ?, completed_at = ? WHERE id = ? AND status = 'succeeded'")
+      .run(String(errorCode || 'AI_TOOL_FAILED').slice(0, 120), createdAt, reservation.id);
+    if (reservation.billing_scope === 'group') finalizeLeavingMembershipInTransaction(db, reservation.group_id, reservation.charged_user_id, createdAt);
     db.exec('COMMIT');
     return getUserProfile(userId);
   } catch (error) {

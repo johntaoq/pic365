@@ -1,5 +1,6 @@
 import { getRechargeConfig, getUserProfile } from '../_lib/local-db.js';
 import { authenticateRequest } from '../_lib/local-auth.js';
+import { getYipayConfig, isYipayConfigured } from '../_lib/yipay.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -18,6 +19,8 @@ export default async function handler(req, res) {
 
   try {
     const recharge = getRechargeConfig();
+    const payment = getYipayConfig();
+    const checkoutAvailable = isYipayConfigured(payment);
     const packs = recharge.packs.filter((pack) => pack.enabled).map((pack) => {
       const amountYuan = Number(pack.amountCents) / 100;
       return {
@@ -42,8 +45,10 @@ export default async function handler(req, res) {
     });
     return json(res, 200, {
       ok: true,
-      checkoutAvailable: false,
-      paymentInterfaceReady: false,
+      checkoutAvailable,
+      paymentInterfaceReady: checkoutAvailable,
+      paymentProvider: checkoutAvailable ? 'yipay' : null,
+      paymentMethods: checkoutAvailable ? payment.paymentMethods : [],
       packs,
       recharge,
       user: auth.user ? getUserProfile(auth.user.id) : null

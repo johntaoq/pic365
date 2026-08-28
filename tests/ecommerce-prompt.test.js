@@ -34,7 +34,7 @@ test('core users and usage scenarios are represented as separate prompt facts', 
   assert.equal((prompt.match(/Daily subway travel and desk hydration/g) || []).length, 1);
 });
 
-test('an intentionally empty core user receives automatic context without reusing the scenario', () => {
+test('an intentionally empty core user is omitted instead of being fabricated', () => {
   const platform = getEcommercePlatform('amazon');
   const slot = platform.slots.find((item) => item.id === 'feature');
   const prompt = buildEcommerceSlotPrompt({
@@ -44,7 +44,8 @@ test('an intentionally empty core user receives automatic context without reusin
     assets: []
   });
 
-  assert.match(prompt, /核心用户：关注其他产品外观、使用体验和信息透明度的潜在消费者/);
+  assert.doesNotMatch(prompt, /核心用户：/);
+  assert.doesNotMatch(prompt, /潜在消费者/);
   assert.match(prompt, /核心场景：Home office use/);
   assert.equal((prompt.match(/Home office use/g) || []).length, 1);
 });
@@ -104,7 +105,7 @@ test('revision prompts keep actual input numbering and evidence priority aligned
   assert.match(prompt, /输入图片 1：本槽位当前待修改版本/);
   assert.match(prompt, /输入图片 2：真实商品图/);
   assert.match(prompt, /以输入图片 2 为最高优先级/);
-  assert.match(prompt, /旧图而延续错误结构/);
+  assert.match(prompt, /不得延续旧图中的错误结构/);
   assert.match(prompt, /恢复瓶盖的真实高度比例/);
 });
 
@@ -183,8 +184,8 @@ test('broad industry guidance is conditional and never treated as a product feat
     slot,
     assets: []
   });
-  assert.match(prompt, /只适用于输入素材中真实存在的部位/);
-  assert.match(prompt, /不代表本商品一定具备这些结构/);
+  assert.match(prompt, /品类拍摄重点（仅在素材可证实时采用）/);
+  assert.match(prompt, /保持屏幕、镜头、接口、按键/);
 });
 
 test('comparison prompts enforce strict left and right image regions', () => {
@@ -202,13 +203,44 @@ test('ecommerce generation prompts include the shared commerce safety context', 
   const platform = getEcommercePlatform('taobao-tmall');
   const slot = platform.slots.find((item) => item.id === 'main-square');
   const prompt = buildEcommerceSlotPrompt({ project: project(), platform, slot, assets: [] });
-  assert.match(prompt, /你是一个严格遵循商品真实资料的生图约束系统/);
-  assert.match(prompt, /不得擅自添加赠品、备用件、收纳袋、工具、电池、线材/);
+  assert.match(prompt, /你是电商商品图生成系统/);
+  assert.match(prompt, /不得新增不存在的结构、文字、Logo、标签、包装、配件/);
   assert.match(prompt, /【系统级电商语境与安全判断约束】/);
-  assert.match(prompt, /以上下文场景为准，而非关键词联想/);
-  assert.match(prompt, /本约束不是审核绕过/);
-  assert.ok(prompt.indexOf('【必须避免】') < prompt.indexOf('【系统级电商语境与安全判断约束】'));
+  assert.match(prompt, /不因单个关键词拒绝/);
+  assert.doesNotMatch(prompt, /【服装与模特】/);
   assert.ok(prompt.indexOf('【系统级电商语境与安全判断约束】') < prompt.indexOf('【具体任务】'));
+  assert.doesNotMatch(prompt, /锁定商品构图规则/);
+  assert.doesNotMatch(prompt, /\n必须遵守\n/);
+});
+
+test('product wording triggers apparel guidance even when the selected category is generic', () => {
+  const platform = getEcommercePlatform('taobao-tmall');
+  const slot = platform.slots.find((item) => item.id === 'main-square');
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({ productName: '婷美内衣', industryId: 'general', subcategoryId: 'daily-goods' }),
+    platform,
+    slot,
+    assets: []
+  });
+  assert.match(prompt, /【服装与模特】/);
+  assert.match(prompt, /项目分类（用于视觉规范）：其他 \/ 日用百货/);
+});
+
+test('identical supporting asset roles are grouped into compact input ranges', () => {
+  const platform = getEcommercePlatform('amazon');
+  const slot = platform.slots.find((item) => item.id === 'feature');
+  const prompt = buildEcommerceSlotPrompt({
+    project: project({ masterAssetId: 'master-1' }),
+    platform,
+    slot,
+    assets: [
+      { id: 'master-1', assetType: 'product', purpose: 'identity', sortOrder: 1 },
+      { id: 'angle-1', assetType: 'product', purpose: '', sortOrder: 2 },
+      { id: 'angle-2', assetType: 'product', purpose: '', sortOrder: 3 }
+    ]
+  });
+  assert.match(prompt, /输入图片 1：真实商品图.*权威母版/);
+  assert.match(prompt, /输入图片 2–3：真实商品图/);
 });
 
 test('ecommerce generation accepts the configured system prompt before all generated task details', () => {
@@ -226,7 +258,7 @@ test('ecommerce generation accepts the configured system prompt before all gener
   assert.doesNotMatch(prompt, /你是一个严格遵循商品真实资料的生图约束系统/);
 });
 
-test('blank optional product fields receive hidden automatic generation constraints', () => {
+test('blank optional product fields are omitted without inventing generic facts', () => {
   const platform = getEcommercePlatform('taobao-tmall');
   const slot = platform.slots.find((item) => item.id === 'main-square');
   const prompt = buildEcommerceSlotPrompt({
@@ -244,7 +276,11 @@ test('blank optional product fields receive hidden automatic generation constrai
     assets: []
   });
 
-  assert.equal(prompt.includes('未填写；不得自行编造'), false);
-  assert.match(prompt, /保持商品外形、比例、颜色/);
-  assert.match(prompt, /不得宣称未经核验/);
+  assert.doesNotMatch(prompt, /品牌或系列：/);
+  assert.doesNotMatch(prompt, /核心用户：/);
+  assert.doesNotMatch(prompt, /核心场景：/);
+  assert.doesNotMatch(prompt, /核心卖点：/);
+  assert.doesNotMatch(prompt, /便捷使用|场景适配|潜在消费者/);
+  assert.match(prompt, /必须保持商品的外形、比例、结构、颜色、材质/);
+  assert.ok(prompt.length < 2600);
 });

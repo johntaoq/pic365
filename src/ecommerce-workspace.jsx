@@ -227,6 +227,9 @@ const copy = {
     cancelling: 'Cancelling...',
     selectAtLeastOne: 'Select at least one image.',
     insufficientBatchCredits: (required, available) => `${required} credits required; ${available} available.`,
+    groupBudgetRequired: 'Your group budget is insufficient. Contact the group administrator.',
+    groupBalanceRequired: 'The group balance is insufficient. Ask the administrator to add funds.',
+    groupAccessSuspended: 'Your group access is paused or being removed.',
     masterRequired: 'Select a product master before generating.',
     generationFailed: 'This image could not be generated. Your reserved credit was returned.',
     maiReferenceLimit: 'MAI supports at most one uploaded source image for this workflow. Choose another image service or remove extra materials.',
@@ -423,6 +426,9 @@ const copy = {
     cancelling: '取消中……',
     selectAtLeastOne: '请至少选择一张图片。',
     insufficientBatchCredits: (required, available) => `需要 ${required} 积分，当前可用 ${available} 积分。`,
+    groupBudgetRequired: '集团预算不足，请联系集团管理员增加预算。',
+    groupBalanceRequired: '集团可用余额不足，请由集团管理员转入积分。',
+    groupAccessSuspended: '你的集团账户已暂停或正在退出。',
     masterRequired: '请先选择商品母版。',
     generationFailed: '本张图片生成失败，预留积分已经退回。',
     maiReferenceLimit: 'MAI 在此工作流中最多使用 1 张上传素材。请删除多余素材或选择其他生图服务。',
@@ -1106,6 +1112,9 @@ function ecommerceGenerationFailureText(payload, t) {
   if (code === 'IMAGE_PROVIDER_TIMEOUT') return t.providerTimeout;
   if (code === 'UPSTREAM_BUSY') return t.providerBusy;
   if (code === 'SERVER_RESTARTED') return t.serverRestarted;
+  if (code === 'GROUP_BUDGET_REQUIRED') return t.groupBudgetRequired;
+  if (code === 'GROUP_BALANCE_REQUIRED') return t.groupBalanceRequired;
+  if (code === 'GROUP_ACCESS_SUSPENDED') return t.groupAccessSuspended;
   return t.generationFailed;
 }
 
@@ -1146,6 +1155,7 @@ export default function EcommerceWorkspace({
   const preferenceUserId = String(session?.user?.id || 'guest');
   const [projectListCollapsed, setProjectListCollapsed] = useState(() => readEcommerceProjectListCollapsed(preferenceUserId));
   const [collapsedSections, setCollapsedSections] = useState(() => getCollapsedSectionsForStage(0));
+  const [selectedWorkflowStep, setSelectedWorkflowStep] = useState(0);
   const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [versionCenterSlotId, setVersionCenterSlotId] = useState('');
@@ -1242,30 +1252,12 @@ export default function EcommerceWorkspace({
       : hasAdoptedOutput ? 4 : 3;
   const activeWorkflowStep = hoveredWorkflowStep != null && hoveredWorkflowStep <= maxUnlockedStage
     ? hoveredWorkflowStep
-    : Math.min(currentStage, maxUnlockedStage);
-  const previousStageRef = useRef(currentStage);
-
-  useEffect(() => {
-    if (previousStageRef.current === currentStage) return;
-    const previousStage = previousStageRef.current;
-    previousStageRef.current = currentStage;
-    // Keep the upload area open after the first image becomes the automatic
-    // product master, so users can add more angles without seeing system rules.
-    if (previousStage === 1 && form.masterAssetId) {
-      setCollapsedSections((current) => ({ ...current, assets: false }));
-      setHoveredWorkflowStep(1);
-      return;
-    }
-    setCollapsedSections((current) => {
-      const next = getCollapsedSectionsForStage(currentStage);
-      if (current.assets === false && currentStage > 1) next.assets = false;
-      return next;
-    });
-  }, [currentStage]);
+    : Math.min(selectedWorkflowStep, maxUnlockedStage);
 
   useEffect(() => {
     if (hoveredWorkflowStep != null && hoveredWorkflowStep > maxUnlockedStage) setHoveredWorkflowStep(null);
-  }, [hoveredWorkflowStep, maxUnlockedStage]);
+    if (selectedWorkflowStep > maxUnlockedStage) setSelectedWorkflowStep(maxUnlockedStage);
+  }, [hoveredWorkflowStep, maxUnlockedStage, selectedWorkflowStep]);
 
   useEffect(() => {
     setCollapsedSections((current) => Object.fromEntries(SECTION_KEYS.map((key) => [
@@ -1470,7 +1462,8 @@ export default function EcommerceWorkspace({
       return;
     }
     if (!hasAccess) {
-      onBilling?.();
+      if (profile?.groupAccount) setMessage(profile.groupAccount.role === 'member' ? t.groupBudgetRequired : t.groupBalanceRequired);
+      else onBilling?.();
       return;
     }
     if (!form.id || !assets.some((asset) => asset.available !== false && asset.assetType === 'product')) {
@@ -1601,6 +1594,7 @@ export default function EcommerceWorkspace({
       setMessage(t.lockedStage);
       return;
     }
+    if (collapsedSections[sectionKey]) setSelectedWorkflowStep(step);
     setCollapsedSections((current) => ({ ...current, [sectionKey]: !current[sectionKey] }));
   }
 
@@ -1635,6 +1629,7 @@ export default function EcommerceWorkspace({
       return;
     }
     if (step === 0) {
+      setSelectedWorkflowStep(0);
       setHoveredWorkflowStep(0);
       setCollapsedSections((current) => ({ ...current, brief: false }));
       globalThis.requestAnimationFrame?.(() => {
@@ -1649,6 +1644,7 @@ export default function EcommerceWorkspace({
       ...current,
       ...Object.fromEntries(sectionKeys.map((key) => [key, false]))
     }));
+    setSelectedWorkflowStep(step);
     setHoveredWorkflowStep(step);
     globalThis.requestAnimationFrame?.(() => sectionRefs.current[sectionKey]?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -1667,6 +1663,7 @@ export default function EcommerceWorkspace({
     setAiBriefStatus('idle');
     setIdentitySpecStatus('idle');
     setCollapsedSections(getCollapsedSectionsForStage(0));
+    setSelectedWorkflowStep(0);
     setHoveredWorkflowStep(null);
     setPreviewImage(null);
     globalThis.requestAnimationFrame?.(() => {
@@ -1690,7 +1687,9 @@ export default function EcommerceWorkspace({
     setAiBriefOriginals(originals);
     setAiBriefStatus(Object.keys(originals).length ? 'success' : 'idle');
     setIdentitySpecStatus('idle');
-    setCollapsedSections(getCollapsedSectionsForStage(project.masterAssetId ? 2 : 1));
+    const initialStep = project.masterAssetId ? 2 : 1;
+    setCollapsedSections(getCollapsedSectionsForStage(initialStep));
+    setSelectedWorkflowStep(initialStep);
     setPreviewImage(null);
   }
 
@@ -1700,6 +1699,7 @@ export default function EcommerceWorkspace({
     if (!project) return;
     openProject(project);
     setCollapsedSections((current) => ({ ...current, assets: false }));
+    setSelectedWorkflowStep(1);
     globalThis.requestAnimationFrame?.(() => sectionRefs.current.assets?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     onEcommerceProjectConsumed?.();
   }, [pendingEcommerceProjectId, projects]);
@@ -1825,6 +1825,7 @@ export default function EcommerceWorkspace({
     const project = await saveCurrentProject();
     if (!project) return;
     setCollapsedSections((current) => ({ ...current, brief: true, assets: false }));
+    setSelectedWorkflowStep(1);
     setHoveredWorkflowStep(1);
     globalThis.requestAnimationFrame?.(() => sectionRefs.current.assets?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -1832,6 +1833,7 @@ export default function EcommerceWorkspace({
   function handleContinueToPlan() {
     if (!formRef.current.masterAssetId) return;
     setCollapsedSections((current) => ({ ...current, assets: true, visual: false, outputs: false }));
+    setSelectedWorkflowStep(2);
     setHoveredWorkflowStep(2);
     globalThis.requestAnimationFrame?.(() => sectionRefs.current.visual?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -1847,7 +1849,8 @@ export default function EcommerceWorkspace({
       return;
     }
     if (!hasAccess) {
-      onBilling?.();
+      if (profile?.groupAccount) setMessage(profile.groupAccount.role === 'member' ? t.groupBudgetRequired : t.groupBalanceRequired);
+      else onBilling?.();
       return;
     }
     if (!form.productName.trim()) {
@@ -2281,7 +2284,8 @@ export default function EcommerceWorkspace({
 
   async function runSlotGeneration(slotId, taskId = '', request = {}) {
     if (!hasAccess) {
-      onBilling?.();
+      if (profile?.groupAccount) setGenerationMessage(profile.groupAccount.role === 'member' ? t.groupBudgetRequired : t.groupBalanceRequired);
+      else onBilling?.();
       return false;
     }
     if (!form.masterAssetId) {
@@ -2314,8 +2318,12 @@ export default function EcommerceWorkspace({
     }
     const requiredCredits = Number(confirmedPricing.credits || 0);
     if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
-      setGenerationMessage(t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
-      onBilling?.();
+      setGenerationMessage(profile?.groupAccount?.role === 'member'
+        ? t.groupBudgetRequired
+        : profile?.groupAccount?.role === 'admin'
+          ? t.groupBalanceRequired
+          : t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
+      if (!profile?.groupAccount) onBilling?.();
       return false;
     }
 
@@ -2437,8 +2445,12 @@ export default function EcommerceWorkspace({
     const requiredCredits = pricingQuotes.reduce((total, quote) => total + Number(quote?.pricing?.credits || 0), 0);
     const availableCredits = profile?.isSuperAdmin ? Number.POSITIVE_INFINITY : Number(profile?.creditBalance || 0);
     if (requiredCredits > availableCredits) {
-      setGenerationMessage(t.insufficientBatchCredits(requiredCredits, availableCredits));
-      onBilling?.();
+      setGenerationMessage(profile?.groupAccount?.role === 'member'
+        ? t.groupBudgetRequired
+        : profile?.groupAccount?.role === 'admin'
+          ? t.groupBalanceRequired
+          : t.insufficientBatchCredits(requiredCredits, availableCredits));
+      if (!profile?.groupAccount) onBilling?.();
       return;
     }
     try {
@@ -2473,6 +2485,7 @@ export default function EcommerceWorkspace({
     const slotIds = project.selectedSlots.filter((slotId) => !outputs.find((item) => item.slotId === slotId)?.locked);
     setSelectedProductionSlots(slotIds);
     setCollapsedSections((current) => ({ ...current, outputs: true, production: false }));
+    setSelectedWorkflowStep(3);
     setHoveredWorkflowStep(3);
     globalThis.requestAnimationFrame?.(() => {
       sectionRefs.current.production?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2693,8 +2706,8 @@ export default function EcommerceWorkspace({
       ) : !hasAccess && form.masterAssetId ? (
         <div className="ecommerceGate">
           <Sparkles size={24} />
-          <div><strong>{t.creditsTitle}</strong><span>{t.creditsText}</span></div>
-          <button type="button" onClick={onBilling}>{t.recharge}</button>
+          <div><strong>{profile?.groupAccount ? (profile.groupAccount.role === 'member' ? (language === 'zh' ? '集团预算不足' : 'Group budget required') : (language === 'zh' ? '集团余额不足' : 'Group balance required')) : t.creditsTitle}</strong><span>{profile?.groupAccount ? (profile.groupAccount.role === 'member' ? t.groupBudgetRequired : t.groupBalanceRequired) : t.creditsText}</span></div>
+          {!profile?.groupAccount ? <button type="button" onClick={onBilling}>{t.recharge}</button> : null}
         </div>
       ) : null}
 
