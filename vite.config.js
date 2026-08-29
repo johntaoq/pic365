@@ -142,6 +142,7 @@ function localApiPlugin() {
 export default defineConfig(({ mode }) => {
   const fileEnv = loadEnv(mode, process.cwd(), '');
   const buildId = process.env.PIC365_BUILD_ID || new Date().toISOString();
+  const assetVersion = String(buildId).replace(/[^a-zA-Z0-9_-]/g, '').slice(-24) || String(Date.now());
   for (const [key, value] of Object.entries(fileEnv)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
@@ -154,7 +155,12 @@ export default defineConfig(({ mode }) => {
     publicDir: false,
     build: {
       outDir: 'dist',
-      sourcemap: false
+      sourcemap: false,
+      rollupOptions: {
+        output: {
+          assetFileNames: `assets/[name]-[hash]-${assetVersion}[extname]`
+        }
+      }
     }
   };
 });

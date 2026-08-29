@@ -5,14 +5,18 @@ import {
   createFreeGenerationTask,
   createFreeGenerationTasks,
   deleteFreeGenerationTask,
+  getFreeGenerationTask,
   listFreeGenerationTasks,
+  MAX_ACTIVE_FREE_GENERATION_TASKS,
   MAX_FREE_GENERATION_TASKS
 } from './_lib/free-generation-queue.js';
 import { readJsonBody } from './_lib/request.js';
+import { getInfiniteCanvasProject } from './_lib/infinite-canvas-db.js';
 import { startFreeGenerationWorker } from '../server/free-generation-worker.js';
 import {
   resolveSourceImageSizeForModel,
-  validateImageReferenceInputsForModel
+  validateImageReferenceInputsForModel,
+  validateImageSizeForModel
 } from '../shared/image-generation.js';
 
 function json(res, status, payload) {
@@ -30,7 +34,12 @@ function serverValidatedBatchRepairTask(task = {}) {
   const provider = getImageProviderConfig(String(task.providerId || '').trim());
   if (!provider) return task;
   const references = Array.isArray(task.references) ? task.references.slice(0, 1) : [];
-  if (!references.length && ['INVALID_REFERENCE_IMAGE_FORMAT', 'PROVIDER_REFERENCE_UNSUPPORTED'].includes(task.preflightError)) {
+  if (!references.length && [
+    'INVALID_REFERENCE_IMAGE_FORMAT',
+    'PROVIDER_REFERENCE_UNSUPPORTED',
+    'PROVIDER_SOURCE_SIZE_UNSUPPORTED',
+    'PROVIDER_OUTPUT_SIZE_UNSUPPORTED'
+  ].includes(task.preflightError)) {
     return { ...task, references: [], size: '1024x1024' };
   }
   const referenceCheck = validateImageReferenceInputsForModel({
@@ -48,15 +57,21 @@ function serverValidatedBatchRepairTask(task = {}) {
         : 'PROVIDER_REFERENCE_UNSUPPORTED'
     };
   }
-  const sizing = resolveSourceImageSizeForModel({
-    width: task.sourceWidth,
-    height: task.sourceHeight
-  }, provider.model);
+  const preserveSourceSize = task.preserveSourceSize !== false;
+  const sizing = preserveSourceSize
+    ? resolveSourceImageSizeForModel({
+        width: task.sourceWidth,
+        height: task.sourceHeight
+      }, provider.model)
+    : { ...validateImageSizeForModel(task.size, provider.model), size: task.size };
   return {
     ...task,
     references,
     size: sizing.valid ? sizing.size : '1024x1024',
-    preflightError: sizing.valid ? '' : 'PROVIDER_SOURCE_SIZE_UNSUPPORTED'
+    preserveSourceSize,
+    preflightError: sizing.valid
+      ? ''
+      : preserveSourceSize ? 'PROVIDER_SOURCE_SIZE_UNSUPPORTED' : 'PROVIDER_OUTPUT_SIZE_UNSUPPORTED'
   };
 }
 
@@ -71,7 +86,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const tasks = listFreeGenerationTasks(auth.user.id);
-    return json(res, 200, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS });
+    return json(res, 200, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
   }
 
   let body;
@@ -94,21 +109,38 @@ export default async function handler(req, res) {
   }
 
   try {
+    const canvasProjectIds = Array.isArray(body.tasks)
+      ? body.tasks.map((task) => String(task?.canvasProjectId || '').trim()).filter(Boolean)
+      : [String(body.canvasProjectId || '').trim()].filter(Boolean);
+    if (canvasProjectIds.some((projectId) => !getInfiniteCanvasProject(auth.user.id, projectId))) {
+      return json(res, 404, { ok: false, error: 'CANVAS_PROJECT_NOT_FOUND' });
+    }
     if (body.action === 'redo') {
       const taskId = String(body.taskId || '').trim().slice(0, 160);
       if (!taskId) return json(res, 400, { ok: false, error: 'TASK_ID_REQUIRED' });
-      const request = buildFreeGenerationRedoRequest(auth.user.id, taskId);
+      const request = buildFreeGenerationRedoRequest(auth.user.id, taskId, {
+        clientTaskId: body.clientTaskId,
+        canvasTaskNodeId: body.canvasTaskNodeId,
+        canvasX: body.canvasX,
+        canvasY: body.canvasY,
+        replaceTaskId: Boolean(body.replaceTaskId)
+      });
       const task = createFreeGenerationTask(auth.user.id, serverValidatedBatchRepairTask(request));
-      return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS });
+      return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
     }
     if (Array.isArray(body.tasks)) {
       const tasks = createFreeGenerationTasks(auth.user.id, body.tasks.map(serverValidatedBatchRepairTask));
-      return json(res, 201, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS });
+      return json(res, 201, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
     }
     const task = createFreeGenerationTask(auth.user.id, body);
-    return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS });
+    return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
   } catch (error) {
-    const status = ['TASK_LIST_FULL', 'TASK_ALREADY_EXISTS', 'TASK_ACTIVE'].includes(error?.code) ? 409
+    if (error?.code === 'TASK_ALREADY_EXISTS' && !Array.isArray(body.tasks)) {
+      const taskId = String(body.clientTaskId || '').trim().slice(0, 160);
+      const task = taskId ? getFreeGenerationTask(auth.user.id, taskId) : null;
+      if (task) return json(res, 200, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, duplicate: true });
+    }
+    const status = ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT', 'TASK_ALREADY_EXISTS', 'TASK_ACTIVE'].includes(error?.code) ? 409
       : error?.code === 'TASK_NOT_FOUND' ? 404
       : error?.code === 'REQUEST_BODY_TOO_LARGE' ? 413
         : 400;

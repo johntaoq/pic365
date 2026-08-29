@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { getDb } from './local-db.js';
 
-export const MAX_FREE_GENERATION_TASKS = 20;
+export const MAX_FREE_GENERATION_TASKS = 30;
+export const MAX_ACTIVE_FREE_GENERATION_TASKS = 20;
 export const FREE_GENERATION_CONCURRENCY_PER_USER = 3;
 const ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling']);
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
@@ -26,6 +27,7 @@ function cleanText(value, maxLength) {
 
 function resultItems(row) {
   const payload = parseJson(row.result_json, {});
+  const unitCredits = Number(payload.unitCredits || 0);
   const images = Array.isArray(payload.images) && payload.images.length ? payload.images : payload.image ? [payload] : [];
   return images.map((item, index) => ({
     id: item.generationId || `${row.id}-${index}`,
@@ -36,6 +38,7 @@ function resultItems(row) {
     prompt: row.prompt || '',
     size: item.size || row.size,
     quality: item.quality || row.quality,
+    creditsCharged: Number(item.creditsCharged || unitCredits || 0),
     downloadAllowed: Boolean(item.downloadAllowed),
     cloudSaved: Boolean(item.cloudSaved),
     storageBackend: item.storageBackend || '',
@@ -63,6 +66,15 @@ export function normalizeFreeGenerationTask(row, { includeRequest = false } = {}
     sourceWidth: Number(row.source_width || 0),
     sourceHeight: Number(row.source_height || 0),
     sourceThumbnail: row.source_thumbnail || '',
+    canvasProjectId: cleanText(storedRequest.canvasProjectId, 160),
+    canvasParentNodeId: cleanText(storedRequest.canvasParentNodeId, 160),
+    canvasTaskNodeId: cleanText(storedRequest.canvasTaskNodeId, 160),
+    canvasDisplayPrompt: cleanText(storedRequest.canvasDisplayPrompt, 6000),
+    canvasReferenceNodeIds: Array.isArray(storedRequest.canvasReferenceNodeIds)
+      ? storedRequest.canvasReferenceNodeIds.map((value) => cleanText(value, 160)).filter(Boolean).slice(0, 9)
+      : [],
+    canvasX: storedRequest.canvasX != null && Number.isFinite(Number(storedRequest.canvasX)) ? Number(storedRequest.canvasX) : null,
+    canvasY: storedRequest.canvasY != null && Number.isFinite(Number(storedRequest.canvasY)) ? Number(storedRequest.canvasY) : null,
     results: resultItems(row),
     error: row.error_code || '',
     cancelRequested: Boolean(row.cancel_requested),
@@ -112,10 +124,27 @@ function normalizedTaskRequest(request = {}) {
   const sourceHeight = taskMode === 'batch-repair' ? Math.max(0, Math.round(Number(request.sourceHeight) || 0)) : 0;
   const sourceThumbnail = taskMode === 'batch-repair' ? cleanText(request.sourceThumbnail, 180_000) : '';
   const requestedPreflightError = cleanText(request.preflightError, 120);
-  const preflightError = ['PROVIDER_SOURCE_SIZE_UNSUPPORTED', 'INVALID_REFERENCE_IMAGE_FORMAT', 'PROVIDER_REFERENCE_UNSUPPORTED'].includes(requestedPreflightError)
+  const preflightError = ['PROVIDER_SOURCE_SIZE_UNSUPPORTED', 'PROVIDER_OUTPUT_SIZE_UNSUPPORTED', 'INVALID_REFERENCE_IMAGE_FORMAT', 'PROVIDER_REFERENCE_UNSUPPORTED'].includes(requestedPreflightError)
     ? requestedPreflightError
     : '';
-  const references = Array.isArray(request.references) ? request.references.slice(0, 9) : [];
+  const preserveSourceSize = taskMode === 'batch-repair' ? request.preserveSourceSize !== false : false;
+  const requestedReferences = Array.isArray(request.references) ? request.references : [];
+  if (requestedReferences.length > 9) {
+    const error = new Error('TOO_MANY_REFERENCE_IMAGES');
+    error.code = 'TOO_MANY_REFERENCE_IMAGES';
+    throw error;
+  }
+  const references = requestedReferences;
+  const canvasProjectId = cleanText(request.canvasProjectId, 160);
+  const canvasParentNodeId = cleanText(request.canvasParentNodeId, 160);
+  const canvasTaskNodeId = cleanText(request.canvasTaskNodeId, 160);
+  const canvasDisplayPrompt = cleanText(request.canvasDisplayPrompt, 6000);
+  const canvasReferenceNodeIds = Array.isArray(request.canvasReferenceNodeIds)
+    ? request.canvasReferenceNodeIds.map((value) => cleanText(value, 160)).filter(Boolean).slice(0, 9)
+    : [];
+  const canvasX = Number.isFinite(Number(request.canvasX)) ? Number(request.canvasX) : null;
+  const canvasY = Number.isFinite(Number(request.canvasY)) ? Number(request.canvasY) : null;
+  const replaceTaskId = cleanText(request.replaceTaskId, 160);
   if (taskMode === 'batch-repair' && (!batchId || !sourceWidth || !sourceHeight || (!preflightError && references.length !== 1))) {
     const error = new Error('INVALID_BATCH_REPAIR_TASK');
     error.code = 'INVALID_BATCH_REPAIR_TASK';
@@ -130,12 +159,20 @@ function normalizedTaskRequest(request = {}) {
     references,
     clientTaskId: id,
     taskMode,
+    canvasProjectId,
+    canvasParentNodeId,
+    canvasTaskNodeId,
+    canvasDisplayPrompt,
+    canvasReferenceNodeIds,
+    canvasX,
+    canvasY,
     ...(taskMode === 'batch-repair' ? {
       batchId,
       batchIndex,
       sourceName,
       sourceWidth,
-      sourceHeight
+      sourceHeight,
+      preserveSourceSize
     } : {})
   });
   if (Buffer.byteLength(serialized, 'utf8') > 24 * 1024 * 1024) {
@@ -158,7 +195,16 @@ function normalizedTaskRequest(request = {}) {
     sourceWidth,
     sourceHeight,
     sourceThumbnail,
-    preflightError
+    preflightError,
+    preserveSourceSize,
+    canvasProjectId,
+    canvasParentNodeId,
+    canvasTaskNodeId,
+    canvasDisplayPrompt,
+    canvasReferenceNodeIds,
+    canvasX,
+    canvasY,
+    replaceTaskId
   };
 }
 
@@ -181,14 +227,57 @@ export function createFreeGenerationTasks(userId, requests = []) {
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    const count = Number(db.prepare(`
-      SELECT COUNT(*) AS count FROM free_generation_tasks
+    const replacementIds = [...new Set(normalized.map((item) => item.replaceTaskId).filter(Boolean))];
+    const replacement = db.prepare(`
+      SELECT id, status FROM free_generation_tasks
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    `);
+    for (const taskId of replacementIds) {
+      const row = replacement.get(taskId, userId);
+      if (!row) {
+        const error = new Error('TASK_NOT_FOUND');
+        error.code = 'TASK_NOT_FOUND';
+        throw error;
+      }
+      if (ACTIVE_STATUSES.has(row.status)) {
+        const error = new Error('TASK_ACTIVE');
+        error.code = 'TASK_ACTIVE';
+        throw error;
+      }
+    }
+    const counts = db.prepare(`
+      SELECT COUNT(*) AS count,
+        SUM(CASE WHEN status IN ('queued', 'running', 'cancelling') THEN 1 ELSE 0 END) AS active_count
+      FROM free_generation_tasks
       WHERE user_id = ? AND deleted_at IS NULL
-    `).get(userId)?.count || 0);
-    if (count + normalized.length > MAX_FREE_GENERATION_TASKS) {
-      const error = new Error('TASK_LIST_FULL');
-      error.code = 'TASK_LIST_FULL';
+    `).get(userId) || {};
+    const activeCount = Number(counts.active_count || 0);
+    const newActiveCount = normalized.filter((item) => !item.preflightError).length;
+    if (activeCount + newActiveCount > MAX_ACTIVE_FREE_GENERATION_TASKS) {
+      const error = new Error('TASK_ACTIVE_LIMIT');
+      error.code = 'TASK_ACTIVE_LIMIT';
       throw error;
+    }
+    const projectedCount = Number(counts.count || 0) - replacementIds.length + normalized.length;
+    const overflow = Math.max(0, projectedCount - MAX_FREE_GENERATION_TASKS);
+    if (overflow) {
+      const replacementSet = new Set(replacementIds);
+      const removable = db.prepare(`
+        SELECT id FROM free_generation_tasks
+        WHERE user_id = ? AND deleted_at IS NULL
+          AND status IN ('completed', 'failed', 'cancelled', 'interrupted')
+        ORDER BY COALESCE(completed_at, updated_at, created_at) ASC, created_at ASC, id ASC
+      `).all(userId).filter((row) => !replacementSet.has(row.id)).slice(0, overflow);
+      if (removable.length < overflow) {
+        const error = new Error('TASK_LIST_FULL');
+        error.code = 'TASK_LIST_FULL';
+        throw error;
+      }
+      const evict = db.prepare(`
+        UPDATE free_generation_tasks SET deleted_at = ?, request_json = '{}', updated_at = ?
+        WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+      `);
+      for (const row of removable) evict.run(createdAt, createdAt, row.id, userId);
     }
     const exists = db.prepare('SELECT 1 FROM free_generation_tasks WHERE id = ?');
     const insert = db.prepare(`
@@ -228,6 +317,11 @@ export function createFreeGenerationTasks(userId, requests = []) {
         blocked ? createdAt : null
       );
     }
+    const releaseReplaced = db.prepare(`
+      UPDATE free_generation_tasks SET deleted_at = ?, updated_at = ?
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+    `);
+    for (const taskId of replacementIds) releaseReplaced.run(createdAt, createdAt, taskId, userId);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -240,7 +334,7 @@ export function createFreeGenerationTask(userId, request = {}) {
   return createFreeGenerationTasks(userId, [request])[0];
 }
 
-export function buildFreeGenerationRedoRequest(userId, taskId) {
+export function buildFreeGenerationRedoRequest(userId, taskId, overrides = {}) {
   const task = getFreeGenerationTask(userId, taskId, { includeRequest: true });
   if (!task) {
     const error = new Error('TASK_NOT_FOUND');
@@ -274,13 +368,23 @@ export function buildFreeGenerationRedoRequest(userId, taskId) {
     providerId: task.providerId,
     references,
     taskMode: task.taskMode,
+    canvasProjectId: task.canvasProjectId,
+    canvasParentNodeId: task.canvasParentNodeId,
+    canvasTaskNodeId: cleanText(overrides.canvasTaskNodeId, 160),
+    canvasDisplayPrompt: task.canvasDisplayPrompt,
+    canvasReferenceNodeIds: task.canvasReferenceNodeIds,
+    canvasX: Number.isFinite(Number(overrides.canvasX)) ? Number(overrides.canvasX) : task.canvasX,
+    canvasY: Number.isFinite(Number(overrides.canvasY)) ? Number(overrides.canvasY) : task.canvasY,
+    clientTaskId: cleanText(overrides.clientTaskId, 160) || randomUUID(),
+    replaceTaskId: overrides.replaceTaskId ? task.id : '',
     ...(task.taskMode === 'batch-repair' ? {
       batchId: `redo-${randomUUID()}`,
       batchIndex: 0,
       sourceName: task.sourceName,
       sourceWidth: task.sourceWidth,
       sourceHeight: task.sourceHeight,
-      sourceThumbnail: task.sourceThumbnail
+      sourceThumbnail: task.sourceThumbnail,
+      preserveSourceSize: storedRequest.preserveSourceSize !== false
     } : {})
   };
 }

@@ -399,6 +399,14 @@ button {
   width: min(1500px, calc(100% - 40px));
 }
 
+.topbarPage-canvas {
+  display: none;
+}
+
+header.topbar.topbarPage-canvas {
+  display: none !important;
+}
+
 .topbar .brand,
 .topbar nav,
 .topbar .dropdownTrigger,
@@ -1284,6 +1292,550 @@ button {
     justify-content: flex-start;
     margin-left: 0;
   }
+}
+
+/* Global light appearance. The dark appearance remains the default. */
+html[data-theme="light"] {
+  color-scheme: light;
+  background: #eef3f8;
+  color: #26384d;
+}
+
+body[data-theme="light"] {
+  background:
+    radial-gradient(circle at 12% 7%, rgba(44, 182, 199, 0.12), transparent 28rem),
+    radial-gradient(circle at 88% 0%, rgba(177, 109, 211, 0.09), transparent 30rem),
+    linear-gradient(180deg, #f7fafc 0%, #eef3f8 48%, #e9eff5 100%);
+  color: #26384d;
+}
+
+.siteThemeToggle {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 44px;
+  min-width: 44px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(9, 15, 32, 0.68);
+  color: #f9d76d;
+  cursor: pointer;
+}
+
+.siteThemeToggle:hover { border-color: rgba(249, 215, 109, 0.62); background: rgba(249, 215, 109, 0.12); color: #fff1a8; }
+
+.siteThemeLight {
+  --text: #26384d;
+  --muted: #6d8095;
+  color: #26384d;
+}
+
+.siteThemeLight .topbar {
+  border-color: rgba(77, 142, 154, 0.2);
+  background:
+    linear-gradient(112deg, rgba(232, 250, 245, 0.92), rgba(255, 255, 255, 0.94) 44%, rgba(239, 240, 255, 0.9));
+  box-shadow: 0 16px 42px rgba(64, 84, 108, 0.13), 0 8px 30px rgba(91, 205, 188, 0.08), inset 0 1px 0 #ffffff;
+}
+
+.siteThemeLight .topbar .brand,
+.siteThemeLight .languageSwitch,
+.siteThemeLight .dropdownTrigger,
+.siteThemeLight .userTrigger,
+.siteThemeLight .notificationTrigger,
+.siteThemeLight .siteThemeToggle {
+  border-color: rgba(72, 96, 122, 0.16);
+  background: rgba(250, 252, 254, 0.86);
+  color: #40566e;
+  box-shadow: none;
+}
+
+.siteThemeLight .topbar nav.pageTabs {
+  border-color: rgba(74, 143, 159, 0.22);
+  background: linear-gradient(105deg, rgba(207, 246, 232, 0.72), rgba(222, 242, 247, 0.8) 54%, rgba(229, 229, 250, 0.72));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 0 6px 18px rgba(70, 132, 151, 0.08);
+}
+
+.siteThemeLight .siteThemeToggle { color: #b16a00; }
+.siteThemeLight .siteThemeToggle:hover { border-color: rgba(13, 148, 136, 0.4); background: #e5f5f0; color: #116657; }
+.siteThemeLight .topbar nav button.pageTab,
+.siteThemeLight .topbar nav a { color: #526980; }
+.siteThemeLight .topbar nav button.pageTab:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: #126e6b;
+  box-shadow: 0 3px 10px rgba(48, 124, 137, 0.1);
+}
+.siteThemeLight .topbar nav button.pageTab.active {
+  border: 1px solid rgba(20, 139, 128, 0.24);
+  background: linear-gradient(135deg, #b9efd9, #b9def3);
+  color: #0b625f;
+  box-shadow: inset 0 -2px 0 #0d9488, 0 5px 14px rgba(40, 141, 142, 0.16);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.58);
+}
+.siteThemeLight .topbar nav button.adminPageTab:not(.active) {
+  border-color: rgba(109, 82, 190, 0.18);
+  background: rgba(239, 236, 252, 0.62);
+  color: #62558a;
+}
+.siteThemeLight .topbar .languageSwitch { background: rgba(230, 242, 251, 0.82); }
+.siteThemeLight .topbar .notificationTrigger { background: rgba(232, 248, 243, 0.84); }
+.siteThemeLight .topbar .userTrigger { background: linear-gradient(135deg, rgba(222, 248, 239, 0.9), rgba(226, 241, 252, 0.9)); }
+.siteThemeLight .notificationTrigger:hover,
+.siteThemeLight .notificationTrigger.open { border-color: rgba(13, 148, 136, 0.42); background: #e5f5f0; color: #116657; }
+.siteThemeLight .notificationTrigger.hasUnread { border-color: rgba(13, 148, 136, 0.5); color: #0f766e; box-shadow: 0 0 18px rgba(13, 148, 136, 0.12); }
+.siteThemeLight .notificationTrigger > span { border-color: #ffffff; background: #0d9488; color: #ffffff; }
+.siteThemeLight .notificationDropdown,
+.siteThemeLight .dropdownMenu {
+  border-color: #d2dce6;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 22px 70px rgba(55, 78, 103, 0.2);
+}
+.siteThemeLight .notificationDropdown > header { border-bottom-color: #dce4ec; }
+.siteThemeLight .notificationDropdown > header strong,
+.siteThemeLight .notificationItemSummary strong { color: #26384d; }
+.siteThemeLight .notificationDropdown > header span,
+.siteThemeLight .notificationItemSummary small,
+.siteThemeLight .notificationItemBody,
+.siteThemeLight .notificationEmpty { color: #6d8095; }
+.siteThemeLight .notificationDropdown > header button { color: #147866; }
+.siteThemeLight .notificationItem { border-bottom-color: #e1e8ee; }
+.siteThemeLight .notificationItem.unread { background: #eaf7f3; }
+.siteThemeLight .notificationItemSummary { color: #40566e; }
+.siteThemeLight .notificationTypeIcon { color: #116657; background: #dff2ec; }
+.siteThemeLight .notificationActions button { border-color: rgba(13, 148, 136, 0.3); background: #e5f5f0; color: #116657; }
+.siteThemeLight .notificationActions button.secondary { border-color: #d2dce6; background: #f1f5f8; color: #526980; }
+.siteThemeLight .languageMenu button,
+.siteThemeLight .dropdownAction { color: #40566e; }
+.siteThemeLight .languageMenu button strong { color: #0d7780; }
+.siteThemeLight .languageMenu button:hover,
+.siteThemeLight .languageMenu button.active,
+.siteThemeLight .dropdownAction:hover { background: #eaf7f3; color: #116657; }
+.siteThemeLight .dropdownAction.danger:hover { background: #fff0f2; color: #b83249; }
+.siteThemeLight .userSummary svg { color: #0d7780; }
+.siteThemeLight .userSummaryAvatar { border-color: rgba(13, 148, 136, 0.28); }
+.siteThemeLight .userSummary strong { color: #26384d; }
+.siteThemeLight .userSummary span { color: #6d8095; }
+.siteThemeLight .userStat { background: #eef3f7; color: #40566e; }
+.siteThemeLight .userStat svg { color: #a46600; }
+.siteThemeLight .userStat.admin { border-color: rgba(13, 148, 136, 0.3); background: #eaf7f3; color: #116657; }
+.siteThemeLight .userStat.admin svg { color: #116657; }
+.siteThemeLight .dropdownDivider { background: #dce4ec; }
+
+.siteThemeLight input,
+.siteThemeLight textarea,
+.siteThemeLight select { color-scheme: light; }
+.siteThemeLight input::placeholder,
+.siteThemeLight textarea::placeholder { color: #8998a9; opacity: 1; }
+.siteThemeLight select option,
+.siteThemeLight select optgroup { background: #ffffff; color: #26384d; }
+
+.siteThemeLight .hero h1,
+.siteThemeLight .sectionHead h2,
+.siteThemeLight .templateHead h2,
+.siteThemeLight .cooperationPage h1 { color: #1d2f43; }
+.siteThemeLight .hero p,
+.siteThemeLight .templateHead p { color: #5e7289; }
+.siteThemeLight .scanGrid { background-image: linear-gradient(rgba(72, 96, 122, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(72, 96, 122, 0.08) 1px, transparent 1px); }
+.siteThemeLight .eyebrow,
+.siteThemeLight .metrics span,
+.siteThemeLight .searchBox,
+.siteThemeLight .filterPanel,
+.siteThemeLight .resultBar,
+.siteThemeLight .caseCard {
+  border-color: rgba(72, 96, 122, 0.17);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 46px rgba(55, 78, 103, 0.11);
+}
+.siteThemeLight .eyebrow { color: #0d7780; }
+.siteThemeLight .metrics span,
+.siteThemeLight .resultBar { color: #65798f; }
+.siteThemeLight .metrics strong { color: #26384d; }
+.siteThemeLight .searchBox input { color: #26384d; }
+.siteThemeLight .filterPanel strong { color: #30445a; }
+.siteThemeLight .filterPill { border-color: #d4dee8; background: #f3f6f9; color: #5c7188; }
+.siteThemeLight .filterPill:hover,
+.siteThemeLight .filterPill.active { border-color: rgba(13, 148, 136, 0.55); background: #e2f2ed; color: #116657; }
+.siteThemeLight .resultBar a { color: #0d7780; }
+
+.siteThemeLight .templateCard {
+  border-color: #d5dfe8;
+  background: linear-gradient(145deg, #ffffff, #f1f6fa);
+  box-shadow: 0 18px 44px rgba(55, 78, 103, 0.12);
+}
+.siteThemeLight .templateCard::before { border-top-color: rgba(37, 99, 235, 0.12); background-image: linear-gradient(rgba(72, 96, 122, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(72, 96, 122, 0.06) 1px, transparent 1px); }
+.siteThemeLight .templateCard:hover { border-color: rgba(13, 148, 136, 0.42); background: linear-gradient(145deg, #ffffff, #eaf7f3); }
+.siteThemeLight .templateCard span { background: #e5f4f7; color: #0d7780; }
+.siteThemeLight .templateCard h3,
+.siteThemeLight .caseBody h3 { color: #26384d; }
+.siteThemeLight .templateCard p,
+.siteThemeLight .caseBody p { color: #63778d; }
+.siteThemeLight .templateCard strong,
+.siteThemeLight .caseMeta a { color: #167463; }
+.siteThemeLight .caseCard:hover { border-color: rgba(13, 148, 136, 0.42); background: #ffffff; }
+.siteThemeLight .caseImage { background: #e8eef3; }
+.siteThemeLight .caseMeta { color: #0d7780; }
+.siteThemeLight .tagRow span { background: #eef3f7; color: #526980; }
+.siteThemeLight .cardActions button,
+.siteThemeLight .cardActions a { border-color: #d5dfe8; background: #f3f6f9; color: #40566e; }
+.siteThemeLight .cardActions button:hover,
+.siteThemeLight .cardActions a:hover { border-color: rgba(13, 148, 136, 0.42); background: #e2f2ed; color: #116657; }
+.siteThemeLight .favoriteAction.active { border-color: rgba(219, 39, 119, 0.3); background: #fff0f6; color: #b42366; }
+
+.siteThemeLight .createWorkspaceSection,
+.siteThemeLight .freeImageWorkspace,
+.siteThemeLight .ecommerceWorkspace,
+.siteThemeLight .mediaAssetCenter,
+.siteThemeLight .adminWorkspace,
+.siteThemeLight .cooperationPage { color: #26384d; }
+.siteThemeLight .freeImageHeader h2 { background: linear-gradient(92deg, #1d2f43, #17685a 70%, #0d7780); background-clip: text; text-shadow: none; }
+.siteThemeLight .freeImageHeaderStatus { color: #6d8095; }
+.siteThemeLight .freeImageHeaderStatus strong { color: #147866; }
+.siteThemeLight .freeImageWorkspaceTabs > button { border-color: #d4dee8; background: #f4f7fa; color: #65798f; }
+.siteThemeLight .freeImageWorkspaceTabs > button.active { border-color: rgba(13, 148, 136, 0.45); background: linear-gradient(135deg, #dff2ec, #eaf2ff); color: #116657; box-shadow: inset 0 -2px 0 #0d9488, 0 8px 22px rgba(55, 78, 103, 0.1); }
+.siteThemeLight .freeImageWorkspaceTabs > button > span { background: #d7f1e9; color: #116657; }
+.siteThemeLight .freeImageQueuePeople,
+.siteThemeLight .freeImageTaskPanel,
+.siteThemeLight .freeImageComposer,
+.siteThemeLight .freeImageResults,
+.siteThemeLight .freeImageHistory,
+.siteThemeLight .freeImageReferenceTray,
+.siteThemeLight .freeImageBatchRepairTray,
+.siteThemeLight .freeImageSettingsCard,
+.siteThemeLight .freeImageControlsPanel,
+.siteThemeLight .freeImageMentionMenu,
+.siteThemeLight .freeImageAssetPicker,
+.siteThemeLight .freeImagePreviewDialog {
+  border-color: #d4dee8;
+  background: rgba(255, 255, 255, 0.94);
+  color: #30445a;
+  box-shadow: 0 18px 50px rgba(55, 78, 103, 0.12);
+}
+.siteThemeLight .freeImagePromptWrap textarea,
+.siteThemeLight .freeImageBatchControlRail select,
+.siteThemeLight .freeImageControlRail input,
+.siteThemeLight .freeImageControlRail select,
+.siteThemeLight .freeImageDimensionRail input[type='number'],
+.siteThemeLight .freeImageSettingsCard input,
+.siteThemeLight .freeImageSettingsCard select { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+.siteThemeLight .freeImageDimensionRail input[type='number']:disabled {
+  border-color: #d7e0e8;
+  background: #f1f5f8;
+  color: #526980;
+  opacity: 1;
+  -webkit-text-fill-color: #526980;
+}
+.siteThemeLight .freeImageLockedPromptRule { border-color: rgba(13, 148, 136, 0.22); background: #eaf7f3; color: #466b63; }
+.siteThemeLight .freeImageMagicButton,
+.siteThemeLight .freeImageResultGrid article footer > button { color: #147866; text-shadow: none; }
+.siteThemeLight .freeImageSectionTitle > span,
+.siteThemeLight .freeImageReferenceHeading small,
+.siteThemeLight .freeImageReferenceHeading > span { color: #6d8095; }
+.siteThemeLight .freeImagePrimaryReferenceEmpty,
+.siteThemeLight .freeImagePrimaryReferenceSlot article,
+.siteThemeLight .freeImageReferenceList article,
+.siteThemeLight .freeImageBatchRepairGrid article { border-color: rgba(13, 148, 136, 0.28); background: #f1f6f8; color: #40566e; }
+.siteThemeLight .freeImageBatchRepairUpload {
+  border-color: rgba(13, 148, 136, 0.42);
+  background: radial-gradient(circle at 50% 32%, rgba(13, 148, 136, 0.12), transparent 55%), #eef8f5;
+  color: #116657;
+}
+.siteThemeLight .freeImageBatchRepairUpload:hover:not(:disabled) {
+  border-color: rgba(13, 148, 136, 0.68);
+  background: #dff2ec;
+  color: #0b5c50;
+}
+.siteThemeLight .freeImageBatchRepairUpload:disabled {
+  border-color: #d7e0e8;
+  background: #f1f5f8;
+  color: #6d8095;
+  opacity: 1;
+}
+.siteThemeLight .freeImageBatchRepairGrid article > img { background: #e8edf2; }
+.siteThemeLight .freeImageBatchRepairGrid article > button { border-color: rgba(72, 96, 122, 0.2); background: rgba(255, 255, 255, 0.92); color: #526980; }
+.siteThemeLight .freeImageBatchIndex { background: rgba(255, 255, 255, 0.9); color: #116657; }
+.siteThemeLight .freeImageBatchRepairGrid article footer > strong { color: #30445a; }
+.siteThemeLight .freeImageBatchRepairGrid article footer > small { color: #6d8095; }
+.siteThemeLight .freeImageBatchModeBar,
+.siteThemeLight .freeImageBatchImagePanel,
+.siteThemeLight .freeImageBatchPromptPanel { border-color: #d4dee8; background: rgba(255, 255, 255, 0.94); color: #30445a; }
+.siteThemeLight .freeImageBatchModeBar > div strong,
+.siteThemeLight .freeImageBatchImagePanel > header strong,
+.siteThemeLight .freeImageBatchPromptPanel > header strong { color: #30445a; }
+.siteThemeLight .freeImageBatchModeBar > div span,
+.siteThemeLight .freeImageBatchImagePanel > header span,
+.siteThemeLight .freeImageBatchPromptPanel > header span,
+.siteThemeLight .freeImageBatchRepairUpload small,
+.siteThemeLight .freeImageBatchPromptUpload small,
+.siteThemeLight .freeImageBatchPromptEmpty { color: #6d8095; }
+.siteThemeLight .freeImageBatchToggle,
+.siteThemeLight .freeImageBatchSizeChoice > label { color: #40566e; }
+.siteThemeLight .freeImageBatchRepairUpload,
+.siteThemeLight .freeImageBatchPromptUpload { border-color: rgba(13, 148, 136, 0.42); background: #eef8f5; color: #116657; }
+.siteThemeLight .freeImageBatchRepairUpload:hover:not(:disabled),
+.siteThemeLight .freeImageBatchPromptUpload:hover:not(:disabled) { border-color: rgba(13, 148, 136, 0.68); background: #dff2ec; color: #0b5c50; }
+.siteThemeLight .freeImageBatchSharedPrompt,
+.siteThemeLight .freeImageBatchPromptList textarea { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+.siteThemeLight .freeImagePromptFormatExample { border-color: #cfe2dd; background: linear-gradient(135deg, #eef8f5, #f4f8fc); }
+.siteThemeLight .freeImagePromptFormatExample strong { color: #116657; }
+.siteThemeLight .freeImagePromptFormatExample span { color: #60758d; }
+.siteThemeLight .freeImageBatchPromptList article > button { border-color: rgba(13, 148, 136, 0.3); background: #eaf7f3; color: #116657; }
+.siteThemeLight .freeImageBatchClear { border-color: #d4dee8; background: #f4f7fa; color: #526980; }
+.siteThemeLight .freeImageBatchClear:hover:not(:disabled) { border-color: rgba(190, 57, 75, 0.32); background: #fff0f2; color: #b83249; }
+.siteThemeLight .freeImageReferenceUpload { border-color: rgba(13, 148, 136, 0.38); background: radial-gradient(circle at 30% 20%, rgba(13, 148, 136, 0.12), transparent 58%), #eef8f5; color: #116657; }
+.siteThemeLight .freeImageReferenceUpload:hover:not(:disabled) { border-color: rgba(13, 148, 136, 0.66); background: #dff2ec; color: #0b5c50; }
+.siteThemeLight .freeImageReferenceSourceMenu { border-color: #d4dee8; background: #ffffff; box-shadow: 0 18px 48px rgba(55, 78, 103, 0.18); }
+.siteThemeLight .freeImageReferenceSourceMenu button { color: #40566e; }
+.siteThemeLight .freeImageReferenceSourceMenu button:hover { background: #eaf7f3; color: #116657; }
+.siteThemeLight .freeImageSizeModeRow button,
+.siteThemeLight .freeImageRatioRow button,
+.siteThemeLight .freeImageSegmented button { border-color: #d4dee8; background: #f4f7fa; color: #5c7188; }
+.siteThemeLight .freeImageSizeModeRow button.active,
+.siteThemeLight .freeImageRatioRow button.active,
+.siteThemeLight .freeImageSegmented button.active { border-color: rgba(13, 148, 136, 0.48); background: #dff2ec; color: #116657; }
+.siteThemeLight .freeImageQueueButton,
+.siteThemeLight .freeImageGenerateButton { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight .freeImageTaskItem,
+.siteThemeLight .freeImageHistoryGrid article,
+.siteThemeLight .freeImageResultGrid article { border-color: #d7e0e8; background: #f8fafc; color: #30445a; }
+.siteThemeLight .freeImageTaskPanel > header strong { color: #26384d; }
+.siteThemeLight .freeImageTaskPanel > header span { color: #147866; }
+.siteThemeLight .freeImageTaskItem.completed:hover { border-color: rgba(13, 148, 136, 0.38); background: #eef8f5; }
+.siteThemeLight .freeImageTaskItem.selected { border-color: rgba(13, 148, 136, 0.58); background: linear-gradient(135deg, #dff2ec, #eef6fb); box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.1), inset 3px 0 0 #0d9488; }
+.siteThemeLight .freeImageTaskItem.running { border-color: rgba(37, 99, 235, 0.4); box-shadow: inset 3px 0 0 #3b82f6; }
+.siteThemeLight .freeImageTaskItem.failed { border-color: rgba(190, 57, 75, 0.34); background: #fff7f8; }
+.siteThemeLight .freeImageTaskItem.cancelled { border-color: #d7e0e8; background: #f4f7fa; opacity: 1; }
+.siteThemeLight .freeImageTaskBody > p { color: #40566e; }
+.siteThemeLight .freeImageTaskBody > small:not(.freeImageTaskError) { color: #6d8095; }
+.siteThemeLight .freeImageTaskStatus > span { color: #116657; }
+.siteThemeLight .freeImageTaskStatus > em { color: #65798f; }
+.siteThemeLight .freeImageTaskItem.cancelled .freeImageTaskStatus > span { color: #60758d; }
+.siteThemeLight .freeImageTaskError { color: #b83249; }
+.siteThemeLight .freeImageTaskActions > button { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .freeImageTaskActions > button:hover,
+.siteThemeLight .freeImageTaskActions > button:focus-visible { border-color: rgba(13, 148, 136, 0.4); background: #dff2ec; color: #116657; }
+.siteThemeLight .freeImageTaskRedoButton { color: #40566e !important; }
+.siteThemeLight .freeImageTaskDelete,
+.siteThemeLight .freeImageTaskCancel { border-color: #d4dee8 !important; background: #eef3f7 !important; color: #60758d !important; }
+.siteThemeLight .freeImageTaskCancel { border-color: rgba(180, 120, 0, 0.3) !important; background: #fff6da !important; color: #946100 !important; }
+.siteThemeLight .freeImageTaskDelete:hover,
+.siteThemeLight .freeImageTaskDelete:focus-visible,
+.siteThemeLight .freeImageTaskCancel:hover,
+.siteThemeLight .freeImageTaskCancel:focus-visible { border-color: rgba(190, 57, 75, 0.4) !important; background: #fff0f2 !important; color: #b83249 !important; }
+.siteThemeLight .freeImageTaskThumbnail { border-color: #d4dee8; background: #e8edf2; }
+.siteThemeLight .freeImageTaskEmpty { color: #6d8095; }
+.siteThemeLight .freeImageTemplateLock { border-color: rgba(13, 148, 136, 0.3); background: #eaf7f3; color: #116657; }
+.siteThemeLight .freeImageTemplateLock:hover:not(:disabled) { border-color: rgba(13, 148, 136, 0.52); background: #dff2ec; }
+.siteThemeLight .freeImageHistoryReference { border-color: rgba(255, 255, 255, 0.78); background: rgba(255, 255, 255, 0.9); color: #285eaa; box-shadow: 0 4px 14px rgba(55, 78, 103, 0.18); }
+.siteThemeLight .freeImageHistoryGrid article.selected > .freeImageHistoryReference { border-color: rgba(13, 148, 136, 0.46); background: rgba(13, 148, 136, 0.9); color: #ffffff; }
+.siteThemeLight .freeImageHistoryDelete { border-color: rgba(190, 57, 75, 0.3); background: rgba(255, 245, 246, 0.92); color: #b83249; box-shadow: 0 4px 14px rgba(55, 78, 103, 0.16); }
+.siteThemeLight .freeImageHistoryDelete:hover:not(:disabled) { border-color: rgba(190, 57, 75, 0.5); background: #ffe7eb; color: #982d41; }
+.siteThemeLight .freeImageAssetPicker > header strong { color: #26384d; }
+.siteThemeLight .freeImageAssetPicker > header button { background: #eef3f7; color: #60758d; }
+.siteThemeLight .freeImageAssetPicker > label { border-color: #d4dee8; color: #718399; }
+.siteThemeLight .freeImageAssetPicker > label input { color: #26384d; }
+.siteThemeLight .freeImageAssetPicker > div > button { border-color: #d7e0e8; background: #f8fafc; color: #30445a; }
+.siteThemeLight .freeImageAssetPicker > div > button:hover:not(:disabled) { border-color: rgba(13, 148, 136, 0.42); background: #eaf7f3; }
+.siteThemeLight .freeImageAssetPicker > div > button small,
+.siteThemeLight .freeImageAssetPicker > div > p { color: #6d8095; }
+.siteThemeLight .createQuickFilters button { border-color: #d4dee8; background: #f3f6f9; color: #5c7188; }
+.siteThemeLight .createQuickFilters button:hover,
+.siteThemeLight .createQuickFilters button.active { border-color: rgba(13, 148, 136, 0.5); background: #e2f2ed; color: #116657; }
+.siteThemeLight .createCaseCard { border-color: #d5dfe8; background: #ffffff; color: #26384d; box-shadow: 0 10px 28px rgba(55, 78, 103, 0.08); }
+.siteThemeLight .createCaseCard:hover { border-color: rgba(13, 148, 136, 0.42); background: #f4fbf8; }
+.siteThemeLight .createCaseCard span { color: #0d7780; }
+.siteThemeLight .createCaseCard em { color: #6d8095; }
+.siteThemeLight .freeImageAssetPickerBackdrop,
+.siteThemeLight .freeImagePreviewBackdrop,
+.siteThemeLight .previewOverlay,
+.siteThemeLight .modalBackdrop { background: rgba(49, 65, 84, 0.4); }
+
+.siteThemeLight .ecommerceHero,
+.siteThemeLight .ecommerceWorkflow,
+.siteThemeLight .ecommerceTemplatePanel,
+.siteThemeLight .ecommerceProductionContent,
+.siteThemeLight .ecommerceDeliveryContent,
+.siteThemeLight .ecommerceRevisionPanel,
+.siteThemeLight .ecommerceProjectForm,
+.siteThemeLight .ecommerceProjectCards article,
+.siteThemeLight .ecommerceVisualStylePreview,
+.siteThemeLight .ecommerceProductionSettings,
+.siteThemeLight .ecommerceQualityCheck {
+  border-color: #d4dee8;
+  background: rgba(255, 255, 255, 0.94);
+  color: #30445a;
+  box-shadow: 0 16px 44px rgba(55, 78, 103, 0.1);
+}
+.siteThemeLight .ecommerceField input,
+.siteThemeLight .ecommerceField textarea,
+.siteThemeLight .ecommerceField select,
+.siteThemeLight .ecommerceProductionSelect { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+.siteThemeLight .ecommerceCollapsibleLegend,
+.siteThemeLight .ecommerceProjectListHeader,
+.siteThemeLight .ecommerceSlotHeader { color: #30445a; }
+.siteThemeLight .ecommerceFieldHelp,
+.siteThemeLight .ecommerceMasterHint,
+.siteThemeLight .ecommerceAssetHint,
+.siteThemeLight .ecommerceProductionCopy,
+.siteThemeLight .ecommerceVersionMeta { color: #6d8095; }
+
+.siteThemeLight .mediaAssetHero,
+.siteThemeLight .mediaAssetSidebar,
+.siteThemeLight .mediaAssetMain,
+.siteThemeLight .mediaAssetCreatePanel,
+.siteThemeLight .mediaAssetBulkBar,
+.siteThemeLight .mediaAssetDetail,
+.siteThemeLight .mediaAssetConfirmDialog {
+  border-color: #d4dee8;
+  background: rgba(255, 255, 255, 0.96);
+  color: #30445a;
+  box-shadow: 0 18px 48px rgba(55, 78, 103, 0.12);
+}
+.siteThemeLight .mediaAssetSearch,
+.siteThemeLight .mediaAssetToolbar select,
+.siteThemeLight .mediaAssetToolbar button,
+.siteThemeLight .mediaAssetCreatePanel input,
+.siteThemeLight .mediaAssetCreatePanel select,
+.siteThemeLight .mediaAssetInspector input,
+.siteThemeLight .mediaAssetInspector textarea,
+.siteThemeLight .mediaAssetInspector select { border-color: #d4dee8; background: #f7f9fb; color: #30445a; }
+.siteThemeLight .mediaAssetSearch input { color: #26384d; }
+.siteThemeLight .mediaAssetSidebar nav button,
+.siteThemeLight .mediaAssetCollectionSelect { color: #526980; }
+.siteThemeLight .mediaAssetSidebar nav button:hover,
+.siteThemeLight .mediaAssetSidebar nav button.active { background: #e2f2ed; color: #116657; }
+.siteThemeLight .mediaAssetCard { border-color: #d5dfe8; background: #ffffff; box-shadow: 0 12px 32px rgba(55, 78, 103, 0.09); }
+.siteThemeLight .mediaAssetCard:hover { border-color: rgba(13, 148, 136, 0.42); box-shadow: 0 15px 34px rgba(55, 78, 103, 0.14); }
+.siteThemeLight .mediaAssetCardMedia,
+.siteThemeLight .mediaAssetDetailMedia { background: #e8edf2; }
+.siteThemeLight .mediaAssetSelectionToggle { border-color: rgba(72, 96, 122, 0.28); background: rgba(255, 255, 255, 0.9); color: #40566e; box-shadow: 0 5px 16px rgba(55, 78, 103, 0.18); }
+.siteThemeLight .mediaAssetSelectionToggle[aria-pressed="true"] { border-color: rgba(13, 148, 136, 0.55); background: linear-gradient(135deg, #d7f1e9, #bfe9e1); color: #0b5c50; }
+.siteThemeLight .mediaAssetCardBody span,
+.siteThemeLight .mediaAssetCardBody small,
+.siteThemeLight .mediaAssetCard > button,
+.siteThemeLight .mediaAssetInspectorHeading,
+.siteThemeLight .mediaAssetInspector > label { color: #6d8095; }
+.siteThemeLight .mediaAssetInspector { border-left-color: #dce4ec; }
+.siteThemeLight .mediaAssetOverlay,
+.siteThemeLight .mediaAssetConfirmOverlay { background: rgba(49, 65, 84, 0.4); }
+
+.siteThemeLight .cooperationPage { border-color: #d4dee8; background: radial-gradient(circle at 8% 0%, rgba(13, 148, 136, 0.08), transparent 34%), radial-gradient(circle at 94% 10%, rgba(124, 58, 237, 0.06), transparent 32%), rgba(255, 255, 255, 0.92); box-shadow: 0 24px 70px rgba(55, 78, 103, 0.12); }
+.siteThemeLight .cooperationContactGrid article { border-color: #d5dfe8; background: #f8fafc; }
+.siteThemeLight .cooperationContactGrid article > span { color: #6d8095; }
+.siteThemeLight .cooperationContactGrid em { color: #147866; }
+.siteThemeLight .cooperationContactGrid strong { color: #26384d; }
+
+.siteThemeLight .adminWorkspaceHeader,
+.siteThemeLight .adminWorkspaceNavigation,
+.siteThemeLight .adminWorkspaceContent,
+.siteThemeLight .adminBlock,
+.siteThemeLight .adminPanelCard,
+.siteThemeLight .adminMetricCard,
+.siteThemeLight .adminProviderPricingEditor,
+.siteThemeLight .adminProviderPricingPreview {
+  border-color: #d4dee8;
+  background: rgba(255, 255, 255, 0.95);
+  color: #30445a;
+  box-shadow: 0 16px 42px rgba(55, 78, 103, 0.1);
+}
+.siteThemeLight .adminWorkspaceHeader p,
+.siteThemeLight .adminSectionHeading p,
+.siteThemeLight .adminAccountBlock p,
+.siteThemeLight .adminProviderList article span,
+.siteThemeLight .adminNotice { color: #6d8095; }
+.siteThemeLight .adminEnvironmentBadge { border-color: rgba(13, 148, 136, 0.25); background: #e5f5f0; color: #116657; }
+.siteThemeLight .adminWorkspacePrimaryNav button,
+.siteThemeLight .adminWorkspaceNav button { border-color: #d4dee8; background: #f4f7fa; color: #5c7188; }
+.siteThemeLight .adminWorkspacePrimaryNav button:hover,
+.siteThemeLight .adminWorkspaceNav button:hover { background: #eaf7f3; color: #116657; }
+.siteThemeLight .adminWorkspacePrimaryNav button.active,
+.siteThemeLight .adminWorkspaceNav button.active { border-color: rgba(13, 148, 136, 0.5); background: #dff2ec; color: #116657; box-shadow: inset 0 -2px 0 #0d9488; text-shadow: none; }
+.siteThemeLight .adminWorkspacePrimaryNav button.active::after { background: #0d9488; box-shadow: none; }
+.siteThemeLight .adminWorkspacePrimaryNav button em {
+  min-width: 24px;
+  height: 24px;
+  border-color: #aebdcc;
+  background: #d9e2ea;
+  color: #26384d;
+  box-shadow: inset 0 0 0 1px rgba(72, 96, 122, 0.05);
+  font-size: 11px;
+  font-weight: 900;
+}
+.siteThemeLight .adminWorkspacePrimaryNav button:hover em {
+  border-color: #9fcfc5;
+  background: #d5eee7;
+  color: #0e6558;
+}
+.siteThemeLight .adminWorkspacePrimaryNav button.active em {
+  border-color: #0b665f;
+  background: #0f766e;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 118, 110, 0.3);
+}
+.siteThemeLight .adminPricingForm input,
+.siteThemeLight .adminPricingForm select,
+.siteThemeLight .adminProviderForm input:not([type=checkbox]),
+.siteThemeLight .adminProviderForm select,
+.siteThemeLight .adminRechargeForm input,
+.siteThemeLight .adminRechargeForm select,
+.siteThemeLight .adminNotificationForm input,
+.siteThemeLight .adminNotificationForm select,
+.siteThemeLight .adminNotificationForm textarea,
+.siteThemeLight .adminCustomRange input { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+.siteThemeLight .adminTableWrap { border-color: #d4dee8; background: #ffffff; }
+.siteThemeLight .adminTable th { background: #eef3f7; color: #526980; }
+.siteThemeLight .adminTable td { border-color: #e1e8ee; color: #40566e; }
+
+.siteThemeLight .previewDialog,
+.siteThemeLight .authDialog,
+.siteThemeLight .adminDialog,
+.siteThemeLight .billingDialog,
+.siteThemeLight .accountDialog {
+  border-color: #d2dce6;
+  background: radial-gradient(circle at 18% 0%, rgba(13, 148, 136, 0.08), transparent 38%), #ffffff;
+  color: #30445a;
+  box-shadow: 0 30px 90px rgba(55, 78, 103, 0.24);
+}
+.siteThemeLight .authDialog h2,
+.siteThemeLight .adminDialog h2,
+.siteThemeLight .accountDialog h2,
+.siteThemeLight .billingDialog h2 { color: #26384d; }
+.siteThemeLight .accountForm,
+.siteThemeLight .accountOverview,
+.siteThemeLight .accountPasswordCard,
+.siteThemeLight .billingCard,
+.siteThemeLight .billingState,
+.siteThemeLight .groupAccountCard,
+.siteThemeLight .groupAccountMetrics div,
+.siteThemeLight .accountGovernanceCard { border-color: #d4dee8; background: #f8fafc; color: #30445a; }
+.siteThemeLight .accountForm input,
+.siteThemeLight .accountPasswordForm input,
+.siteThemeLight .billingDialog input,
+.siteThemeLight .billingDialog select,
+.siteThemeLight .groupInlineForm input,
+.siteThemeLight .groupTransferForm input,
+.siteThemeLight .groupTransferForm select,
+.siteThemeLight .groupBudgetControls input { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+.siteThemeLight .previewClose { border-color: #d4dee8; background: rgba(255, 255, 255, 0.92); color: #526980; box-shadow: 0 6px 18px rgba(55, 78, 103, 0.14); }
+.siteThemeLight .previewClose:hover { border-color: rgba(13, 148, 136, 0.38); background: #eaf7f3; color: #116657; }
+.siteThemeLight .accountDialog button:not(.previewClose),
+.siteThemeLight .billingDialog button:not(.previewClose),
+.siteThemeLight .authDialog button:not(.previewClose),
+.siteThemeLight .adminDialog button:not(.previewClose) { border-color: rgba(13, 148, 136, 0.3); background: #eaf7f3; color: #116657; }
+.siteThemeLight .accountDialog button:not(.previewClose):hover,
+.siteThemeLight .billingDialog button:not(.previewClose):hover,
+.siteThemeLight .authDialog button:not(.previewClose):hover,
+.siteThemeLight .adminDialog button:not(.previewClose):hover { border-color: rgba(13, 148, 136, 0.5); background: #dff2ec; color: #0b5c50; }
+.siteThemeLight .accountDialog button.danger,
+.siteThemeLight .billingDialog button.danger,
+.siteThemeLight .adminDialog button.danger { border-color: rgba(190, 57, 75, 0.3); background: #fff0f2; color: #b83249; }
+
+.siteThemeLight .chatCompanionPanel { border-color: #d2dce6; background: rgba(255, 255, 255, 0.98); color: #30445a; box-shadow: 0 24px 70px rgba(55, 78, 103, 0.2); }
+.siteThemeLight .chatCompanionHeader { border-bottom-color: #dce4ec; background: #f7f9fb; }
+.siteThemeLight .chatCompanionMessage { color: #40566e; }
+.siteThemeLight .chatCompanionComposer textarea { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+
+@media (max-width: 640px) {
+  .siteThemeToggle { width: 38px; min-width: 38px; height: 38px; grid-column: 3; grid-row: 1; justify-self: start; margin-left: -92px; }
 }
 
 /* Standalone operations workspace. */
@@ -2971,6 +3523,29 @@ button {
   box-shadow: inset 0 0 30px rgba(66, 153, 225, 0.04);
 }
 
+.freeImagePromptFormatExample {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  border: 1px solid rgba(141, 244, 204, 0.18);
+  border-radius: 11px;
+  padding: 9px 11px;
+  background: linear-gradient(135deg, rgba(141, 244, 204, 0.07), rgba(103, 182, 255, 0.045));
+}
+
+.freeImagePromptFormatExample strong {
+  color: #9cebcf;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.freeImagePromptFormatExample span {
+  color: #8fa4bc;
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
 .freeImagePromptWrap.batchRepairPrompt textarea {
   min-height: 226px;
 }
@@ -3043,6 +3618,121 @@ button {
   border: 1px solid rgba(149, 167, 220, 0.14);
   border-radius: 15px;
   padding: 13px;
+}
+
+.freeImageReferenceTray {
+  display: grid;
+  grid-template-columns: minmax(138px, 1.35fr) minmax(100px, 0.92fr) minmax(82px, 0.72fr) minmax(76px, 0.62fr) minmax(132px, 1.05fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.freeImagePrimaryReferenceColumn,
+.freeImageSupportingReferenceColumn {
+  min-width: 0;
+}
+
+.freeImageSupportingReferenceColumn { position: relative; grid-column: 2 / -1; }
+
+.freeImagePrimaryReferenceColumn {
+  grid-column: 1;
+  align-self: stretch;
+  border-right: 1px solid rgba(149, 167, 220, 0.12);
+  display: grid;
+  grid-template-rows: auto minmax(112px, 1fr);
+  padding-right: 8px;
+}
+
+.freeImagePrimaryReferenceColumn.swapReady .freeImagePrimaryReferenceSlot {
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px rgba(141, 244, 204, 0.2);
+}
+
+.freeImagePrimaryReferenceSlot {
+  display: flex;
+  min-height: 112px;
+  align-items: stretch;
+  margin-top: 10px;
+}
+
+.freeImagePrimaryReferenceSlot article,
+.freeImagePrimaryReferenceEmpty {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 112px;
+  overflow: hidden;
+  border: 1px solid rgba(141, 244, 204, 0.48);
+  border-radius: 11px;
+  background: rgba(5, 15, 26, 0.72);
+}
+
+.freeImagePrimaryReferenceSlot article { max-width: none; }
+.freeImagePrimaryReferenceSlot article.marked { border-color: rgba(250, 204, 21, 0.72); }
+.freeImagePrimaryReferenceSlot article > img { width: 100%; height: 100%; object-fit: cover; }
+.freeImagePrimaryReferenceSlot article > span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 0 0 7px 0;
+  padding: 3px 7px;
+  background: rgba(15, 104, 86, 0.88);
+  color: #e7fff7;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.freeImagePrimaryReferenceEmpty {
+  display: flex;
+  max-width: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-style: dashed;
+  color: #91b8ad;
+  cursor: pointer;
+  font: inherit;
+  padding: 14px;
+  text-align: center;
+}
+
+.freeImagePrimaryReferenceEmpty:disabled { cursor: not-allowed; opacity: 0.42; }
+
+.freeImagePrimaryReferenceEmpty strong { font-size: 11px; }
+.freeImagePrimaryReferenceEmpty small { color: #8295ad; font-size: 9px; font-weight: 680; line-height: 1.45; }
+
+.freeImagePrimaryReferenceSlot article > button {
+  position: absolute;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(5, 10, 20, 0.76);
+  color: #fff;
+  cursor: pointer;
+}
+
+.freeImagePrimaryReferenceSlot article > button.edit { bottom: 5px; left: 5px; }
+.freeImagePrimaryReferenceSlot article > button.remove { top: 5px; right: 5px; }
+.freeImagePrimaryReferenceSlot article > em {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  background: #facc15;
+  color: #211600;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .freeImageReferenceTray,
@@ -3167,9 +3857,8 @@ button {
   white-space: nowrap;
 }
 
-.freeImageBatchRepairGrid article footer > small { color: #8fa1bb; font-size: 9px; }
+.freeImageBatchRepairGrid article footer > small { color: #8fa1bb; font-size: 8px; line-height: 1.25; }
 .freeImageBatchRepairGrid article footer > em { color: #ff9aaa; font-size: 9px; font-style: normal; font-weight: 760; line-height: 1.35; }
-.freeImageBatchRepairGrid .imageCreditPrice { font-size: 9px; margin-top: 2px; }
 
 .freeImageBatchControlRail {
   align-items: end;
@@ -3219,6 +3908,186 @@ button {
 .freeImageBatchQueueButton { width: 100%; }
 .freeImageBatchQueueButton > strong { border-left: 1px solid rgba(4, 18, 24, 0.2); margin-left: 4px; padding-left: 10px; }
 
+.freeImageBatchModeBar {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(149, 167, 220, 0.14);
+  border-radius: 14px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 11px 13px;
+}
+
+.freeImageBatchModeBar > div { display: grid; gap: 3px; }
+.freeImageBatchModeBar > div strong { color: var(--text); font-size: 12px; }
+.freeImageBatchModeBar > div span { color: #8395ae; font-size: 10px; }
+
+.freeImageBatchModeBar > .freeImageBatchModeActions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+}
+
+.freeImageBatchClear {
+  align-items: center;
+  background: rgba(149, 167, 220, 0.06);
+  border: 1px solid rgba(149, 167, 220, 0.18);
+  border-radius: 9px;
+  color: #b7c4d7;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+}
+
+.freeImageBatchClear:disabled { cursor: not-allowed; opacity: 0.42; }
+
+.freeImageBatchToggle,
+.freeImageBatchSizeChoice > label {
+  align-items: center;
+  color: #c8d6e8;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 820;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.freeImageBatchToggle input,
+.freeImageBatchSizeChoice input { accent-color: #72e3bd; width: 16px; height: 16px; }
+
+.freeImageBatchWorkspace {
+  display: grid;
+  gap: 11px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.freeImageBatchWorkspace.independent { grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr); }
+
+.freeImageBatchImagePanel,
+.freeImageBatchPromptPanel {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(149, 167, 220, 0.14);
+  border-radius: 15px;
+  min-width: 0;
+  padding: 13px;
+  position: relative;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.freeImageBatchImagePanel.dragActive,
+.freeImageBatchPromptPanel.dragActive {
+  background: rgba(141, 244, 204, 0.075);
+  border-color: rgba(141, 244, 204, 0.72);
+  box-shadow: inset 0 0 0 2px rgba(141, 244, 204, 0.12);
+}
+
+.freeImageBatchImagePanel > header,
+.freeImageBatchPromptPanel > header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.freeImageBatchImagePanel > header strong,
+.freeImageBatchPromptPanel > header strong { color: var(--text); font-size: 11px; }
+.freeImageBatchImagePanel > header span,
+.freeImageBatchPromptPanel > header span { color: #8395ae; font-size: 10px; }
+
+.freeImageBatchUploadSource { position: relative; }
+.freeImageBatchSourceMenu { left: 0; right: auto; top: calc(100% + 6px); }
+
+.freeImageBatchRepairUpload,
+.freeImageBatchPromptUpload {
+  align-items: center;
+  background: rgba(4, 10, 22, 0.62);
+  border: 1px dashed rgba(141, 244, 204, 0.38);
+  border-radius: 12px;
+  color: #baf9e2;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 10px;
+  justify-content: center;
+  min-height: 62px;
+  padding: 10px 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.freeImageBatchRepairUpload > span,
+.freeImageBatchPromptUpload > span { color: inherit; display: grid; gap: 3px; }
+.freeImageBatchRepairUpload strong,
+.freeImageBatchPromptUpload strong { color: inherit; font-size: 11px; }
+.freeImageBatchRepairUpload small,
+.freeImageBatchPromptUpload small { color: #8295b1; font-size: 9px; font-weight: 650; line-height: 1.35; }
+.freeImageBatchPromptUpload:hover:not(:disabled) { background: rgba(141, 244, 204, 0.07); border-color: rgba(141, 244, 204, 0.66); }
+.freeImageBatchPromptUpload:disabled { cursor: not-allowed; opacity: 0.42; }
+
+.freeImageBatchImagePanel .freeImageBatchRepairGrid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); max-height: 350px; }
+.freeImageBatchWorkspace.independent .freeImageBatchRepairGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.freeImageBatchPromptPanel.disabled { opacity: 0.72; }
+.freeImageBatchPromptEmpty {
+  align-items: center;
+  color: #7f91aa;
+  display: flex;
+  font-size: 11px;
+  justify-content: center;
+  min-height: 88px;
+  text-align: center;
+}
+
+.freeImageBatchSharedPrompt,
+.freeImageBatchPromptList textarea {
+  background: rgba(2, 7, 17, 0.5);
+  border: 1px solid rgba(149, 167, 220, 0.2);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.55;
+  outline: none;
+  resize: vertical;
+  width: 100%;
+}
+
+.freeImageBatchSharedPrompt { min-height: 122px; margin-top: 9px; padding: 11px 12px; }
+.freeImageBatchPromptList { display: grid; gap: 7px; margin-top: 9px; max-height: 350px; overflow: auto; padding-right: 3px; }
+.freeImageBatchPromptList article { align-items: stretch; display: grid; gap: 7px; grid-template-columns: 38px minmax(0, 1fr); }
+.freeImageBatchPromptList article.dragging { opacity: 0.58; }
+.freeImageBatchPromptList article > button {
+  align-items: center;
+  background: rgba(141, 244, 204, 0.08);
+  border: 1px solid rgba(141, 244, 204, 0.22);
+  border-radius: 9px;
+  color: #aaf4dd;
+  cursor: grab;
+  display: grid;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  justify-items: center;
+  padding: 7px 4px;
+}
+.freeImageBatchPromptList article > button:active { cursor: grabbing; }
+.freeImageBatchPromptList textarea { min-height: 66px; padding: 9px 10px; }
+.freeImageBatchSharedPrompt:focus,
+.freeImageBatchPromptList textarea:focus { border-color: rgba(141, 244, 204, 0.68); box-shadow: 0 0 0 3px rgba(141, 244, 204, 0.08); }
+
+.freeImageBatchSizeRail { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.65fr) minmax(0, 0.65fr) minmax(0, 1.05fr); }
+.freeImageBatchSizeChoice { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
+.freeImageBatchSizeChoice .freeImageRatioPreview { padding-top: 0; }
+.freeImageBatchActions { display: grid; gap: 10px; grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px); width: 100%; }
+
 .freeImageReferenceHeading {
   align-items: center;
   display: flex;
@@ -3258,6 +4127,12 @@ button {
   scrollbar-color: rgba(141, 244, 204, 0.32) transparent;
 }
 
+.freeImageReferenceSource {
+  position: relative;
+  flex: 0 0 92px;
+  margin-left: auto;
+}
+
 .freeImageReferenceList article {
   aspect-ratio: 1;
   border: 1px solid rgba(149, 167, 220, 0.2);
@@ -3267,7 +4142,11 @@ button {
   min-width: 0;
   overflow: hidden;
   position: relative;
+  cursor: grab;
+  touch-action: none;
 }
+
+.freeImageReferenceList article:active { cursor: grabbing; }
 
 .freeImageReferenceUpload {
   align-items: center;
@@ -3278,7 +4157,7 @@ button {
   border-radius: 11px;
   color: #b9f9e1;
   display: flex;
-  flex: 0 0 92px;
+  width: 92px;
   flex-direction: column;
   font: inherit;
   font-size: 10px;
@@ -3289,6 +4168,83 @@ button {
   padding: 0 8px;
   transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
 }
+
+.freeImageReferenceSourceMenu {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  top: 30px;
+  display: grid;
+  width: 148px;
+  gap: 4px;
+  border: 1px solid rgba(149, 167, 220, 0.22);
+  border-radius: 11px;
+  padding: 5px;
+  background: #0a1221;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.44);
+}
+
+.freeImageReferenceSourceMenu button {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: transparent;
+  color: #c7d7e9;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.freeImageReferenceSourceMenu button:hover { background: rgba(141, 244, 204, 0.1); color: #caffed; }
+
+.freeImageAssetPickerBackdrop {
+  position: fixed;
+  z-index: 160;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(1, 5, 13, 0.82);
+  backdrop-filter: blur(12px);
+}
+
+.freeImageAssetPicker {
+  display: grid;
+  width: min(880px, 94vw);
+  max-height: 86vh;
+  grid-template-rows: auto auto minmax(160px, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(149, 167, 220, 0.24);
+  border-radius: 17px;
+  background: #09101f;
+  box-shadow: 0 30px 110px rgba(0, 0, 0, 0.62);
+}
+
+.freeImageAssetPicker > header { display: flex; min-height: 48px; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid rgba(149,167,220,0.14); }
+.freeImageAssetPicker > header strong { display: inline-flex; align-items: center; gap: 7px; color: #e8f2ff; font-size: 13px; }
+.freeImageAssetPicker > header button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: rgba(255,255,255,0.04); color: #9fb0c5; cursor: pointer; }
+.freeImageAssetPicker > label { display: flex; align-items: center; gap: 7px; margin: 10px 12px; border: 1px solid rgba(149,167,220,0.18); border-radius: 9px; padding: 0 10px; color: #7890aa; }
+.freeImageAssetPicker > label input { width: 100%; height: 36px; border: 0; outline: 0; background: transparent; color: #e7f0fb; }
+.freeImageAssetPicker > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 9px; overflow-y: auto; padding: 0 12px 14px; }
+.freeImageAssetPicker > div > p { grid-column: 1 / -1; display: flex; min-height: 180px; align-items: center; justify-content: center; color: #7f91a8; }
+.freeImageAssetPicker > div > button { display: grid; min-width: 0; grid-template-columns: 1fr auto; gap: 6px; border: 1px solid rgba(149,167,220,0.16); border-radius: 11px; padding: 7px; background: rgba(255,255,255,0.025); color: #cbd9e9; text-align: left; cursor: pointer; }
+.freeImageAssetPicker > div > button:hover:not(:disabled) { border-color: rgba(141,244,204,0.42); background: rgba(141,244,204,0.07); }
+.freeImageAssetPicker > div > button.selected { border-color: rgba(141,244,204,0.72); background: rgba(141,244,204,0.12); box-shadow: inset 0 0 0 1px rgba(141,244,204,0.12); }
+.freeImageAssetPicker > div > button.linked { border-color: rgba(102,191,247,0.34); background: rgba(102,191,247,0.08); }
+.freeImageAssetPicker > div > button:disabled { cursor: not-allowed; opacity: 0.42; }
+.freeImageAssetPicker > div > button img { width: 100%; height: 108px; grid-column: 1 / -1; border-radius: 8px; object-fit: cover; background: #030711; }
+.freeImageAssetPicker > div > button span { display: grid; min-width: 0; gap: 2px; }
+.freeImageAssetPicker > div > button strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.freeImageAssetPicker > div > button small { color: #73869f; font-size: 8px; }
+.freeImageAssetPicker > footer { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-top: 1px solid rgba(149,167,220,0.14); background: rgba(5,10,22,0.72); }
+.freeImageAssetPicker > footer span { color: #91a5bc; font-size: 11px; font-weight: 760; }
+.freeImageAssetPicker > footer button { display: inline-flex; min-width: 138px; min-height: 36px; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgba(141,244,204,0.4); border-radius: 9px; padding: 0 14px; background: linear-gradient(135deg, rgba(90,205,184,0.22), rgba(77,153,211,0.2)); color: #caffed; font: inherit; font-size: 11px; font-weight: 820; cursor: pointer; }
+.freeImageAssetPicker > footer button:disabled { cursor: not-allowed; opacity: 0.42; }
 
 .freeImageReferenceUpload:hover:not(:disabled) {
   background: rgba(141, 244, 204, 0.1);
@@ -4183,6 +5139,11 @@ button {
   .freeImageDimensionGrid {
     grid-template-columns: 1fr;
   }
+
+  .freeImageReferenceTray { grid-template-columns: 1fr; }
+  .freeImagePrimaryReferenceColumn,
+  .freeImageSupportingReferenceColumn { grid-column: 1; }
+  .freeImagePrimaryReferenceColumn { border-right: 0; border-bottom: 1px solid rgba(149, 167, 220, 0.12); padding-right: 0; padding-bottom: 10px; }
 
   .freeImageReferenceList {
     grid-template-columns: repeat(5, minmax(48px, 1fr));
@@ -15229,6 +16190,14 @@ body.deliveryObjectDragging * {
 
 /* Batch repair must stay inside the phone viewport. Keep these overrides last. */
 @media (max-width: 760px) {
+  .freeImageBatchWorkspace.independent { grid-template-columns: minmax(0, 1fr); }
+
+  .freeImageBatchSizeRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .freeImageBatchSizeChoice { min-height: 54px; }
+
+  .freeImageBatchActions { grid-template-columns: minmax(0, 1fr); }
+
   .freeImageBatchRepairGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-height: 400px;
@@ -15253,6 +16222,7 @@ body.deliveryObjectDragging * {
   .freeImageBatchRepairGrid article { min-height: 156px; }
   .freeImageBatchRepairGrid article { grid-template-rows: 78px minmax(0, 1fr); }
   .freeImageBatchRepairGrid article > img { height: 78px; }
+  .freeImageBatchSizeRail { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Governance, redemption and audit surfaces */
@@ -15529,7 +16499,7 @@ body *::-webkit-scrollbar-corner {
   bottom: 24px;
   position: fixed;
   right: 24px;
-  z-index: 120;
+  z-index: 2000;
 }
 
 .chatCompanion.dragging {
@@ -16216,3 +17186,583 @@ body *::-webkit-scrollbar-corner {
     opacity: 1;
   }
 }
+
+/* Final light-theme coverage for workflow controls declared later in this file. */
+.siteThemeLight .ecommerceWorkflow {
+  border-color: #d4dee8;
+  background: rgba(255, 255, 255, 0.94);
+}
+.siteThemeLight .ecommerceWorkflow > button { border-right-color: #e1e8ee; color: #687c92; }
+.siteThemeLight .ecommerceWorkflow > button > span { border-color: #d7e0e8; background: #eef3f7; color: #526980; }
+.siteThemeLight .ecommerceWorkflow > button.active { background: linear-gradient(135deg, #fff3c8, #fff9e8); color: #765000; box-shadow: inset 0 -3px 0 #d99a13; }
+.siteThemeLight .ecommerceWorkflow > button.active > span { border-color: #e0ad35; background: #f4c75c; color: #523600; }
+.siteThemeLight .ecommerceWorkflow > button.active em { color: #8b6409; }
+.siteThemeLight .ecommerceWorkflow > button.completed { color: #17685a; }
+.siteThemeLight .ecommerceWorkflow > button.completed > span { border-color: rgba(13, 148, 136, 0.32); background: #dff2ec; color: #116657; }
+.siteThemeLight .ecommerceWorkflow > button.locked > span { border-color: #dce4ec; background: #f4f7fa; }
+
+.siteThemeLight .ecommerceGate,
+.siteThemeLight .ecommerceProjectNameField,
+.siteThemeLight .ecommerceAssetSection,
+.siteThemeLight .ecommerceIdentityPanel,
+.siteThemeLight .ecommerceBatchToolbar,
+.siteThemeLight .ecommerceConsistencyBar,
+.siteThemeLight .ecommerceRevisionPanel {
+  border-color: #d4dee8;
+  background: #f7f9fb;
+  color: #40566e;
+}
+.siteThemeLight .ecommerceGate button,
+.siteThemeLight .ecommerceProjectListHeader button,
+.siteThemeLight .ecommerceAssetToolbar button,
+.siteThemeLight .ecommerceBatchToolbar > button,
+.siteThemeLight .ecommerceVersionActions a,
+.siteThemeLight .ecommerceVersionActions button,
+.siteThemeLight .ecommerceProductionActions a,
+.siteThemeLight .ecommerceProductionActions button {
+  border-color: rgba(13, 148, 136, 0.3);
+  background: #eaf7f3;
+  color: #116657;
+}
+.siteThemeLight .ecommerceProjectList,
+.siteThemeLight .ecommerceProjectForm { border-color: #d4dee8; background: rgba(255, 255, 255, 0.95); box-shadow: 0 18px 48px rgba(55, 78, 103, 0.12); }
+.siteThemeLight .ecommerceProjectListHeader .ecommerceProjectListCollapse { border-color: #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .ecommerceProjectListExpand { color: #526980; }
+.siteThemeLight .ecommerceProjectCards > button,
+.siteThemeLight .ecommercePlatformGrid > button,
+.siteThemeLight .ecommercePlatformSimple button,
+.siteThemeLight .ecommerceProductionQuality label,
+.siteThemeLight .ecommerceTemplateGrid > button,
+.siteThemeLight .ecommerceVisualStyleGrid > button,
+.siteThemeLight .ecommerceAssetGrid article,
+.siteThemeLight .ecommerceProductionGrid article,
+.siteThemeLight .ecommerceVersionGrid article,
+.siteThemeLight .ecommerceSlotGrid > label {
+  border-color: #d7e0e8;
+  background: #ffffff;
+  color: #30445a;
+}
+.siteThemeLight .ecommerceProjectCards > button:hover,
+.siteThemeLight .ecommerceProjectCards > button.active,
+.siteThemeLight .ecommercePlatformGrid > button.active,
+.siteThemeLight .ecommercePlatformSimple button.active,
+.siteThemeLight .ecommerceProductionQuality label.selected,
+.siteThemeLight .ecommerceTemplateGrid > button.active,
+.siteThemeLight .ecommerceVisualStyleGrid > button.active,
+.siteThemeLight .ecommerceSlotGrid > label.selected {
+  border-color: rgba(13, 148, 136, 0.46);
+  background: #eaf7f3;
+  color: #116657;
+  box-shadow: none;
+}
+.siteThemeLight .ecommerceProjectCards span,
+.siteThemeLight .ecommercePlatformGrid > button > span,
+.siteThemeLight .ecommerceTemplateGrid > button > span,
+.siteThemeLight .ecommerceVisualStyleCopy strong svg,
+.siteThemeLight .ecommerceAssetGrid article span,
+.siteThemeLight .ecommerceProductionCopy span { color: #0d7780; }
+.siteThemeLight .ecommercePlatformGrid > button > span,
+.siteThemeLight .ecommerceTemplateGrid > button > span { background: #e5f4f7; }
+.siteThemeLight .ecommercePlatformGrid > button.active > span,
+.siteThemeLight .ecommerceTemplateGrid > button.active > span { background: #d7f1e9; color: #116657; }
+
+.siteThemeLight .ecommerceCollapsibleSection,
+.siteThemeLight .ecommerceCollapsibleSection.collapsed {
+  border-color: #d5dfe8;
+  background: linear-gradient(145deg, #ffffff, #f4f7fa);
+  box-shadow: inset 0 1px 0 #ffffff;
+}
+.siteThemeLight .ecommerceCollapsibleSection:not(.collapsed) { border-color: #cad7e2; }
+.siteThemeLight .ecommerceCollapsibleLegendCopy > strong,
+.siteThemeLight .ecommerceField > span,
+.siteThemeLight .ecommerceFieldLabel > label,
+.siteThemeLight .ecommercePlatformSimple > span,
+.siteThemeLight .ecommerceProductionQuality legend,
+.siteThemeLight .ecommerceTemplatePanel > strong,
+.siteThemeLight .ecommerceVisualStyleTitle,
+.siteThemeLight .ecommerceIdentityPanel > header strong,
+.siteThemeLight .ecommerceSlotHeader > strong,
+.siteThemeLight .ecommerceProductionCopy strong,
+.siteThemeLight .ecommerceVersionMeta strong { color: #30445a; }
+.siteThemeLight .ecommerceCollapsibleLegendCopy > small,
+.siteThemeLight .ecommerceAdvancedOptions > summary,
+.siteThemeLight .ecommerceVisualStyleCopy small,
+.siteThemeLight .ecommerceIdentityPanel > header span,
+.siteThemeLight .ecommerceIdentityGrid span,
+.siteThemeLight .ecommerceProductionPreview > div,
+.siteThemeLight .ecommerceVersionMeta time,
+.siteThemeLight .ecommerceSlotHeader p,
+.siteThemeLight .ecommerceSlotCopy small,
+.siteThemeLight .ecommerceSlotCopy p { color: #6d8095; }
+.siteThemeLight .ecommerceCollapsibleLegendToggle:hover,
+.siteThemeLight .ecommerceCollapsibleLegendToggle:focus-visible { background: #eaf7f3; }
+.siteThemeLight .ecommerceCollapsibleLegendAction { border-color: #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .ecommerceCollapsibleLegendAction:hover,
+.siteThemeLight .ecommerceCollapsibleLegendAction:focus-visible,
+.siteThemeLight .ecommerceCollapsibleLegendAction[aria-expanded='true'] { border-color: rgba(13, 148, 136, 0.34); background: #dff2ec; color: #116657; }
+.siteThemeLight .ecommerceFieldTool { color: #60758d; }
+.siteThemeLight .ecommerceFieldHelpButton:hover,
+.siteThemeLight .ecommerceFieldHelpButton:focus-visible,
+.siteThemeLight .ecommerceFieldHelpButton.active { background: #eaf2ff; color: #285eaa; }
+.siteThemeLight .ecommerceFieldResetButton:hover,
+.siteThemeLight .ecommerceFieldResetButton:focus-visible { background: #fff6da; color: #946100; }
+.siteThemeLight .ecommerceFieldHelp { border-color: #cad7e2; background: #ffffff; color: #40566e; box-shadow: 0 12px 32px rgba(55, 78, 103, 0.18); }
+.siteThemeLight .ecommerceTemplatePanel { border-color: #d4dee8; background: radial-gradient(circle at 6% 0%, rgba(13, 148, 136, 0.08), transparent 34%), #f7f9fb; }
+.siteThemeLight .ecommerceAdvancedOptions { border-top-color: #dce4ec; }
+.siteThemeLight .ecommerceProductionQuality label.selected .ecommerceQualityCheck,
+.siteThemeLight .ecommerceSlotGrid > label.selected .ecommerceSlotCheck { border-color: #0d9488; background: #0d9488; color: #ffffff; }
+
+.siteThemeLight .ecommerceAssetLibraryOverlay,
+.siteThemeLight .ecommerceImageLightbox,
+.siteThemeLight .ecommerceVersionOverlay { background: rgba(49, 65, 84, 0.42); }
+.siteThemeLight .ecommerceAssetLibraryPicker,
+.siteThemeLight .ecommerceImageLightboxDialog,
+.siteThemeLight .ecommerceVersionDialog {
+  border-color: #d2dce6;
+  background: radial-gradient(circle at 18% 0%, rgba(13, 148, 136, 0.08), transparent 34%), #ffffff;
+  color: #30445a;
+  box-shadow: 0 30px 90px rgba(55, 78, 103, 0.24);
+}
+.siteThemeLight .ecommerceAssetLibraryPicker h2,
+.siteThemeLight .ecommerceImageLightboxHeader strong,
+.siteThemeLight .ecommerceVersionHeader h3 { color: #26384d; }
+.siteThemeLight .ecommerceAssetLibraryPicker header p,
+.siteThemeLight .ecommerceAssetLibraryMeta,
+.siteThemeLight .ecommerceAssetLibraryGrid > button > small,
+.siteThemeLight .ecommerceAssetLibraryEmpty,
+.siteThemeLight .ecommerceImageLightboxHeader small,
+.siteThemeLight .ecommerceVersionHeader span { color: #6d8095; }
+.siteThemeLight .ecommerceAssetLibraryPicker > header > button,
+.siteThemeLight .ecommerceAssetLibraryFilters button,
+.siteThemeLight .ecommerceAssetLibraryPicker > footer button,
+.siteThemeLight .ecommerceImageLightboxControls,
+.siteThemeLight .ecommerceImageLightboxControls button,
+.siteThemeLight .ecommerceVersionHeader button,
+.siteThemeLight .ecommerceRevisionPanel > button {
+  border-color: #d4dee8;
+  background: #f1f5f8;
+  color: #526980;
+}
+.siteThemeLight .ecommerceAssetLibraryFilters button.active { border-color: rgba(13, 148, 136, 0.42); background: #dff2ec; color: #116657; }
+.siteThemeLight .ecommerceAssetLibraryToolbar label,
+.siteThemeLight .ecommerceAssetLibraryToolbar select,
+.siteThemeLight .ecommerceAssetInfo select,
+.siteThemeLight .ecommerceIdentityGrid textarea,
+.siteThemeLight .ecommerceRevisionPanel textarea { border-color: #d4dee8; background: #ffffff; color: #26384d; }
+.siteThemeLight .ecommerceAssetLibraryGrid > button { border-color: #d7e0e8; background: #f8fafc; color: #30445a; }
+.siteThemeLight .ecommerceAssetLibraryGrid > button.selected { border-color: rgba(13, 148, 136, 0.52); box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.12), 0 10px 28px rgba(55, 78, 103, 0.14); }
+.siteThemeLight .ecommerceAssetLibraryThumb { background: #e8edf2; }
+.siteThemeLight .ecommerceAssetLibraryThumb b { border-color: #d4dee8; background: rgba(255, 255, 255, 0.9); color: #526980; }
+.siteThemeLight .ecommerceAssetLibraryMore { border-color: rgba(13, 148, 136, 0.3); background: #eaf7f3; color: #116657; }
+.siteThemeLight .ecommerceAssetGrid article.unavailable { border-color: rgba(180, 120, 0, 0.25); background: #fff9e8; }
+.siteThemeLight .ecommerceAssetUnavailable { color: #946100; }
+.siteThemeLight .ecommerceAssetUnavailable strong { color: #765000; }
+.siteThemeLight .ecommerceAssetUnavailable small { color: #826b35; }
+.siteThemeLight .ecommerceAssetOrder { border-color: #dce4ec; background: #f7f9fb; }
+.siteThemeLight .ecommerceAssetOrder button,
+.siteThemeLight .ecommerceAssetGrid article > button { border-color: #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .ecommerceMasterBadge,
+.siteThemeLight .ecommerceTaskStatus { border-color: rgba(13, 148, 136, 0.34); background: rgba(234, 247, 243, 0.94); color: #116657; }
+.siteThemeLight .ecommerceProductionPreview { background: #e8edf2; }
+.siteThemeLight .ecommerceProductionImageButton > span { border-color: rgba(72, 96, 122, 0.22); background: rgba(255, 255, 255, 0.9); color: #40566e; }
+.siteThemeLight .ecommerceProductionSelect > span { border-color: #d4dee8; background: rgba(255, 255, 255, 0.92); color: #40566e; }
+.siteThemeLight .ecommerceProductionSelect input:checked + span { border-color: #0d9488; background: #0d9488; color: #ffffff; }
+.siteThemeLight .ecommerceConsistencyBar > span.unchecked { background: #eef3f7; color: #60758d; }
+.siteThemeLight .ecommerceConsistencyBar > span.passed { background: #dff2ec; color: #116657; }
+.siteThemeLight .ecommerceConsistencyBar > span.warning { background: #fff6da; color: #946100; }
+.siteThemeLight .ecommerceConsistencyBar > span.failed { background: #fff0f2; color: #b83249; }
+.siteThemeLight .ecommerceVersionImage { background: #e8edf2; }
+.siteThemeLight .ecommerceVersionImage > div { background: rgba(255, 255, 255, 0.9); color: #40566e; }
+.siteThemeLight .ecommerceVersionImage > em { border-color: rgba(13, 148, 136, 0.35); background: rgba(234, 247, 243, 0.94); color: #116657; }
+
+/* Final light-theme consistency pass for late-declared workspaces and dialogs. */
+.siteThemeLight .userTriggerName { color: #30445a; }
+.siteThemeLight .userTrigger > svg { color: #60758d; }
+.siteThemeLight .avatarBadge { border-color: #c9d9e5; background: #e5f4f7; color: #0d7780; }
+
+.siteThemeLight :is(
+  .authDialog,
+  .accountDialog,
+  .billingDialog,
+  .adminDialog,
+  .previewDialog,
+  .freeImageAssetPicker,
+  .freeImagePreviewDialog,
+  .freeReferenceEditorDialog,
+  .ecommerceAssetLibraryPicker,
+  .ecommerceImageLightboxDialog,
+  .ecommerceVersionDialog,
+  .mediaAssetDetail,
+  .mediaAssetConfirmDialog,
+  .adminAdjustForm
+) {
+  border-color: #d2dce6;
+  background: radial-gradient(circle at 16% 0%, rgba(13, 148, 136, 0.075), transparent 34%), #ffffff;
+  color: #30445a;
+  box-shadow: 0 30px 90px rgba(55, 78, 103, 0.24);
+}
+
+.siteThemeLight :is(
+  .authDialog,
+  .accountDialog,
+  .billingDialog,
+  .adminDialog,
+  .previewDialog,
+  .freeImageAssetPicker,
+  .freeImagePreviewDialog,
+  .freeReferenceEditorDialog,
+  .ecommerceAssetLibraryPicker,
+  .ecommerceImageLightboxDialog,
+  .ecommerceVersionDialog,
+  .mediaAssetDetail,
+  .mediaAssetConfirmDialog,
+  .adminAdjustForm
+) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) {
+  border-color: #ccd8e3;
+  background: #ffffff;
+  color: #26384d;
+  caret-color: #0d9488;
+  -webkit-text-fill-color: #26384d;
+}
+
+.siteThemeLight :is(
+  .authDialog,
+  .accountDialog,
+  .billingDialog,
+  .adminDialog,
+  .freeImageAssetPicker,
+  .freeImagePreviewDialog,
+  .freeReferenceEditorDialog,
+  .ecommerceAssetLibraryPicker,
+  .ecommerceVersionDialog,
+  .mediaAssetDetail,
+  .adminAdjustForm
+) :is(input, textarea)::placeholder { color: #8797a8; opacity: 1; }
+
+.siteThemeLight :is(
+  .authDialog,
+  .accountDialog,
+  .billingDialog,
+  .adminDialog,
+  .freeImageAssetPicker,
+  .freeImagePreviewDialog,
+  .freeReferenceEditorDialog,
+  .ecommerceAssetLibraryPicker,
+  .ecommerceVersionDialog,
+  .mediaAssetDetail,
+  .adminAdjustForm
+) :is(select option, select optgroup) { background: #ffffff; color: #26384d; }
+
+.siteThemeLight :is(.previewOverlay, .freeImageAssetPickerBackdrop, .freeImagePreviewBackdrop, .freeReferenceEditorBackdrop, .ecommerceAssetLibraryOverlay, .ecommerceImageLightbox, .ecommerceVersionOverlay, .mediaAssetOverlay, .mediaAssetConfirmOverlay, .adminUserEditBackdrop, .deliveryArtboardLightbox) {
+  background: rgba(49, 65, 84, 0.42);
+}
+
+.siteThemeLight .previewContent h2,
+.siteThemeLight .previewSection h3,
+.siteThemeLight .accountOverview h3,
+.siteThemeLight .accountPasswordCard h3,
+.siteThemeLight .billingCard strong,
+.siteThemeLight .transactionSection h3,
+.siteThemeLight .freeImagePreviewDialog :is(h2, h3, strong),
+.siteThemeLight .freeReferenceEditorDialog > header strong,
+.siteThemeLight .mediaAssetConfirmDialog h2,
+.siteThemeLight .adminAdjustForm header strong { color: #26384d; }
+.siteThemeLight .previewContent p,
+.siteThemeLight .freeImagePreviewDialog :is(p, small),
+.siteThemeLight .freeReferenceEditorDialog > :is(header, footer) span,
+.siteThemeLight .mediaAssetConfirmDialog p,
+.siteThemeLight .adminAdjustForm header span,
+.siteThemeLight .adminAdjustForm label small { color: #6d8095; }
+.siteThemeLight .previewMeta span { border-color: #c3ddd7; background: #eaf7f3; color: #116657; }
+.siteThemeLight .previewActions :is(button, a),
+.siteThemeLight .freeImagePreviewDialog :is(button, a),
+.siteThemeLight .freeReferenceEditorDialog button {
+  border-color: #d4dee8;
+  background: #f1f5f8;
+  color: #40566e;
+  box-shadow: none;
+}
+.siteThemeLight .previewActions :is(button, a):hover,
+.siteThemeLight .freeImagePreviewDialog :is(button, a):hover,
+.siteThemeLight .freeReferenceEditorDialog button:hover,
+.siteThemeLight .freeReferenceEditorDialog button.active { border-color: rgba(13, 148, 136, 0.42); background: #eaf7f3; color: #116657; }
+.siteThemeLight .sectionTitleRow button,
+.siteThemeLight .promptActionGroup button { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .sectionTitleRow button:hover,
+.siteThemeLight .promptActionGroup button:hover { border-color: rgba(13, 148, 136, 0.42); background: #dff2ec; color: #116657; }
+.siteThemeLight .generationPanel { border-color: #c6ddd7; background: #f2faf7; color: #30445a; }
+.siteThemeLight .generationQuota { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
+.siteThemeLight .generationQuota.used { border-color: #ecd399; background: #fff8df; color: #8a5c00; }
+.siteThemeLight .generationPanel > button { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight .freeReferenceEditorDialog button.primary,
+.siteThemeLight .freeImagePreviewDialog button.primary,
+.siteThemeLight .previewActions button:first-child,
+.siteThemeLight .localAuthSubmit,
+.siteThemeLight .adminAdjustForm footer button:not(.secondary) { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight .freeReferenceEditorCanvasWrap,
+.siteThemeLight .previewMedia,
+.siteThemeLight .comparisonFigure { border-color: #d8e1ea; background-color: #eef3f7; }
+.siteThemeLight .comparisonLabel { border-bottom-color: #d8e1ea; color: #30445a; }
+.siteThemeLight .comparisonLabel span { color: #167463; }
+.siteThemeLight .authModeSwitch,
+.siteThemeLight .adminRangeToggle,
+.siteThemeLight .adminCustomRange { border-color: #d4dee8; background: #f3f6f9; }
+.siteThemeLight .authModeSwitch button,
+.siteThemeLight .adminRangeToggle button { color: #60758d; }
+.siteThemeLight .authModeSwitch button.active,
+.siteThemeLight .adminRangeToggle button.active,
+.siteThemeLight .adminRangeToggle button:hover { background: #dff2ec; color: #116657; }
+.siteThemeLight .localAuthForm label,
+.siteThemeLight .accountForm label span,
+.siteThemeLight .accountEmail span,
+.siteThemeLight .accountPasswordForm label span,
+.siteThemeLight .adminAdjustForm label { color: #40566e; }
+.siteThemeLight .authIcon,
+.siteThemeLight .accountAvatar { border-color: #c5ddd7; background: #e5f5f0; color: #116657; }
+.siteThemeLight .authMessage { border-color: #ecd399; background: #fff8df; color: #765000; }
+.siteThemeLight .authMessage.sent { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
+.siteThemeLight .authMessage.error { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight :is(.billingSummary div, .accountMetrics div, .transactionSection, .billingPaymentMethods) { border-color: #d8e1ea; background: #f7f9fb; color: #30445a; }
+.siteThemeLight :is(.billingSummary strong, .accountMetrics strong, .accountEmail strong) { color: #26384d; }
+.siteThemeLight :is(.billingSummary span, .accountMetrics span, .billingCard span, .transactionItem span) { color: #0d7780; }
+.siteThemeLight :is(.billingSummary em, .accountEmail em, .transactionItem em, .billingHero p, .billingCard p) { color: #6d8095; }
+
+/* Asset detail and confirmation dialogs. */
+.siteThemeLight .mediaAssetDetail { background: #ffffff; }
+.siteThemeLight .mediaAssetClose { border-color: #d4dee8; background: rgba(255, 255, 255, 0.94); color: #526980; box-shadow: 0 6px 18px rgba(55, 78, 103, 0.14); }
+.siteThemeLight .mediaAssetInspector {
+  border-color: #dce4ec;
+  background: #ffffff;
+  scrollbar-color: #79bfb2 #edf2f6;
+}
+.siteThemeLight .mediaAssetInspector::-webkit-scrollbar-track,
+.siteThemeLight .mediaAssetDetail::-webkit-scrollbar-track { background: #edf2f6; }
+.siteThemeLight .mediaAssetInspector::-webkit-scrollbar-thumb,
+.siteThemeLight .mediaAssetDetail::-webkit-scrollbar-thumb { border-color: #edf2f6; background: linear-gradient(180deg, #79cdbd, #72a9cb); }
+.siteThemeLight .mediaAssetInspectorHeading,
+.siteThemeLight .mediaAssetInspector > label,
+.siteThemeLight .mediaAssetCollectionPicker { color: #60758d; }
+.siteThemeLight .mediaAssetCollectionPicker > label,
+.siteThemeLight .mediaAssetCollectionPicker > div > label,
+.siteThemeLight .mediaAssetFacts div,
+.siteThemeLight .mediaAssetPrompt,
+.siteThemeLight .mediaAssetPermissionList > li { border-color: #d8e1ea; background: #f7f9fb; color: #40566e; }
+.siteThemeLight .mediaAssetCollectionPicker label:hover { border-color: rgba(13, 148, 136, 0.42); background: #eef8f5; color: #116657; }
+.siteThemeLight .mediaAssetCollectionPicker label.selected { border-color: rgba(13, 148, 136, 0.5); background: #e2f2ed; color: #0e6558; box-shadow: inset 0 0 0 1px rgba(13, 148, 136, 0.08); }
+.siteThemeLight .mediaAssetCollectionPicker label svg { color: #60758d; }
+.siteThemeLight .mediaAssetCollectionPicker label.selected > svg:last-child { color: #0d9488; }
+.siteThemeLight .mediaAssetCollectionPicker > em,
+.siteThemeLight .mediaAssetFacts dt,
+.siteThemeLight .mediaAssetPrompt strong { color: #526980; }
+.siteThemeLight .mediaAssetFacts dd,
+.siteThemeLight .mediaAssetPrompt p,
+.siteThemeLight .mediaAssetPermissionIdentity { color: #30445a; }
+.siteThemeLight .mediaAssetActionGrid :is(button, a),
+.siteThemeLight .mediaAssetShareBox button { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .mediaAssetActionGrid :is(button, a):hover,
+.siteThemeLight .mediaAssetShareBox button:hover { border-color: rgba(13, 148, 136, 0.42); background: #dff2ec; color: #116657; }
+.siteThemeLight .mediaAssetShareBox > div button.active { border-color: rgba(13, 148, 136, 0.46); background: #dff2ec; color: #0e6558; }
+.siteThemeLight .mediaAssetActionGrid .danger,
+.siteThemeLight .mediaAssetShareBox .mediaAssetPermissionRemove,
+.siteThemeLight .mediaAssetConfirmDialog button.danger { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight .mediaAssetActionGrid .favoriteActive { border-color: #efbfd2; background: #fff0f6; color: #b42366; }
+.siteThemeLight .mediaAssetShareBox { border-top-color: #dce4ec; }
+.siteThemeLight .mediaAssetPermissionList > li > em { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
+.siteThemeLight .mediaAssetConfirmDialog > strong { color: #b83249; }
+.siteThemeLight .mediaAssetConfirmDialog button:not(.danger) { border-color: #d4dee8; background: #f1f5f8; color: #40566e; }
+
+/* Ecommerce delivery workspace and its standalone artboard dialog. */
+.siteThemeLight .ecommerceDeliverySection:not(.collapsed) { background: linear-gradient(145deg, #ffffff, #f6f9fb); }
+.siteThemeLight :is(.deliveryCenterHeader, .deliverySlotRail, .deliveryPreviewStage, .deliveryInspector, .deliverySequenceWorkspace, .deliveryReuseWorkspace, .deliveryRefinementPanel) {
+  border-color: #d4dee8;
+  background: #ffffff;
+  color: #30445a;
+  box-shadow: 0 8px 24px rgba(55, 78, 103, 0.07);
+}
+.siteThemeLight .deliveryHeaderActions,
+.siteThemeLight .deliveryTabs,
+.siteThemeLight .deliveryObjectToolbar,
+.siteThemeLight .deliverySequenceStats,
+.siteThemeLight .deliveryAdvanced,
+.siteThemeLight .deliverySubPanel,
+.siteThemeLight .deliveryRefinementAssetPicker { border-color: #d8e1ea; background: #f4f7fa; }
+.siteThemeLight :is(.deliveryHeaderActions > button, .deliveryTabs button, .deliverySequenceWorkspace > header button, .deliveryPreviewActions button, .deliveryInspectorActions button, .deliveryInspector > header > button, .deliveryReuseGrid > article > button, .deliveryMyTemplates article > button, .deliveryObjectToolbar button, .deliveryUploadRefinementAsset) {
+  border-color: #d4dee8;
+  background: #eef3f7;
+  color: #40566e;
+}
+.siteThemeLight :is(.deliveryHeaderActions > button.active, .deliveryTabs button.active, .deliveryObjectToolbar button.active) { border-color: rgba(13, 148, 136, 0.44); background: #dff2ec; color: #116657; box-shadow: none; }
+.siteThemeLight .deliveryHeaderActions > button > i { border-color: #d4dee8; background: #ffffff; color: #60758d; }
+.siteThemeLight .deliveryHeaderActions > button.active > i { border-color: #0d9488; background: #0d9488; color: #ffffff; }
+.siteThemeLight :is(.deliveryInspectorActions button.primary, .deliverySequenceWorkspace > header button.primary, .deliveryPreviewActions button:last-child, .deliveryCreateRefinement, .deliveryLightboxObjectToolbar button.save) { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight :is(.deliverySlotItems > article, .deliveryRemovedTray article, .deliveryComparisonEditor > div, .deliveryValidationList > div, .deliverySequenceList article, .deliveryReuseGrid > article, .deliveryMyTemplates article, .deliverySelectedRefinementAssets article, .deliveryRefinementAssetPicker > div > button) { border-color: #d8e1ea; background: #f8fafc; color: #30445a; }
+.siteThemeLight :is(.deliverySlotItems > article:hover, .deliverySlotItems > article:focus-within, .deliverySlotItems > article.active, .deliverySequenceList article.included, .deliveryRefinementAssetPicker > div > button.active) { border-color: rgba(13, 148, 136, 0.42); background: #eaf7f3; }
+.siteThemeLight :is(.deliverySlotRailHeader small, .deliverySlotRail small, .deliveryRemovedTray summary small, .deliveryRemovedTray article small, .deliveryPreviewStage > header > em, .deliveryPreviewHint, .deliveryInspector > header span, .deliveryRefinementPanel > header small, .deliveryRefinementAssetsHeader small, .deliverySequenceWorkspace > header span, .deliverySequenceList small, .deliveryReuseGrid p, .deliveryMyTemplates > header span, .deliveryMyTemplates > p, .deliveryMyTemplates article small, .deliveryNoCheck, .deliveryValidationList small) { color: #6d8095; }
+.siteThemeLight :is(.deliveryPreviewStage > header > span, .deliverySlotRail span.ready, .deliverySequenceList span.ready, .deliveryRefinementAssetsHeader em, .deliveryValidationPanel > header strong) { color: #167463; }
+.siteThemeLight :is(.deliveryPreviewStage > header > strong, .deliveryInspector > header strong, .deliveryFieldTitle, .deliveryField > span, .deliverySubPanel > strong, .deliveryComparisonEditor > div > header span, .deliveryValidationPanel > header span, .deliverySequenceWorkspace > header strong, .deliveryReuseWorkspace > header strong, .deliverySequenceList strong, .deliveryReuseGrid strong, .deliveryMyTemplates strong, .deliveryEmptyState strong, .deliverySequenceEmpty strong, .deliveryRefinementPanel > header strong, .deliveryRefinementAssetsHeader strong) { color: #30445a; }
+.siteThemeLight .deliveryField :is(input, textarea, select),
+.siteThemeLight .deliverySelectedRefinementAssets select { border-color: #ccd8e3; background: #ffffff; color: #26384d; -webkit-text-fill-color: #26384d; }
+.siteThemeLight .deliveryField :is(input, textarea)::placeholder { color: #8797a8; opacity: 1; }
+.siteThemeLight :is(.deliverySequenceStats > span, .deliverySwitches label, .deliverySequenceStats label, .deliverySequenceList article > label, .deliveryObjectToolbar > label, .deliveryObjectToolbar em) { color: #60758d; }
+.siteThemeLight .deliveryArtboardShell { border-color: #d8e1ea; background: linear-gradient(#dfe7ee 1px, transparent 1px), linear-gradient(90deg, #dfe7ee 1px, transparent 1px), #eef3f7; background-size: 20px 20px; }
+.siteThemeLight .deliverySlotRemove { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight .deliveryRemovedTray { border-top-color: #dce4ec; }
+.siteThemeLight .deliveryAdvanced > button,
+.siteThemeLight .deliveryRefinementAssetPicker summary { color: #40566e; }
+.siteThemeLight .deliveryAdvanced > div,
+.siteThemeLight .deliveryValidationPanel,
+.siteThemeLight .deliveryMyTemplates { border-color: #dce4ec; }
+.siteThemeLight .deliveryThemeGrid > button { border-color: #d8e1ea; background: #ffffff; color: #526980; }
+.siteThemeLight .deliveryThemeGrid > button.active { border-color: rgba(13, 148, 136, 0.46); background: #eaf7f3; color: #116657; }
+.siteThemeLight .deliveryArtboardLightboxPanel { border: 1px solid #d2dce6; border-radius: 18px; padding: 12px; background: #ffffff; color: #30445a; box-shadow: 0 30px 90px rgba(55, 78, 103, 0.24); }
+.siteThemeLight .deliveryArtboardLightboxPanel > header strong { color: #26384d; }
+.siteThemeLight .deliveryArtboardLightboxPanel > header :is(span, small),
+.siteThemeLight .deliveryArtboardLightboxZoomControls output { color: #60758d; }
+.siteThemeLight .deliveryArtboardLightboxPanel > header button,
+.siteThemeLight .deliveryArtboardLightboxPanel > header .deliveryArtboardLightboxZoomControls { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .deliveryArtboardLightboxCanvas { border-color: #d8e1ea; background: linear-gradient(#dfe7ee 1px, transparent 1px), linear-gradient(90deg, #dfe7ee 1px, transparent 1px), #edf2f6; background-size: 28px 28px; }
+
+/* Admin light skin: all cards, forms, tables, switches, and edit dialogs inherit one palette. */
+.siteThemeLight .adminWorkspace { color: #26384d; }
+.siteThemeLight .adminWorkspaceHeader,
+.siteThemeLight .adminWorkspaceNavigation,
+.siteThemeLight .adminWorkspaceContent { border-color: #d2dce6; background: #ffffff; color: #30445a; box-shadow: 0 16px 42px rgba(55, 78, 103, 0.1); }
+.siteThemeLight .adminWorkspaceContent { background-image: linear-gradient(rgba(72, 96, 122, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(72, 96, 122, 0.035) 1px, transparent 1px); }
+.siteThemeLight .adminWorkspace :is(.adminBlock, .adminPanelCard, .adminMetricCard, .adminPromptLogList > article, .adminNotificationExample, .adminNotificationPreview article, .adminPromotionPreview, .adminRangeSummary, .adminMiniBar, .adminRankItem, .adminProviderList article, .adminProviderMatrix, .adminProviderMatrixRow, .adminProviderPricingEditor, .adminProviderPricingPreview, .adminRechargeSection, .adminRechargePackRow, .adminRechargePolicy, .adminStorageBillingGrid > label, .adminStorageBillingGrid > div, .adminAccountBlock, .adminChatProvider, .adminChatPricing) {
+  border-color: #d8e1ea;
+  background: #f8fafc;
+  color: #30445a;
+  box-shadow: none;
+}
+.siteThemeLight .adminWorkspace :is(h2, h3, h4, .adminPromptLogList article > header strong, .adminNotificationPreview article > strong, .adminRechargeSection > header strong, .adminRechargePackRow > strong, .adminRechargePackRow > b, .adminStorageBillingGrid > div > strong, .adminProviderList article strong, .adminProviderPricingPreview strong, .adminAccountBlock strong) { color: #26384d; }
+.siteThemeLight .adminWorkspace :is(.adminSectionHeading p, .adminPromptLogList article > header span, .adminPromptLogList article > header time, .adminProviderList article span, .adminPromotionHint, .adminPaymentGatewayState, .adminStorageBillingNote, .adminRechargePolicy span, .adminRechargeSection > header span, .adminRechargeFooter > span, .adminRechargePackHeader, .adminStorageBillingGrid > label > span, .adminStorageBillingGrid > div > span, .adminAccountBlock p, .adminAccountStats span, .adminChatPricingMeta) { color: #6d8095; }
+.siteThemeLight .adminWorkspace :is(.adminPromptLogFacts span, .adminPromotionStatus, .adminRechargeStatus) { border-color: #c6ddd7; background: #eaf7f3; color: #116657; }
+.siteThemeLight .adminWorkspace :is(.adminPromptLogList pre, .adminPromptUserText p, .adminNotificationExample code) { border: 1px solid #d8e1ea; background: #ffffff; color: #40566e; }
+.siteThemeLight .adminWorkspace :is(.adminPromptLoggingSwitch, .adminNotificationToggle, .adminNotificationAlertGrid label) { border-color: #c6ddd7; background: #eef8f5; color: #17685a; }
+.siteThemeLight .adminWorkspace :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select),
+.siteThemeLight .adminAdjustForm :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) { border-color: #ccd8e3; background: #ffffff; color: #26384d; -webkit-text-fill-color: #26384d; }
+.siteThemeLight .adminWorkspace :is(input, textarea)::placeholder,
+.siteThemeLight .adminAdjustForm :is(input, textarea)::placeholder { color: #8797a8; opacity: 1; }
+.siteThemeLight .adminWorkspace :is(select option, select optgroup),
+.siteThemeLight .adminAdjustForm :is(select option, select optgroup) { background: #ffffff; color: #26384d; }
+.siteThemeLight .adminWorkspace :is(.adminWorkspaceToolbar > button, .adminCustomRange > button, .adminNotificationExample button, .adminProviderAction, .adminProviderCancel, .adminProviderMatrixAdd, .adminProviderRowAction, .tableAction, button.secondary),
+.siteThemeLight .adminAdjustForm :is(button.secondary, .adminEditClose) { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .adminWorkspace :is(.adminProviderSave, button.primary),
+.siteThemeLight .adminAdjustForm footer button:not(.secondary) { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight .adminWorkspace :is(.adminProviderRemove, button.danger) { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight .adminTableWrap { border-color: #d4dee8; background: #ffffff; }
+.siteThemeLight .adminTable th { border-color: #dce4ec; background: #eef3f7; color: #526980; }
+.siteThemeLight .adminTable td { border-color: #e1e8ee; color: #40566e; }
+.siteThemeLight .adminTable tbody tr:hover td { background: #f2f8f6; }
+.siteThemeLight .adminMetricIcon { background: #e5f5f0; color: #116657; }
+.siteThemeLight .adminMetricCard :is(strong, em),
+.siteThemeLight .adminAccountStats strong,
+.siteThemeLight .adminRechargePackRow > b.bonus,
+.siteThemeLight .adminPaymentGatewayState.ready { color: #167463; }
+.siteThemeLight .adminChartLegend,
+.siteThemeLight .adminTrendChart text { color: #60758d; fill: #60758d; }
+.siteThemeLight .adminTrendChart line { stroke: #d8e1ea; }
+.siteThemeLight .adminUserEditBackdrop { background: rgba(49, 65, 84, 0.42); }
+.siteThemeLight .adminAdjustForm { background: #ffffff; color: #30445a; }
+.siteThemeLight .adminAdjustForm :is(.governanceReadonlyGrid, .governanceUserSummary, .creditAdjustmentPreview) { border-color: #d8e1ea; background: #f7f9fb; color: #30445a; }
+.siteThemeLight .adminAdjustForm input:read-only { background: #eef3f7; color: #60758d; -webkit-text-fill-color: #60758d; }
+.siteThemeLight .adminWorkspace :is(.createdCodeList, .governanceSwitchGrid label, .registrationDomainGrid, .ecommerceSystemPromptPolicy, .financialReportPanel, .auditEventsPanel) { border-color: #d8e1ea; background-color: #f8fafc; color: #30445a; }
+.siteThemeLight .adminWorkspace .createdCodeList button { border-color: #d4dee8; background: #ffffff; color: #30445a; }
+.siteThemeLight .adminWorkspace .redemptionCodeValue { color: #116657; }
+.siteThemeLight .adminWorkspace .redemptionStatusBadge { border-color: #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .adminWorkspace .redemptionStatusBadge.is-available { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
+.siteThemeLight .adminWorkspace .redemptionStatusBadge.is-disabled { border-color: #ecd399; background: #fff8df; color: #8a5c00; }
+.siteThemeLight .adminWorkspace .redemptionStatusBadge.is-redeemed { border-color: #bfd5ea; background: #edf4ff; color: #285eaa; }
+.siteThemeLight .adminWorkspace :is(.redemptionStatusBadge.is-voided, .redemptionStatusBadge.is-expired, .tableAction.danger) { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight .adminWorkspace .tableAction.warning { border-color: #ecd399; background: #fff8df; color: #8a5c00; }
+.siteThemeLight .adminAdjustForm .governanceUserSummary > span,
+.siteThemeLight .adminAdjustForm .creditAdjustmentPreview dl > div { border-color: #d8e1ea; background: #ffffff; color: #526980; }
+.siteThemeLight .adminAdjustForm :is(.governanceUserSummary strong, .creditAdjustmentPreview h3, .creditAdjustmentPreview dd) { color: #26384d; }
+.siteThemeLight .adminAdjustForm .creditAdjustmentPreview dd.positive { color: #167463; }
+.siteThemeLight .adminAdjustForm .creditAdjustmentPreview dd.negative { color: #b83249; }
+
+/* Recharge/account dialogs need explicit light colors for their late-defined descendants. */
+.siteThemeLight .billingHero h2,
+.siteThemeLight .billingSections h3,
+.siteThemeLight .transactionSection h3 { color: #26384d; }
+.siteThemeLight .billingPaymentMethods,
+.siteThemeLight .customRechargeCard,
+.siteThemeLight .customRechargeQuote :is(span, strong),
+.siteThemeLight .customRechargeMessage { border-color: #d8e1ea; background: #f7f9fb; color: #40566e; }
+.siteThemeLight .billingPaymentMethods > span,
+.siteThemeLight .customRechargeCard label > span { color: #526980; }
+.siteThemeLight .customRechargeCard label > span { border-color: #d8e1ea; background: #f7f9fb; }
+.siteThemeLight .billingPaymentMethods button { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .billingPaymentMethods button.active { border-color: rgba(13, 148, 136, 0.46); background: #dff2ec; color: #116657; box-shadow: none; }
+.siteThemeLight .billingPackBonus { color: #9a6500; text-shadow: none; }
+.siteThemeLight .billingCredits { border: 1px solid #c7ddd8; background: #e5f4f7; color: #0d6670; }
+.siteThemeLight .billingCard button,
+.siteThemeLight .accountForm button,
+.siteThemeLight .accountPasswordForm button,
+.siteThemeLight .billingState button,
+.siteThemeLight .accountBillingButton { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
+.siteThemeLight .customRechargeAmount { border-color: #ccd8e3; background: #ffffff; }
+.siteThemeLight .customRechargeAmount b { color: #167463; }
+.siteThemeLight .customRechargeAmount input { background: transparent; color: #26384d; -webkit-text-fill-color: #26384d; }
+.siteThemeLight .customRechargeQuote :is(span, strong) { color: #40566e; }
+.siteThemeLight .customRechargeQuote span b,
+.siteThemeLight .customRechargeQuote strong em { color: #167463; }
+.siteThemeLight .customRechargeCard > p { color: #60758d; }
+.siteThemeLight .customRechargeCard > p.warning { color: #946100; }
+.siteThemeLight .customRechargeCard > button { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight .transactionItem,
+.siteThemeLight .favoriteCard { border: 1px solid #d8e1ea; background: #ffffff; color: #30445a; }
+.siteThemeLight .transactionItem strong.positive { color: #167463; }
+.siteThemeLight .transactionItem strong.negative { color: #b83249; }
+.siteThemeLight .favoriteCard strong { color: #30445a; }
+.siteThemeLight .favoriteCard em { color: #6d8095; }
+.siteThemeLight .favoriteCard span { background: #eaf7f3; color: #116657; }
+.siteThemeLight .freeImageHistoryActions > button,
+.siteThemeLight .createCaseLibraryHeader > button { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
+.siteThemeLight .freeImageHistoryActions > button:hover,
+.siteThemeLight .createCaseLibraryHeader > button:hover { border-color: rgba(13, 148, 136, 0.5); background: #dff2ec; color: #0e584e; }
+
+/* Final light-theme coverage for the floating assistant, declared after its base skin. */
+.siteThemeLight .chatCompanionPanel { border-color: #cfdbe5; background: #ffffff; color: #30445a; box-shadow: 0 24px 70px rgba(55, 78, 103, 0.2); }
+.siteThemeLight .chatCompanionHeader { border-bottom-color: #dce4ec; background: linear-gradient(90deg, #eef8f5, #f2f7fb); }
+.siteThemeLight .chatCompanionHeader strong { color: #26384d; }
+.siteThemeLight .chatCompanionHeader span { color: #60758d; }
+.siteThemeLight .chatCompanionHeader button,
+.siteThemeLight .chatCompanionComposerBar button { border-color: #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .chatCompanionHeader button:hover,
+.siteThemeLight .chatCompanionComposerBar button:hover { border-color: rgba(13, 148, 136, 0.42); background: #dff2ec; color: #116657; }
+.siteThemeLight .chatCompanionTranscript { background: #ffffff; }
+.siteThemeLight .chatCompanionWelcome,
+.siteThemeLight .chatCompanionThinking { color: #60758d; }
+.siteThemeLight .chatCompanionMessage { border-color: #d8e1ea; color: #30445a; }
+.siteThemeLight .chatCompanionMessage.assistant { background: #f1f5f8; }
+.siteThemeLight .chatCompanionMessage.user { border-color: rgba(13, 148, 136, 0.28); background: linear-gradient(135deg, #e7f7f1, #edf5fb); }
+.siteThemeLight .chatCompanionMessage small { color: #167463; }
+.siteThemeLight .chatCompanionMessageActions button { border-color: #d4dee8; background: #ffffff; color: #60758d; }
+.siteThemeLight .chatCompanionMessageImages :is(img, span) { border-color: #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .chatCompanionComposer,
+.siteThemeLight .chatCompanionAuth { border-top-color: #dce4ec; background: #f7f9fb; }
+.siteThemeLight .chatCompanionComposer textarea { border-color: #ccd8e3; background: #ffffff; color: #26384d; -webkit-text-fill-color: #26384d; }
+.siteThemeLight .chatCompanionComposer textarea::placeholder { color: #8797a8; opacity: 1; }
+.siteThemeLight .chatCompanionComposerBar > div,
+.siteThemeLight .chatCompanionLimit,
+.siteThemeLight .chatCompanionAuth p { color: #60758d; }
+.siteThemeLight .chatCompanionAttachments button { border-color: #d4dee8; background: #ffffff; color: #526980; }
+.siteThemeLight .chatCompanionResizeHandle span { border-bottom-color: rgba(13, 148, 136, 0.66); }
+
+/* Asset-library selection remains open until the explicit close button is used. */
+.siteThemeLight .freeImageAssetPicker > header { border-bottom-color: #dce4ec; }
+.siteThemeLight .freeImageAssetPicker > header strong { color: #26384d; }
+.siteThemeLight .freeImageAssetPicker > header button { border: 1px solid #d4dee8; background: #eef3f7; color: #526980; }
+.siteThemeLight .freeImageAssetPicker > label { border-color: #ccd8e3; background: #ffffff; color: #60758d; }
+.siteThemeLight .freeImageAssetPicker > label input { color: #26384d; -webkit-text-fill-color: #26384d; }
+.siteThemeLight .freeImageAssetPicker > div > button { border-color: #d7e0e8; background: #f8fafc; color: #30445a; }
+.siteThemeLight .freeImageAssetPicker > div > button:hover:not(:disabled) { border-color: rgba(13, 148, 136, 0.42); background: #eaf7f3; }
+.siteThemeLight .freeImageAssetPicker > div > button.selected { border-color: rgba(13, 148, 136, 0.58); background: #dff2ec; box-shadow: inset 0 0 0 1px rgba(13, 148, 136, 0.1); }
+.siteThemeLight .freeImageAssetPicker > div > button.linked { border-color: #bfd5ea; background: #edf4ff; }
+.siteThemeLight .freeImageAssetPicker > div > button img { background: #e8edf2; }
+.siteThemeLight .freeImageAssetPicker > div > button small,
+.siteThemeLight .freeImageAssetPicker > div > p { color: #6d8095; }
+.siteThemeLight .freeImageAssetPicker > footer { border-top-color: #dce4ec; background: #f7f9fb; }
+.siteThemeLight .freeImageAssetPicker > footer span { color: #60758d; }
+.siteThemeLight .freeImageAssetPicker > footer button { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }

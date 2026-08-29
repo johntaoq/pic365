@@ -37,17 +37,20 @@ function taskRequest(index = 0) {
   };
 }
 
-test('free generation tasks persist, enforce 20 records, and require deletion to free capacity', () => {
+test('free generation tasks keep 30 records and evict the oldest completed task', () => {
   const user = createTestUser('queue-capacity');
   const created = Array.from({ length: 20 }, (_, index) => queue.createFreeGenerationTask(user.id, taskRequest(index)));
   assert.equal(queue.listFreeGenerationTasks(user.id).length, 20);
-  assert.throws(() => queue.createFreeGenerationTask(user.id, taskRequest(21)), (error) => error?.code === 'TASK_LIST_FULL');
+  assert.throws(() => queue.createFreeGenerationTask(user.id, taskRequest(21)), (error) => error?.code === 'TASK_ACTIVE_LIMIT');
 
-  const cancelled = queue.requestFreeGenerationTaskCancellation(user.id, created[0].id);
-  assert.equal(cancelled.status, 'cancelled');
-  queue.deleteFreeGenerationTask(user.id, created[0].id);
-  assert.equal(queue.listFreeGenerationTasks(user.id).length, 19);
-  assert.equal(queue.createFreeGenerationTask(user.id, taskRequest(22)).status, 'queued');
+  for (const task of created) queue.completeFreeGenerationTask(user.id, task.id, { status: 'completed', result: { ok: true, images: [] } });
+  for (let index = 20; index < 30; index += 1) queue.createFreeGenerationTask(user.id, taskRequest(index));
+  assert.equal(queue.listFreeGenerationTasks(user.id).length, 30);
+  const newest = queue.createFreeGenerationTask(user.id, taskRequest(31));
+  const retained = queue.listFreeGenerationTasks(user.id);
+  assert.equal(retained.length, 30);
+  assert.equal(retained.some((task) => task.id === created[0].id), false);
+  assert.equal(retained.some((task) => task.id === newest.id), true);
 });
 
 test('queue claiming never runs more than three tasks for one user', () => {
@@ -116,6 +119,93 @@ test('redo preserves the original prompt, references, provider, size, quality, a
   assert.deepEqual(storedRedo.request.references, originalRequest.references);
 });
 
+test('canvas retry can reuse the same task node and position', () => {
+  const user = createTestUser('canvas-retry-in-place');
+  const original = queue.createFreeGenerationTask(user.id, {
+    ...taskRequest(91),
+    canvasProjectId: 'canvas-project-one',
+    canvasParentNodeId: 'canvas-parent-one',
+    canvasTaskNodeId: 'canvas-task-node-one',
+    canvasDisplayPrompt: '只调整背景',
+    canvasReferenceNodeIds: ['canvas-parent-one', 'style-reference'],
+    canvasX: 640,
+    canvasY: 280
+  });
+  queue.completeFreeGenerationTask(user.id, original.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+  const retry = queue.buildFreeGenerationRedoRequest(user.id, original.id, {
+    clientTaskId: 'canvas-retry-task',
+    canvasTaskNodeId: 'canvas-task-node-one',
+    canvasX: 640,
+    canvasY: 280,
+    replaceTaskId: true
+  });
+  assert.equal(retry.clientTaskId, 'canvas-retry-task');
+  assert.equal(retry.canvasTaskNodeId, 'canvas-task-node-one');
+  assert.equal(retry.canvasX, 640);
+  assert.equal(retry.canvasY, 280);
+  assert.equal(retry.canvasDisplayPrompt, '只调整背景');
+  assert.deepEqual(retry.canvasReferenceNodeIds, ['canvas-parent-one', 'style-reference']);
+  const createdRetry = queue.createFreeGenerationTask(user.id, retry);
+  assert.equal(createdRetry.id, 'canvas-retry-task');
+  assert.equal(queue.getFreeGenerationTask(user.id, original.id), null);
+});
+
+test('task creation rejects reference overflow instead of silently truncating it', () => {
+  const user = createTestUser('reference-overflow');
+  assert.throws(() => queue.createFreeGenerationTask(user.id, {
+    ...taskRequest(92),
+    references: Array.from({ length: 10 }, (_, index) => ({ generationId: `reference-${index}` }))
+  }), (error) => error?.code === 'TOO_MANY_REFERENCE_IMAGES');
+});
+
+test('multi-image task results expose the per-image credits used by canvas comparison', () => {
+  const user = createTestUser('canvas-result-credits');
+  const task = queue.createFreeGenerationTask(user.id, {
+    clientTaskId: 'canvas-result-credits',
+    prompt: 'two options',
+    size: '1024x1024',
+    quality: 'low',
+    count: 2,
+    providerId: 'provider-test',
+    references: []
+  });
+  queue.completeFreeGenerationTask(user.id, task.id, {
+    status: 'completed',
+    result: {
+      unitCredits: 20,
+      images: [
+        { generationId: 'credits-one', image: '/api/generated?id=credits-one' },
+        { generationId: 'credits-two', image: '/api/generated?id=credits-two' }
+      ]
+    }
+  });
+  assert.deepEqual(queue.getFreeGenerationTask(user.id, task.id).results.map((item) => item.creditsCharged), [20, 20]);
+});
+
+test('IC-AT-008 canvas task metadata survives queue reload for project recovery', () => {
+  const user = createTestUser('canvas-task-recovery');
+  const task = queue.createFreeGenerationTask(user.id, {
+    ...taskRequest(91),
+    canvasProjectId: 'canvas-project-one',
+    canvasParentNodeId: 'canvas-parent-one',
+    canvasTaskNodeId: 'canvas-task-node-one',
+    canvasDisplayPrompt: '仅显示这一句用户输入',
+    canvasX: 640,
+    canvasY: -120
+  });
+  assert.equal(task.canvasProjectId, 'canvas-project-one');
+  assert.equal(task.canvasParentNodeId, 'canvas-parent-one');
+  assert.equal(task.canvasTaskNodeId, 'canvas-task-node-one');
+  assert.equal(task.canvasDisplayPrompt, '仅显示这一句用户输入');
+  assert.equal(task.canvasX, 640);
+  assert.equal(task.canvasY, -120);
+
+  const restored = queue.listFreeGenerationTasks(user.id).find((item) => item.id === task.id);
+  assert.equal(restored.canvasProjectId, 'canvas-project-one');
+  assert.equal(restored.canvasTaskNodeId, 'canvas-task-node-one');
+  assert.equal(restored.canvasDisplayPrompt, '仅显示这一句用户输入');
+});
+
 test('batch repair tasks are created atomically with source metadata and preflight failures do not run', () => {
   const user = createTestUser('queue-batch-repair');
   const batchId = `batch-${Date.now()}`;
@@ -128,6 +218,7 @@ test('batch repair tasks are created atomically with source metadata and preflig
     sourceWidth: 1279 + index,
     sourceHeight: 2275 + index,
     sourceThumbnail: `data:image/webp;base64,thumb-${index}`,
+    preserveSourceSize: index !== 0,
     references: index === 2 ? [] : [{ clientId: `source-${index}`, imageDataUrl: 'data:image/png;base64,iVBORw0KGgo=' }],
     ...(index === 2 ? { preflightError: 'PROVIDER_SOURCE_SIZE_UNSUPPORTED' } : {})
   }));
@@ -144,6 +235,7 @@ test('batch repair tasks are created atomically with source metadata and preflig
   assert.equal(storedBatch.request.sourceName, 'source-0.png');
   assert.equal(storedBatch.request.sourceWidth, 1279);
   assert.equal(storedBatch.request.sourceHeight, 2275);
+  assert.equal(storedBatch.request.preserveSourceSize, false);
   assert.equal(tasks[2].status, 'failed');
   assert.equal(tasks[2].error, 'PROVIDER_SOURCE_SIZE_UNSUPPORTED');
 
@@ -152,12 +244,12 @@ test('batch repair tasks are created atomically with source metadata and preflig
   assert.equal(claimed.some((task) => task.id === tasks[2].id), false);
 });
 
-test('batch repair capacity is all-or-nothing', () => {
+test('batch repair active capacity is all-or-nothing', () => {
   const user = createTestUser('queue-batch-capacity');
   for (let index = 0; index < 19; index += 1) queue.createFreeGenerationTask(user.id, taskRequest(index));
   assert.throws(
     () => queue.createFreeGenerationTasks(user.id, [taskRequest(30), taskRequest(31)]),
-    (error) => error?.code === 'TASK_LIST_FULL'
+    (error) => error?.code === 'TASK_ACTIVE_LIMIT'
   );
   assert.equal(queue.listFreeGenerationTasks(user.id).length, 19);
 });

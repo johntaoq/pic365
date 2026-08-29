@@ -14,6 +14,13 @@ const POLL_INTERVAL_MS = 500;
 const CANCELLATION_POLL_MS = 150;
 const DEFAULT_GLOBAL_CONCURRENCY = 12;
 
+function safeWorkerError(error) {
+  return {
+    code: String(error?.code || 'GENERATION_FAILED').slice(0, 80),
+    message: String(error?.message || 'Generation failed').slice(0, 240)
+  };
+}
+
 function workerState() {
   if (!globalThis[WORKER_KEY]) {
     globalThis[WORKER_KEY] = {
@@ -127,12 +134,12 @@ async function tick() {
     const tasks = claimFreeGenerationTasks(available);
     for (const task of tasks) {
       const promise = executeTask(task)
-        .catch((error) => console.error('[free-generation-worker] task failed', task.id, error))
+        .catch((error) => console.error('[free-generation-worker] task failed', task.id, safeWorkerError(error)))
         .finally(() => state.active.delete(task.id));
       state.active.set(task.id, promise);
     }
   } catch (error) {
-    console.error('[free-generation-worker] poll failed', error);
+    console.error('[free-generation-worker] poll failed', safeWorkerError(error));
   } finally {
     state.ticking = false;
   }

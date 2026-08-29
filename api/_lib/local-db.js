@@ -819,6 +819,55 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       deleted_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS infinite_canvas_projects (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'deleted')),
+      adopted_node_id TEXT,
+      viewport_json TEXT NOT NULL DEFAULT '{}',
+      revision INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS infinite_canvas_nodes (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES infinite_canvas_projects(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      node_type TEXT NOT NULL CHECK (node_type IN ('idea', 'image', 'task', 'group')),
+      parent_node_id TEXT,
+      x REAL NOT NULL DEFAULT 0,
+      y REAL NOT NULL DEFAULT 0,
+      width REAL NOT NULL DEFAULT 292,
+      height REAL NOT NULL DEFAULT 270,
+      z_index INTEGER NOT NULL DEFAULT 0,
+      title TEXT NOT NULL DEFAULT '',
+      prompt TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      asset_id TEXT,
+      generation_id TEXT,
+      task_id TEXT,
+      locked INTEGER NOT NULL DEFAULT 0,
+      favorite INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS infinite_canvas_edges (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES infinite_canvas_projects(id) ON DELETE CASCADE,
+      source_node_id TEXT NOT NULL REFERENCES infinite_canvas_nodes(id) ON DELETE CASCADE,
+      target_node_id TEXT NOT NULL REFERENCES infinite_canvas_nodes(id) ON DELETE CASCADE,
+      relation_type TEXT NOT NULL DEFAULT 'generated_from',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      UNIQUE(project_id, source_node_id, target_node_id, relation_type)
+    );
+
     CREATE TABLE IF NOT EXISTS prompt_audit_logs (
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -1236,6 +1285,10 @@ function migrate(db, { recoverInterrupted = true } = {}) {
     CREATE INDEX IF NOT EXISTS ecommerce_tasks_user_status_idx ON ecommerce_generation_tasks(user_id, status);
     CREATE INDEX IF NOT EXISTS free_tasks_user_created_idx ON free_generation_tasks(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS free_tasks_status_created_idx ON free_generation_tasks(status, created_at ASC);
+    CREATE INDEX IF NOT EXISTS infinite_canvas_projects_user_updated_idx ON infinite_canvas_projects(user_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS infinite_canvas_nodes_project_idx ON infinite_canvas_nodes(project_id, deleted_at, created_at ASC);
+    CREATE INDEX IF NOT EXISTS infinite_canvas_nodes_task_idx ON infinite_canvas_nodes(user_id, task_id);
+    CREATE INDEX IF NOT EXISTS infinite_canvas_edges_project_idx ON infinite_canvas_edges(project_id, created_at ASC);
     CREATE UNIQUE INDEX IF NOT EXISTS ecommerce_delivery_project_slot_unique_idx ON ecommerce_delivery_documents(project_id, slot_id);
     CREATE INDEX IF NOT EXISTS ecommerce_delivery_project_order_idx ON ecommerce_delivery_documents(project_id, module_order ASC);
     CREATE INDEX IF NOT EXISTS ecommerce_user_templates_user_updated_idx ON ecommerce_user_templates(user_id, updated_at DESC);

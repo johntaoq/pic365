@@ -46,6 +46,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  SunMoon,
   Tags,
   TrendingUp,
   Trash2,
@@ -77,6 +78,7 @@ import {
 
 const SiteNoticeContent = lazy(() => import('./site-notice-content.jsx'));
 const MediaAssetCenter = lazy(() => import('./media-asset-center.jsx'));
+const InfiniteImageCanvas = lazy(() => import('./infinite-image-canvas.jsx'));
 
 const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID;
 const watchaLogoUrl =
@@ -91,7 +93,8 @@ const copy = {
     navAssets: 'Assets',
     navCooperation: 'Cooperation',
     ecommerceMode: 'Product image sets',
-    freeMode: 'Free Drawing Workshop',
+    freeMode: 'Image Studio',
+    canvasMode: 'Infinite Canvas',
     api: 'API',
     cooperationTitle: 'Support & Cooperation',
     cooperationTechnical: 'Technical support',
@@ -365,7 +368,8 @@ const copy = {
     navAssets: '资产库',
     navCooperation: '合作',
     ecommerceMode: '电商套图',
-    freeMode: '自由画坊',
+    freeMode: '灵感生图',
+    canvasMode: '无限画布',
     api: 'API',
     cooperationTitle: '合作与支持',
     cooperationTechnical: '技术支持',
@@ -725,15 +729,27 @@ const PAGE_HASHES = {
   cases: 'gallery',
   templates: 'templates',
   create: 'create',
+  canvas: 'canvas',
   assets: 'assets',
   cooperation: 'cooperation',
   admin: 'admin'
 };
 
+const SITE_THEME_STORAGE_KEY = 'pic365.site-theme.v1';
+
+function loadSiteTheme() {
+  try {
+    return localStorage.getItem(SITE_THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
 function pageFromHash(hash = '') {
   const value = String(hash || '').replace(/^#/, '');
   if (value === PAGE_HASHES.templates) return 'templates';
   if (value === PAGE_HASHES.cases) return 'cases';
+  if (value === PAGE_HASHES.canvas) return 'canvas';
   if (value === PAGE_HASHES.assets) return 'assets';
   if (value === PAGE_HASHES.cooperation) return 'cooperation';
   if (value === PAGE_HASHES.admin) return 'admin';
@@ -3581,8 +3597,8 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
               <div>
                 <h3><ReceiptText size={18} />{language === 'zh' ? '提示词记录' : 'Prompt logs'}</h3>
                 <p>{language === 'zh'
-                  ? '仅记录自由画坊的单图创作与批量 AI 修图请求；关闭后不再新增记录。'
-                  : 'Records Free Drawing Workshop single and batch-repair requests only. Disabling stops new records.'}</p>
+                  ? '仅记录灵感生图的单图创作与批量 AI 修图请求；关闭后不再新增记录。'
+                  : 'Records Image Studio single and batch-repair requests only. Disabling stops new records.'}</p>
               </div>
               <label className="adminPromptLoggingSwitch">
                 <input
@@ -4593,9 +4609,11 @@ function App() {
   const [caseIndexLoading, setCaseIndexLoading] = useState(true);
   const [visibleCaseCount, setVisibleCaseCount] = useState(GALLERY_INITIAL_COUNT);
   const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'zh');
+  const [siteTheme, setSiteTheme] = useState(loadSiteTheme);
   const [activePage, setActivePage] = useState(() => pageFromHash(window.location.hash));
   const [workspaceMode, setWorkspaceMode] = useState('single');
   const [pendingReferenceAsset, setPendingReferenceAsset] = useState(null);
+  const [pendingCanvasReference, setPendingCanvasReference] = useState(null);
   const [pendingEcommerceProjectId, setPendingEcommerceProjectId] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
@@ -4674,6 +4692,13 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    try { localStorage.setItem(SITE_THEME_STORAGE_KEY, siteTheme); } catch { /* best effort */ }
+    document.documentElement.dataset.theme = siteTheme;
+    document.body.dataset.theme = siteTheme;
+    document.documentElement.style.colorScheme = siteTheme;
+  }, [siteTheme]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authError = params.get('auth_error');
     if (!authError) return;
@@ -4710,6 +4735,7 @@ function App() {
     if (
       window.location.hash === '#admin'
       || window.location.hash === '#assets'
+      || window.location.hash === '#canvas'
       || window.location.hash === '#cooperation'
     ) return;
     setWorkspaceMode('single');
@@ -5118,7 +5144,7 @@ function App() {
   }
 
   return (
-    <main>
+    <main className={cx('siteApp', siteTheme === 'light' && 'siteThemeLight')} data-theme={siteTheme}>
       <header className={cx('topbar', `topbarPage-${activePage}`)}>
         <a className="brand pic365Brand" href="#" aria-label="pic365">
           <img className="pic365BrandLogo" src="/images/pic365-logo.png" alt="pic365" />
@@ -5134,6 +5160,13 @@ function App() {
               }}
             >
               {t.freeMode}
+            </button>
+            <button
+              className={cx('pageTab', activePage === 'canvas' && 'active')}
+              type="button"
+              onClick={() => handlePageChange('canvas')}
+            >
+              {t.canvasMode}
             </button>
             {menuSettings.effective.ecommerce ? <button
               className={cx('pageTab', activePage === 'create' && workspaceMode === 'ecommerce' && 'active')}
@@ -5194,6 +5227,7 @@ function App() {
           </nav>
           <LanguageSwitch language={language} setLanguage={setLanguage} />
           <NotificationBell language={language} session={session} profile={profile} onProfileChange={setProfile} />
+          <button className="siteThemeToggle" type="button" aria-pressed={siteTheme === 'light'} aria-label={siteTheme === 'light' ? (language === 'zh' ? '切换深色风格' : 'Switch to dark theme') : (language === 'zh' ? '切换白色风格' : 'Switch to light theme')} title={siteTheme === 'light' ? (language === 'zh' ? '深色风格' : 'Dark theme') : (language === 'zh' ? '白色风格' : 'Light theme')} onClick={() => setSiteTheme((current) => current === 'light' ? 'dark' : 'light')}><SunMoon size={20} /></button>
           <UserMenu
             language={language}
             session={session}
@@ -5362,9 +5396,37 @@ function App() {
           onProfileChange={handleProfileChange}
           pendingReferenceAsset={pendingReferenceAsset}
           onReferenceAssetConsumed={() => setPendingReferenceAsset(null)}
+          pendingCanvasReference={pendingCanvasReference}
+          onCanvasReferenceConsumed={() => setPendingCanvasReference(null)}
           pendingEcommerceProjectId={pendingEcommerceProjectId}
           onEcommerceProjectConsumed={() => setPendingEcommerceProjectId('')}
         />
+      ) : null}
+      {activePage === 'canvas' ? (
+        <Suspense fallback={<div className="createWorkspaceLoading" aria-live="polite"><span /></div>}>
+          <InfiniteImageCanvas
+            language={language}
+            theme={siteTheme}
+            session={session}
+            profile={profile}
+            onSignIn={openAuth}
+            onBilling={() => {
+              setBillingNotice(t.creditsRequired);
+              setBillingOpen(true);
+            }}
+            onProfileChange={handleProfileChange}
+            onGoHome={() => handlePageChange('cases')}
+            onExitCanvas={() => {
+              setWorkspaceMode('single');
+              handlePageChange('create');
+            }}
+            onOpenInStudio={(node) => {
+              setPendingCanvasReference(node);
+              setWorkspaceMode('single');
+              handlePageChange('create');
+            }}
+          />
+        </Suspense>
       ) : null}
       {activePage === 'assets' ? (
         <Suspense fallback={<div className="createWorkspaceLoading" aria-live="polite"><span /></div>}>
@@ -5466,4 +5528,7 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const rootElement = document.getElementById('root');
+const appRoot = globalThis.__PIC365_REACT_ROOT__ || createRoot(rootElement);
+globalThis.__PIC365_REACT_ROOT__ = appRoot;
+appRoot.render(<App />);
