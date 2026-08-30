@@ -6,6 +6,7 @@ import { startFreeGenerationWorker } from './free-generation-worker.js';
 import { startEcommerceGenerationWorker } from './ecommerce-generation-worker.js';
 import { startMediaProcessingWorker } from './media-processing-worker.js';
 import { startStorageBillingWorker } from './storage-billing-worker.js';
+import { startVideoGenerationWorker } from './video-generation-worker.js';
 
 const root = process.cwd();
 const distRoot = path.resolve(root, 'dist');
@@ -158,5 +159,6 @@ server.listen(port, host, () => {
   startEcommerceGenerationWorker();
   startMediaProcessingWorker();
   startStorageBillingWorker();
+  startVideoGenerationWorker();
   console.log(`GPT-Image2 app listening on http://${host}:${port}`);
 });

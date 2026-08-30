@@ -137,6 +137,39 @@ test('sub-credit growth is carried forward without advancing the billed peak', (
   assert.equal(duplicate.status, 'already_processed');
 });
 
+test('super administrators are measured without creating a storage charge', () => {
+  const user = db.createUser({ email: 'storage-admin@example.com', password: 'testing-1234', initialCredits: 1000 });
+  db.getDb().prepare(`UPDATE users SET role = 'super_admin' WHERE id = ?`).run(user.id);
+  addOwnedAsset(user.id, 'admin-storage-asset', STORAGE_BILLING_BYTES_PER_GB);
+
+  const result = billing.billUserStorageForDate({
+    userId: user.id,
+    runDate: '2026-08-08',
+    ownedBytes: STORAGE_BILLING_BYTES_PER_GB,
+    ownedAssetCount: 1,
+    measuredAt: '2026-08-08T00:00:00.000Z',
+    unitPriceCentsPerGb: 300
+  });
+
+  assert.equal(result.status, 'exempt');
+  assert.equal(result.chargedCredits, 0);
+  assert.equal(result.billedPeakBytes, 0);
+  assert.equal(db.getUserById(user.id).creditBalance, 1000);
+  assert.equal(db.getDb().prepare(`SELECT COUNT(*) AS count FROM storage_billing_charges WHERE user_id = ?`).get(user.id).count, 0);
+  assert.equal(db.listCreditLedger(user.id, 10).filter((entry) => entry.type === 'storage').length, 0);
+
+  const usage = db.getDb().prepare(`
+    SELECT result_status, incremental_credits, balance_before, balance_after, charge_id
+    FROM storage_billing_daily_usage
+    WHERE user_id = ? AND usage_date = '2026-08-08'
+  `).get(user.id);
+  assert.equal(usage.result_status, 'exempt');
+  assert.equal(usage.incremental_credits, 0);
+  assert.equal(usage.balance_before, 1000);
+  assert.equal(usage.balance_after, 1000);
+  assert.equal(usage.charge_id, null);
+});
+
 test('monthly price is snapshotted and insufficient balances do not advance the billed peak', () => {
   const user = db.createUser({ email: 'storage-price@example.com', password: 'testing-1234', initialCredits: 2000 });
   addOwnedAsset(user.id, 'price-asset', STORAGE_BILLING_BYTES_PER_GB);

@@ -537,7 +537,7 @@ header.topbar.topbarPage-canvas {
   gap: 8px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0 0 14px;
-  width: min(100%, 680px);
+  width: calc(47.5% - 8.55px);
 }
 
 .freeImageWorkspaceTabs > button {
@@ -1640,6 +1640,14 @@ body[data-theme="light"] {
 .siteThemeLight .createQuickFilters button { border-color: #d4dee8; background: #f3f6f9; color: #5c7188; }
 .siteThemeLight .createQuickFilters button:hover,
 .siteThemeLight .createQuickFilters button.active { border-color: rgba(13, 148, 136, 0.5); background: #e2f2ed; color: #116657; }
+.siteThemeLight .createCaseLibrary {
+  border-color: #d4e2e2;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(13, 148, 136, 0.08), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 248, 246, 0.96));
+  box-shadow: 0 18px 48px rgba(55, 78, 103, 0.1);
+}
+.siteThemeLight .createCaseLibraryHeader h3 { color: #26384d; }
 .siteThemeLight .createCaseCard { border-color: #d5dfe8; background: #ffffff; color: #26384d; box-shadow: 0 10px 28px rgba(55, 78, 103, 0.08); }
 .siteThemeLight .createCaseCard:hover { border-color: rgba(13, 148, 136, 0.42); background: #f4fbf8; }
 .siteThemeLight .createCaseCard span { color: #0d7780; }
@@ -1745,6 +1753,7 @@ body[data-theme="light"] {
 .siteThemeLight .adminEnvironmentBadge { border-color: rgba(13, 148, 136, 0.25); background: #e5f5f0; color: #116657; }
 .siteThemeLight .adminWorkspacePrimaryNav button,
 .siteThemeLight .adminWorkspaceNav button { border-color: #d4dee8; background: #f4f7fa; color: #5c7188; }
+.siteThemeLight .adminWorkspaceNav { border-top-color: #dce4ec; background: #f7f9fb; }
 .siteThemeLight .adminWorkspacePrimaryNav button:hover,
 .siteThemeLight .adminWorkspaceNav button:hover { background: #eaf7f3; color: #116657; }
 .siteThemeLight .adminWorkspacePrimaryNav button.active,
@@ -2639,23 +2648,14 @@ body[data-theme="light"] {
     gap: 8px;
     overflow-x: auto;
     padding: 9px 8px 10px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(141, 244, 204, 0.68) rgba(8, 15, 29, 0.72);
+    scrollbar-width: none !important;
     scroll-snap-type: x proximity;
   }
 
   .adminWorkspacePrimaryNav::-webkit-scrollbar {
-    height: 5px;
-  }
-
-  .adminWorkspacePrimaryNav::-webkit-scrollbar-track {
-    border-radius: 999px;
-    background: rgba(8, 15, 29, 0.72);
-  }
-
-  .adminWorkspacePrimaryNav::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: linear-gradient(90deg, #67e8f9, #8df4cc);
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
 
   .adminWorkspacePrimaryNav button {
@@ -5108,6 +5108,8 @@ body[data-theme="light"] {
 }
 
 @media (max-width: 1080px) {
+  .freeImageWorkspaceTabs { width: 100%; }
+
   .freeImageMainGrid {
     grid-template-columns: 1fr;
   }
@@ -15751,6 +15753,25 @@ body.deliveryObjectDragging * {
 .adminProviderRowAction:hover { background: rgba(103,232,249,.09); border-color: rgba(103,232,249,.32); color: #e8fbff; transform: translateY(-1px); }
 .adminProviderRemove { color: #ff9aaa; padding: 0; width: 34px; }
 .adminProviderRemove:hover { background: rgba(255,112,132,.1); border-color: rgba(255,112,132,.35); color: #ffc4cd; }
+.adminChannelSection { gap: 16px; }
+.adminChannelEditor { border: 1px solid rgba(149,167,220,.14); border-radius: 14px; padding: 14px; background: rgba(3,8,20,.3); }
+.adminChannelEditorActions { display: flex; grid-column: 1/-1; flex-wrap: wrap; gap: 8px; }
+.adminChannelPricingMeta { grid-column: 1/-1; }
+.adminChannelTableWrap { width: 100%; overflow-x: auto; border: 1px solid rgba(149,167,220,.14); border-radius: 12px; }
+.adminChannelTable { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; }
+.adminChannelTable th { padding: 10px 12px; border-bottom: 1px solid rgba(149,167,220,.16); background: rgba(103,232,249,.055); color: var(--muted); font-size: 11px; text-align: left; }
+.adminChannelTable td { padding: 11px 12px; border-bottom: 1px solid rgba(149,167,220,.1); color: var(--text); font-size: 12px; vertical-align: middle; overflow-wrap: anywhere; }
+.adminChannelTable tbody tr:last-child td { border-bottom: 0; }
+.adminChannelTable td strong,.adminChannelTable td span,.adminChannelTable td small { display: block; }
+.adminChannelTable td strong { color: var(--text); font-size: 13px; }
+.adminChannelTable td small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.adminChannelStatus,.adminChannelRowActions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.adminChannelStatus i { border: 1px solid rgba(149,167,220,.18); border-radius: 999px; padding: 3px 7px; color: var(--muted); font-size: 10px; font-style: normal; font-weight: 800; }
+.adminChannelStatus i.enabled { border-color: rgba(121,239,202,.28); background: rgba(121,239,202,.08); color: #9ef1d4; }
+.adminChannelStatus i.disabled { border-color: rgba(248,113,113,.25); background: rgba(248,113,113,.07); color: #fca5a5; }
+.adminChannelStatus i.default { border-color: rgba(250,204,21,.28); background: rgba(250,204,21,.08); color: #fde68a; }
+.adminTtsPlaceholder { opacity: .78; }
+.adminTtsPlaceholder .adminSectionHeading > span { border: 1px solid rgba(149,167,220,.18); border-radius: 999px; padding: 6px 10px; color: var(--muted); font-size: 11px; font-weight: 800; }
 .freeImageTaskError { color: #ff9eaa; display: block; font-size: 11px; font-weight: 750; line-height: 1.45; margin-top: 6px; }
 @media (max-width:1000px) { .adminProviderForm { grid-template-columns: repeat(2,minmax(0,1fr)); } .adminProviderPricingGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width:640px) { .adminProviderPricingEditor>header { align-items: stretch; flex-direction: column; } .adminProviderPricingGrid { grid-template-columns: 1fr; } .adminProviderMatrix { overflow-x: auto; } .adminProviderMatrixHeader,.adminProviderMatrixRow { min-width: 560px; } .adminProviderPricingPreview { overflow-x: auto; } .adminProviderPricingPreview>div { min-width: 480px; } }
@@ -16105,12 +16126,14 @@ body.deliveryObjectDragging * {
 @media (max-width: 640px) {
   .topbar nav a,
   .topbar nav button.pageTab {
-    min-height: 36px;
+    min-height: 42px;
     padding-inline: 2px;
     font-size: clamp(12px, 3.35vw, 13px);
-    line-height: 1;
+    line-height: 1.15;
     text-align: center;
-    white-space: nowrap;
+    text-wrap: balance;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .topbar nav button.pageTab svg {
@@ -16306,8 +16329,9 @@ body.deliveryObjectDragging * {
   .accountGovernanceGrid, .redemptionFormGrid, .governanceSettingsPanel .governanceSwitchGrid, .registrationDomainGrid, .governanceReadonlyGrid, .governanceUserSummary { grid-template-columns: 1fr; }
   .redeemCodeCard > div { grid-template-columns: 1fr; }
   .creditAdjustmentPreview dl > div { grid-template-columns: 1fr; gap: 3px; }
-  .auditEventsHeading { align-items: stretch; }
+  .auditEventsHeading { align-items: stretch; flex-direction: column; }
   .auditScopeFilter { min-width: 0; width: 100%; }
+  .auditScopeFilter select { width: 100%; }
 }
 
 /* Unified flat scrollbars: page, dialogs, tables, task rails and media strips. */
@@ -16316,6 +16340,14 @@ body.deliveryObjectDragging * {
   --pic-scrollbar-track: rgba(7, 14, 29, 0.42);
   --pic-scrollbar-thumb: rgba(94, 234, 212, 0.66);
   --pic-scrollbar-thumb-hover: rgba(125, 255, 220, 0.92);
+}
+
+html[data-theme="light"],
+body[data-theme="light"],
+.siteThemeLight {
+  --pic-scrollbar-track: transparent;
+  --pic-scrollbar-thumb: rgba(31, 163, 145, 0.62);
+  --pic-scrollbar-thumb-hover: rgba(13, 148, 136, 0.86);
 }
 
 html {
@@ -16327,6 +16359,17 @@ body,
 body * {
   scrollbar-color: var(--pic-scrollbar-thumb) var(--pic-scrollbar-track) !important;
   scrollbar-width: thin !important;
+}
+
+/* Chromium gives the standard scrollbar-color property priority over the
+   WebKit parts below. Return it to auto there so custom transparent tracks
+   and hidden arrow buttons are actually used; Firefox keeps the variables. */
+@supports selector(::-webkit-scrollbar) {
+  html,
+  body,
+  body * {
+    scrollbar-color: auto !important;
+  }
 }
 
 html::-webkit-scrollbar,
@@ -16447,6 +16490,41 @@ body *::-webkit-scrollbar-corner {
   background: transparent !important;
 }
 
+html[data-theme="light"]::-webkit-scrollbar-track,
+body[data-theme="light"]::-webkit-scrollbar-track,
+body[data-theme="light"] *::-webkit-scrollbar-track,
+html[data-theme="light"]::-webkit-scrollbar-track-piece,
+body[data-theme="light"]::-webkit-scrollbar-track-piece,
+body[data-theme="light"] *::-webkit-scrollbar-track-piece,
+html[data-theme="light"]::-webkit-scrollbar-button,
+body[data-theme="light"]::-webkit-scrollbar-button,
+body[data-theme="light"] *::-webkit-scrollbar-button,
+html[data-theme="light"]::-webkit-scrollbar-corner,
+body[data-theme="light"]::-webkit-scrollbar-corner,
+body[data-theme="light"] *::-webkit-scrollbar-corner {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"]::-webkit-scrollbar-thumb,
+body[data-theme="light"]::-webkit-scrollbar-thumb,
+body[data-theme="light"] *::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(74, 197, 177, 0.88), rgba(45, 156, 174, 0.76)) !important;
+  background-clip: padding-box !important;
+  border: 2px solid transparent !important;
+  box-shadow: 0 0 8px rgba(13, 148, 136, 0.12) !important;
+}
+
+html[data-theme="light"]::-webkit-scrollbar-thumb:hover,
+body[data-theme="light"]::-webkit-scrollbar-thumb:hover,
+body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(55, 191, 167, 0.98), rgba(32, 139, 168, 0.9)) !important;
+  background-clip: padding-box !important;
+  box-shadow: 0 0 10px rgba(13, 148, 136, 0.2) !important;
+}
+
 :is(
   .authDialog,
   .adminDialog,
@@ -16478,12 +16556,14 @@ body *::-webkit-scrollbar-corner {
 /* Compact navigation rails scroll by touch or wheel without adding visual chrome. */
 .workspaceModeRail,
 .topbar nav,
+.createQuickFilters,
 .mediaAssetSidebar nav {
   scrollbar-width: none !important;
 }
 
 .workspaceModeRail::-webkit-scrollbar,
 .topbar nav::-webkit-scrollbar,
+.createQuickFilters::-webkit-scrollbar,
 .mediaAssetSidebar nav::-webkit-scrollbar {
   display: none !important;
 }
@@ -17533,12 +17613,12 @@ body *::-webkit-scrollbar-corner {
 .siteThemeLight .mediaAssetInspector {
   border-color: #dce4ec;
   background: #ffffff;
-  scrollbar-color: #79bfb2 #edf2f6;
+  scrollbar-color: #79bfb2 transparent;
 }
 .siteThemeLight .mediaAssetInspector::-webkit-scrollbar-track,
-.siteThemeLight .mediaAssetDetail::-webkit-scrollbar-track { background: #edf2f6; }
+.siteThemeLight .mediaAssetDetail::-webkit-scrollbar-track { background: transparent; }
 .siteThemeLight .mediaAssetInspector::-webkit-scrollbar-thumb,
-.siteThemeLight .mediaAssetDetail::-webkit-scrollbar-thumb { border-color: #edf2f6; background: linear-gradient(180deg, #79cdbd, #72a9cb); }
+.siteThemeLight .mediaAssetDetail::-webkit-scrollbar-thumb { border-color: transparent; background: linear-gradient(180deg, #79cdbd, #72a9cb); }
 .siteThemeLight .mediaAssetInspectorHeading,
 .siteThemeLight .mediaAssetInspector > label,
 .siteThemeLight .mediaAssetCollectionPicker { color: #60758d; }
@@ -17634,11 +17714,67 @@ body *::-webkit-scrollbar-corner {
   color: #30445a;
   box-shadow: none;
 }
+.siteThemeLight .adminChannelEditor,.siteThemeLight .adminChannelTableWrap { border-color: #d7e0e8; background: #f8fafc; }
+.siteThemeLight .adminChannelTable th { border-bottom-color: #d7e0e8; background: #eef5f7; color: #61758b; }
+.siteThemeLight .adminChannelTable td { border-bottom-color: #e2e8ee; color: #30445a; }
+.siteThemeLight .adminChannelTable td strong { color: #26384d; }
+.siteThemeLight .adminChannelTable td small { color: #718399; }
+.siteThemeLight .adminChannelStatus i { border-color: #d4dee8; background: #f4f7fa; color: #60758d; }
+.siteThemeLight .adminChannelStatus i.enabled { border-color: rgba(13,148,136,.28); background: #eaf7f3; color: #17685a; }
+.siteThemeLight .adminChannelStatus i.disabled { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight .adminChannelStatus i.default { border-color: #ead28b; background: #fff8df; color: #8b6500; }
 .siteThemeLight .adminWorkspace :is(h2, h3, h4, .adminPromptLogList article > header strong, .adminNotificationPreview article > strong, .adminRechargeSection > header strong, .adminRechargePackRow > strong, .adminRechargePackRow > b, .adminStorageBillingGrid > div > strong, .adminProviderList article strong, .adminProviderPricingPreview strong, .adminAccountBlock strong) { color: #26384d; }
 .siteThemeLight .adminWorkspace :is(.adminSectionHeading p, .adminPromptLogList article > header span, .adminPromptLogList article > header time, .adminProviderList article span, .adminPromotionHint, .adminPaymentGatewayState, .adminStorageBillingNote, .adminRechargePolicy span, .adminRechargeSection > header span, .adminRechargeFooter > span, .adminRechargePackHeader, .adminStorageBillingGrid > label > span, .adminStorageBillingGrid > div > span, .adminAccountBlock p, .adminAccountStats span, .adminChatPricingMeta) { color: #6d8095; }
 .siteThemeLight .adminWorkspace :is(.adminPromptLogFacts span, .adminPromotionStatus, .adminRechargeStatus) { border-color: #c6ddd7; background: #eaf7f3; color: #116657; }
+.siteThemeLight .adminWorkspace .adminRangeSummary strong { color: #26384d; }
+.siteThemeLight .adminWorkspace .adminMetricCard span:not(.adminMetricIcon) { color: #0d7780; }
+.siteThemeLight .adminWorkspace .adminMetricCard em { color: #6d8095; }
+.siteThemeLight .adminWorkspace .adminNotice { border-color: #ecd399; background: #fff8df; color: #765000; }
+.siteThemeLight .adminWorkspace .adminNotice.error { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
+.siteThemeLight .adminWorkspace .adminProviderPricingEditor > header strong,
+.siteThemeLight .adminWorkspace .adminRechargePolicy strong { color: #26384d; }
+.siteThemeLight .adminWorkspace .adminProviderPricingEditor > header button,
+.siteThemeLight .adminWorkspace .adminChatPricing header button {
+  border-color: #c6dce6;
+  background: #eef5f7;
+  color: #285e76;
+}
+.siteThemeLight .adminWorkspace .adminProviderPricingPreview b,
+.siteThemeLight .adminWorkspace :is(.adminChatPricingMeta, .adminChannelPricingMeta) b { color: #167463; }
+.siteThemeLight .adminWorkspace :is(
+  .adminProviderPricingGrid label > span,
+  .adminRechargeBaseGrid > label,
+  .adminRechargeCustomGrid > label,
+  .adminPaymentGatewayGrid > label,
+  .adminPromotionForm > label,
+  .adminChatProviderGrid label > span,
+  .adminChatPricingGrid label > span
+) { color: #526980; }
+.siteThemeLight .adminWorkspace .adminPromotionToggle {
+  border-color: #c6ddd7;
+  background: #eef8f5;
+  color: #17685a !important;
+}
+.siteThemeLight .adminWorkspace .adminPromotionPercentInput b { color: #60758d; }
+.siteThemeLight .adminWorkspace .adminPromotionPreview { border-color: #ecd399; background: #fff8df; color: #765000; }
+.siteThemeLight .adminWorkspace .adminPromotionForm > button { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight .adminWorkspace .roleBadge { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
 .siteThemeLight .adminWorkspace :is(.adminPromptLogList pre, .adminPromptUserText p, .adminNotificationExample code) { border: 1px solid #d8e1ea; background: #ffffff; color: #40566e; }
 .siteThemeLight .adminWorkspace :is(.adminPromptLoggingSwitch, .adminNotificationToggle, .adminNotificationAlertGrid label) { border-color: #c6ddd7; background: #eef8f5; color: #17685a; }
+.siteThemeLight .adminWorkspace :is(.adminRechargeUnitInput, .adminChatPricingGrid label > div) {
+  border-color: #ccd8e3;
+  background: #ffffff;
+  color: #26384d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+.siteThemeLight .adminWorkspace .adminRechargeUnitInput input,
+.siteThemeLight .adminWorkspace .adminChatPricingGrid input {
+  background: transparent;
+  color: #26384d;
+  -webkit-text-fill-color: #26384d;
+}
+.siteThemeLight .adminWorkspace .adminRechargeUnitInput b,
+.siteThemeLight .adminWorkspace .adminChatPricingGrid b { color: #167463; }
 .siteThemeLight .adminWorkspace :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select),
 .siteThemeLight .adminAdjustForm :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) { border-color: #ccd8e3; background: #ffffff; color: #26384d; -webkit-text-fill-color: #26384d; }
 .siteThemeLight .adminWorkspace :is(input, textarea)::placeholder,

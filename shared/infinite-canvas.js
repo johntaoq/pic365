@@ -148,7 +148,7 @@ export function normalizeCanvasState(value = {}) {
   const rawNodes = Array.isArray(value.nodes) ? value.nodes : [];
   const seen = new Set();
   const nodes = rawNodes
-    .filter((node) => node && typeof node === 'object' && ['idea', 'image', 'task', 'group'].includes(node.type))
+    .filter((node) => node && typeof node === 'object' && ['idea', 'image', 'video', 'task', 'group'].includes(node.type))
     .map((node, index) => ({
       ...node,
       id: String(node.id || `node-${index}`),
@@ -159,7 +159,11 @@ export function normalizeCanvasState(value = {}) {
       prompt: String(node.prompt || '').slice(0, 6000),
       imageUrl: cleanCanvasUrl(node.imageUrl),
       thumbnailUrl: cleanCanvasUrl(node.thumbnailUrl || node.imageUrl),
+      videoUrl: cleanCanvasUrl(node.videoUrl),
+      posterUrl: cleanCanvasUrl(node.posterUrl),
       downloadUrl: cleanCanvasUrl(node.downloadUrl),
+      mediaType: node.mediaType === 'video' ? 'video' : node.mediaType === 'image' ? 'image' : '',
+      videoGenerationId: String(node.videoGenerationId || ''),
       assetId: String(node.assetId || ''),
       generationId: String(node.generationId || ''),
       taskId: String(node.taskId || ''),
@@ -168,6 +172,10 @@ export function normalizeCanvasState(value = {}) {
       quality: String(node.quality || ''),
       providerId: String(node.providerId || ''),
       status: String(node.status || ''),
+      phase: String(node.phase || ''),
+      progress: Math.max(0, Math.min(100, Math.round(Number(node.progress) || 0))),
+      seconds: Math.max(0, Math.min(60, Math.round(Number(node.seconds) || 0))),
+      hasAudio: node.hasAudio == null ? null : Boolean(node.hasAudio),
       error: String(node.error || ''),
       locked: Boolean(node.locked),
       favorite: Boolean(node.favorite),
@@ -257,6 +265,18 @@ export function orderedCanvasReferenceNodes(nodes = [], primaryNodeId = '') {
   return primary ? [primary, ...supporting] : supporting;
 }
 
+export function inferCanvasReferenceRole(node = {}) {
+  const text = [node.name, node.autoName, node.title, node.prompt, node.draftPrompt]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (/(配色|色板|颜色|色彩|色调|调色|palette|color|colour|tone)/i.test(text)) return 'color';
+  if (/(构图|版式|布局|排版|机位|镜头|视角|角度|composition|layout|framing|camera|angle)/i.test(text)) return 'composition';
+  if (/(风格|氛围|光影|质感|摄影|插画|艺术|材质|style|mood|lighting|texture|photograph|illustration|art)/i.test(text)) return 'style';
+  if (/(主体|商品|产品|人物|角色|模特|包装|logo|标志|subject|product|person|character|model|package|brand)/i.test(text)) return 'subject';
+  return 'general';
+}
+
 export function canvasReferenceEdges(nodes = []) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   return nodes.flatMap((target) => (target.referenceLinks || []).map((link) => {
@@ -264,6 +284,37 @@ export function canvasReferenceEdges(nodes = []) {
     if (!source || source.id === target.id) return null;
     return { source, target, role: link.role || 'general', order: Number(link.order || 0) };
   }).filter(Boolean));
+}
+
+export function canvasReferenceRemovalImpact(nodes = [], nodeIds = []) {
+  const removing = new Set(nodeIds);
+  const edges = canvasReferenceEdges(nodes).filter((edge) => removing.has(edge.source.id) || removing.has(edge.target.id));
+  return {
+    total: edges.length,
+    internal: edges.filter((edge) => removing.has(edge.source.id) && removing.has(edge.target.id)).length,
+    external: edges.filter((edge) => removing.has(edge.source.id) !== removing.has(edge.target.id)).length
+  };
+}
+
+export function canvasImageDownloadFilename(node = {}, language = 'zh') {
+  const rawPrefix = String(node.name || node.autoName || node.title || 'image').trim();
+  const prefix = rawPrefix
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/[.\s-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 72) || 'image';
+  const mimeExtensions = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/avif': 'avif',
+    'image/gif': 'gif'
+  };
+  const mimeType = String(node.mimeType || '').split(';')[0].trim().toLowerCase();
+  const source = String(node.downloadUrl || node.imageUrl || '').split(/[?#]/)[0];
+  const sourceExtension = source.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase();
+  const extension = mimeExtensions[mimeType] || (['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'].includes(sourceExtension) ? sourceExtension : 'png');
+  return `${prefix}-${language === 'zh' ? '原图' : 'original'}.${extension === 'jpeg' ? 'jpg' : extension}`;
 }
 
 export function canvasReferencePrompt(prompt, references = [], language = 'zh') {
@@ -351,7 +402,9 @@ export function arrangeCanvasNodes(nodes = []) {
         positions.set(node.id, { x: 120 + depth * 370, y: 110 + index * 320 });
       });
   }
-  return normalized.map((node) => ({ ...node, ...positions.get(node.id) }));
+  return normalized.map((node) => node.locked
+    ? { ...node }
+    : { ...node, ...positions.get(node.id) });
 }
 
 export function canvasConnectorPath(parent, child) {

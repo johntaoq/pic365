@@ -29,7 +29,7 @@ import {
   normalizeReferenceRequests
 } from './_lib/reference-images.js';
 import { deleteStoredFile, persistImage } from './_lib/storage.js';
-import { addFreeImageWatermark } from './_lib/free-image-watermark.js';
+import { ensureFreeImageWatermark } from './_lib/free-image-watermark.js';
 import {
   normalizeImageCount,
   normalizeImageQuality,
@@ -294,17 +294,19 @@ export default async function handler(req, res) {
     }
     try {
       const providerResult = await generateProviderImage({ prompt, size: '1024x1024', quality: 'low', providerConfig: guestProviderConfig, signal: requestController.signal });
-      const watermarkedResult = await addFreeImageWatermark(providerResult.image);
+      const watermarkedResult = await ensureFreeImageWatermark(providerResult);
       setGuestGenerationCookie(req, res, claim.count);
       const guestImage = {
         generationId: null,
         image: watermarkedResult.image,
+        contentType: watermarkedResult.contentType,
         size: '1024x1024',
         quality: 'low',
         cloudSaved: false,
         downloadAllowed: false,
         creditsCharged: 0,
         watermarked: true,
+        watermark: watermarkedResult.watermark,
         prompt
       };
       return json(res, 200, {

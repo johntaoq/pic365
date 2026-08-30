@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  BoxSelect,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -9,9 +10,11 @@ import {
   Download,
   Edit3,
   Eye,
+  Film,
   Focus,
   FolderOpen,
   FolderPlus,
+  GitBranch,
   GripHorizontal,
   House,
   ImagePlus,
@@ -24,6 +27,7 @@ import {
   MousePointer2,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   Plus,
   RefreshCw,
   Redo2,
@@ -48,6 +52,8 @@ import {
   canvasBatchResultPlacements,
   canvasReferenceConnectorPath,
   canvasReferenceEdges,
+  canvasReferenceRemovalImpact,
+  canvasImageDownloadFilename,
   canvasReferencePrompt,
   clipboardImageFiles,
   canvasConnectorPath,
@@ -57,6 +63,7 @@ import {
   INFINITE_CANVAS_NODE_HEIGHT,
   INFINITE_CANVAS_NODE_WIDTH,
   isCanvasUiTarget,
+  inferCanvasReferenceRole,
   normalizeCanvasState,
   orderedCanvasReferenceNodes,
   replaceCanvasTaskForRetry,
@@ -78,6 +85,8 @@ import {
 } from '../shared/image-size-templates.js';
 import FreeImageReferenceEditor from './free-image-reference-editor.jsx';
 import { ImageCreditPrice, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
+import { videoSizeForSource } from '../shared/video-generation.js';
+import { VideoCreditPrice, requestVideoPricing, useVideoPricing } from './video-pricing-client.jsx';
 import './infinite-image-canvas.css';
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -97,32 +106,32 @@ const copy = {
     saveFailed: '保存失败，正在保留本地改动', saveConflict: '其他页面已修改此画布，请重新载入后继续。', reload: '重新载入',
     newIdea: '新建想法', history: '历史素材', historyEmpty: '还没有可加入画布的历史作品。', historyLoading: '正在读取历史素材…',
     historyMore: '加载更多', searchHistory: '搜索历史提示词', addToCanvas: '加入画布', onCanvas: '已加入', upload: '上传图片', uploading: '正在上传…',
-    deleteHistory: '从最近作品移除', deleteHistoryConfirm: '确定从最近作品中移除这张图片吗？画布上的实体、资产库文件和云端原图不会被删除。', deleteHistoryFailed: '移除最近作品失败，请稍后重试。',
+    deleteHistory: '从最近作品移除', deleteHistoryFailed: '移除最近作品失败，请稍后重试。',
     arrange: '自动整理', fitView: '适应内容', clearCanvas: '清空画布', clearConfirm: '确定清空当前画布吗？素材库、历史生图和云端文件不会被删除。',
-    removeConfirm: '确定将此节点移出画布吗？云端图片和历史记录不会被删除。', protectedRemoveConfirm: '这是已采用或锁定版本，确定仍要移出画布吗？',
+    removeConfirm: '确定将此节点移出画布吗？云端图片和历史记录不会被删除。', protectedRemoveConfirm: '这是已采用版本，确定仍要移出画布吗？', lockedCannotRemove: '图片已锁定，不能移出画布。请先解锁。', lockedSelectionCannotRemove: (count) => `所选内容中有 ${count} 张锁定图片，不能移出画布。请先解锁。`, lockedCanvasCannotClear: (count) => `画布中有 ${count} 张锁定图片，不能清空画布。请先解锁。`, lockedRefineUnavailable: '图片已锁定，解锁后才能进入灵感生图精修。', lockedPosition: '图片已锁定，画布位置不会改变。',
     emptyTitle: '从一个想法开始', emptyText: '输入提示词直接生成，或从左侧加入一张历史图片继续创作。', idea: '创作起点', generated: '生成结果',
     uploaded: '上传素材', task: '生成任务', selected: '当前选中', selectHint: '选择图片或创作卡，再描述下一步修改要求。',
-    promptPlaceholder: '描述要生成的画面，或说明如何修改当前图片…', provider: '生图服务', size: '尺寸', quality: '质量', low: '低', medium: '中等', high: '高',
-    count: '数量', regenerate: '再做一份',
+    promptPlaceholder: '描述要生成的画面，或说明如何修改当前图片…', videoPromptPlaceholder: '描述主体动作、镜头运动和希望呈现的氛围…', provider: '生图服务', videoProvider: '视频服务', size: '尺寸', quality: '质量', low: '低', medium: '中等', high: '高',
+    count: '数量', regenerate: '再做一份', regenerateVideo: '再做一条', imageMode: '图片', videoMode: '视频', makeVideo: '让图片动起来', generateVideo: '生成视频', duration: '时长', direction: '方向', directionAuto: '自动', landscape: '横屏', portrait: '竖屏', secondsUnit: '秒', videoResult: '视频结果', playVideo: '播放视频', downloadVideo: '下载视频', videoDefaultPrompt: '保持主体和画面内容一致，让主体自然运动，镜头稳定、动作连贯。',
     compareSelected: '比较所选', retryTask: '重试任务', retryingTask: '正在原位重试…', parentVersion: '上级版本', childVersions: '子版本',
     allNodes: '全部节点', favoriteNodes: '仅收藏', lockedNodes: '仅锁定', adoptedNodes: '仅最终稿', activeTasks: '运行任务', failedTasks: '失败任务',
     generate: '生成分支', submitting: '正在提交', signIn: '登录后可保存画布、上传素材并生成图片。', creditsRequired: '积分不足，请先充值。',
-    providerMissing: '当前没有可用的生图服务。', promptRequired: '请先输入创作要求。', referenceUnsupported: '当前服务不支持这张参考图，请切换服务或取消选择。',
-    sizeUnsupported: '当前服务不支持这个尺寸，请选择其他尺寸。', taskListFull: '任务列表已满，请先删除已完成或失败的任务。', failed: '生成任务提交失败，请稍后重试。',
+    providerMissing: '当前没有可用的生图服务。', videoProviderMissing: '当前没有可用的视频服务。', promptRequired: '请先输入创作要求。', videoSourceUnsupported: '首版只支持从想法或单张图片生成视频。', referenceUnsupported: '当前服务不支持这张参考图，请切换服务或取消选择。',
+    sizeUnsupported: '当前服务不支持这个尺寸，请选择其他尺寸。', taskListFull: '任务列表已满，请先删除已完成或失败的任务。', failed: '生成任务提交失败，请稍后重试。', videoFailed: '视频任务提交失败，请稍后重试。', contentModerationBlocked: '参考图未通过视频服务的内容审核。若图片包含真人或可识别人物，请改用不含人物的图片，或使用纯文字生成。本次积分已自动退回。',
     uploadedTooLarge: '图片不能超过 8 MB。', uploadedInvalid: '无法读取或上传这张图片。', refine: '到灵感生图精修', useAsBranch: '基于此图创作',
     download: '下载原图', preview: '预览', localEdit: '标记局部', adopt: '设为最终稿', adopted: '当前最终稿', lock: '锁定', unlock: '解锁', favorite: '收藏',
     compare: '对比', compareHint: '再选择一张图片进行对比。', compareTitle: '版本对比', remove: '移出画布', chooseIdea: '选中创作', cancelTask: '取消任务',
     comparisonPosition: '对比分割线', adoptedDownload: '下载最终稿', originalSize: '原始尺寸',
     duplicate: '复制节点', copyImage: '复制图片', copyingImage: '正在复制…', imageCopied: '图片已复制到剪贴板，可直接粘贴。', imageCopyFailed: '图片复制失败，请检查浏览器剪贴板权限。', copyImageShortcut: 'Ctrl / ⌘ + C', undo: '撤销', redo: '重做', focusSelected: '聚焦选中',
     collapseComposer: '收起创作托盘', expandComposer: '展开创作托盘',
-    selectedCount: '已选', batchDelete: '删除所选', batchDeleteConfirm: '确定将所选节点移出画布吗？云端图片和历史记录不会被删除。', searchCanvas: '搜索画布', searchPlaceholder: '搜索名称或提示词', noSearchResults: '没有匹配节点', minimap: '缩略地图',
-    queued: '排队中', running: '生成中', cancelling: '取消中', failedTask: '生成失败', cancelled: '已取消', interrupted: '任务中断，可重新提交',
+    selectedCount: '已选', batchDelete: '移出画布', batchDeleteConfirm: '确定将所选实体移出画布吗？云端图片和历史记录不会被删除。', boxSelect: '框选实体', boxSelectHint: '拖动框选多个实体，选中后可整体移动', forceRemove: '强制移出', referenceRemoveConfirm: (count, relationshipCount, externalCount, protectedCount) => `所选 ${count} 个实体涉及 ${relationshipCount} 条引用关系${externalCount ? `，其中 ${externalCount} 条关联未选中的实体` : ''}${protectedCount ? `，并包含 ${protectedCount} 个最终稿` : ''}。移出后相关引用会自动解除，是否强制移出画布？`, searchCanvas: '搜索画布', searchPlaceholder: '搜索名称或提示词', noSearchResults: '没有匹配节点', minimap: '缩略地图',
+    queued: '排队中', running: '生成中', processing: '视频生成中', saving: '正在保存视频', cancelling: '取消中', failedTask: '生成失败', cancelled: '已取消', interrupted: '任务中断，可重新提交',
     uploadDone: '图片已安全保存到素材库。', localEditReady: '局部标记已保存。请描述标记区域需要如何修改，再生成新分支。',
     branchPresets: ['更换为高级商业背景，保持主体完全不变', '扩展画面并保持原图风格与主体一致', '生成一个构图不同但主体一致的新方案', '优化光影、质感和商业摄影表现，其他内容不变'],
     zoomHint: '空白处拖动平移 · 滚轮缩放 · 拖动卡片整理', home: '首页', backStudio: '灵感生图', hideAssets: '隐藏素材栏', showAssets: '显示素材栏',
     ratio: '比例', saveSizeTemplate: '保存为此服务的默认尺寸', confirmAction: '确认', cancelAction: '取消', minimapMove: '拖动导航框',
-    folderUpload: '文件夹', assetLibrary: '资源库', referenceTray: '辅助参考', referenceHint: '这里只展示额外加入的参考图。', referencePromptHint: '提示词称呼：当前选中图写“母版”；右侧图片依次写“参考图1、参考图2……”。不要使用文件名表示图片角色。', addReference: '加入参考', addReferenceImages: '添加参考图', removeReference: '移出参考', referenceLimit: '参考图数量已达到当前模型上限。', referenceTooMany: '参考图数量超过当前模型上限，请移除后再生成。', noAssets: '资源库中还没有可用图片。', assetSearch: '搜索资源库图片', addAssetReference: '加入画布并设为参考', assetAdd: '添加', assetRemove: '移除', closeLibrary: '关闭资源库', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`,
-    roleGeneral: '普通', roleSubject: '主体', roleStyle: '风格', roleComposition: '构图', roleColor: '色彩', dropReference: '松开后加入画布和辅助参考', primaryImage: '母版', dragToReference: '拖到辅助参考托盘', dropIntoReference: '松开后设为当前母版的参考', pasteReferenceDone: '剪贴板图片已加入参考图。'
+    folderUpload: '文件夹', assetLibrary: '资源库', referenceTray: '参考图', referenceHint: '系统已自动判断参考用途，需要时可展开修改。', referencePromptHint: '提示词称呼：当前选中图写“母版”；右侧图片依次写“参考图1、参考图2……”。不要使用文件名表示图片角色。', addReference: '加入参考', addReferenceImages: '添加参考图', removeReference: '移出参考', referenceLimit: '参考图数量已达到当前模型上限。', referenceTooMany: '参考图数量超过当前模型上限，请移除后再生成。', noAssets: '资源库中还没有可用图片。', assetSearch: '搜索资源库图片', addAssetReference: '加入画布并设为参考', assetAdd: '添加', assetRemove: '移除', closeLibrary: '关闭资源库', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`,
+    roleGeneral: '普通', roleSubject: '主体', roleStyle: '风格', roleComposition: '构图', roleColor: '色彩', dropReference: '松开后加入画布和参考图', primaryImage: '母版', dragToReference: '拖动链条连接到目标图片', dropIntoReference: '松开后设为目标图片的参考', pasteReferenceDone: '剪贴板图片已加入参考图。', referenceTo: (name) => `引用到 ${name}`, removeReferenceFrom: (name) => `取消对 ${name} 的引用`, referenceCount: (count, limit) => `参考 ${count}/${limit}`, batchReference: '批量引用', finishBatchReference: '完成引用', batchReferenceHint: (name) => `正在为 ${name} 选择参考图：点击其他图片添加或移除，按 Esc 结束`, referenceDetails: '参考图管理', connectReference: '拖到目标图片建立引用', assetReferenceTo: (name) => `引用到 ${name}`
   },
   en: {
     eyebrow: 'PIC365 CANVAS', title: 'Infinite Canvas', subtitle: 'Generate, refine, compare, and choose one final image without losing the creative trail.',
@@ -135,32 +144,32 @@ const copy = {
     restoreFromTrash: 'Restore canvas', permanentDelete: 'Delete forever', permanentDeleteConfirm: (name) => `Permanently delete “${name || 'Untitled canvas'}”? This cannot be undone, but library assets and generation history will remain.`,
     saveConflict: 'This canvas changed elsewhere. Reload it before continuing.', reload: 'Reload', newIdea: 'New idea', history: 'History', historyEmpty: 'No previous images are available yet.',
     historyLoading: 'Loading history…', historyMore: 'Load more', searchHistory: 'Search history prompts', addToCanvas: 'Add to canvas', onCanvas: 'Added', upload: 'Upload image', uploading: 'Uploading…',
-    deleteHistory: 'Remove from recent images', deleteHistoryConfirm: 'Remove this image from recent images? Canvas nodes, library assets, and the cloud original will remain.', deleteHistoryFailed: 'Could not remove this recent image. Try again.',
+    deleteHistory: 'Remove from recent images', deleteHistoryFailed: 'Could not remove this recent image. Try again.',
     arrange: 'Auto arrange', fitView: 'Fit content', clearCanvas: 'Clear canvas', clearConfirm: 'Clear this canvas? Cloud assets and generation history will remain.',
-    removeConfirm: 'Remove this node from the canvas? The cloud image and history remain.', protectedRemoveConfirm: 'This version is adopted or locked. Remove it from the canvas anyway?',
+    removeConfirm: 'Remove this node from the canvas? The cloud image and history remain.', protectedRemoveConfirm: 'This is an adopted version. Remove it from the canvas anyway?', lockedCannotRemove: 'This image is locked and cannot be removed from the canvas. Unlock it first.', lockedSelectionCannotRemove: (count) => `${count} selected locked image${count === 1 ? '' : 's'} cannot be removed. Unlock them first.`, lockedCanvasCannotClear: (count) => `${count} locked image${count === 1 ? '' : 's'} prevent clearing this canvas. Unlock them first.`, lockedRefineUnavailable: 'Unlock this image before refining it in Image Studio.', lockedPosition: 'This image is locked and will stay in its canvas position.',
     emptyTitle: 'Start with an idea', emptyText: 'Enter a prompt or add an image from history to continue creating.', idea: 'Starting idea', generated: 'Generated image', uploaded: 'Uploaded image',
-    task: 'Generation task', selected: 'Selected', selectHint: 'Select an image or idea, then describe the next change.', promptPlaceholder: 'Describe a new image or how the selected image should change…',
-    provider: 'Image service', size: 'Size', quality: 'Quality', low: 'Low', medium: 'Medium', high: 'High', generate: 'Generate branch', submitting: 'Submitting',
-    count: 'Count', regenerate: 'Make another',
+    task: 'Generation task', selected: 'Selected', selectHint: 'Select an image or idea, then describe the next change.', promptPlaceholder: 'Describe a new image or how the selected image should change…', videoPromptPlaceholder: 'Describe the subject motion, camera movement, and atmosphere…',
+    provider: 'Image service', videoProvider: 'Video service', size: 'Size', quality: 'Quality', low: 'Low', medium: 'Medium', high: 'High', generate: 'Generate branch', submitting: 'Submitting',
+    count: 'Count', regenerate: 'Make another', regenerateVideo: 'Make another video', imageMode: 'Image', videoMode: 'Video', makeVideo: 'Animate image', generateVideo: 'Generate video', duration: 'Duration', direction: 'Direction', directionAuto: 'Auto', landscape: 'Landscape', portrait: 'Portrait', secondsUnit: 's', videoResult: 'Generated video', playVideo: 'Play video', downloadVideo: 'Download video', videoDefaultPrompt: 'Keep the subject and scene consistent. Add natural motion with a stable camera and coherent movement.',
     compareSelected: 'Compare selected', retryTask: 'Retry task', retryingTask: 'Retrying in place…', parentVersion: 'Parent', childVersions: 'children',
     allNodes: 'All nodes', favoriteNodes: 'Favorites', lockedNodes: 'Locked', adoptedNodes: 'Final only', activeTasks: 'Active tasks', failedTasks: 'Failed tasks',
-    signIn: 'Sign in to save canvases, upload assets, and generate images.', creditsRequired: 'Not enough credits. Recharge first.', providerMissing: 'No image service is available.',
+    signIn: 'Sign in to save canvases, upload assets, and generate images.', creditsRequired: 'Not enough credits. Recharge first.', providerMissing: 'No image service is available.', videoProviderMissing: 'No video service is available.', videoSourceUnsupported: 'The first release supports video from an idea or one image only.',
     promptRequired: 'Enter a creation request first.', referenceUnsupported: 'This service cannot use the selected reference image.', sizeUnsupported: 'This service does not support the selected size.',
-    taskListFull: 'The task list is full. Remove completed or failed tasks first.', failed: 'The generation task could not be submitted.', uploadedTooLarge: 'Images must be no larger than 8 MB.',
+    taskListFull: 'The task list is full. Remove completed or failed tasks first.', failed: 'The generation task could not be submitted.', videoFailed: 'The video task could not be submitted.', contentModerationBlocked: 'The reference image did not pass the video service content review. If it contains a real or identifiable person, use an image without people or generate from text only. The reserved credits were returned automatically.', uploadedTooLarge: 'Images must be no larger than 8 MB.',
     uploadedInvalid: 'This image could not be read or uploaded.', refine: 'Refine in Image Studio', useAsBranch: 'Create from this image', download: 'Download original', preview: 'Preview',
     localEdit: 'Mark region', adopt: 'Set as final', adopted: 'Current final', lock: 'Lock', unlock: 'Unlock', favorite: 'Favorite', compare: 'Compare', compareHint: 'Choose one more image to compare.',
     comparisonPosition: 'Comparison divider', adoptedDownload: 'Download final', originalSize: 'Original size',
     duplicate: 'Duplicate node', copyImage: 'Copy image', copyingImage: 'Copying…', imageCopied: 'Image copied to the clipboard.', imageCopyFailed: 'Could not copy the image. Check browser clipboard permission.', copyImageShortcut: 'Ctrl / ⌘ + C', undo: 'Undo', redo: 'Redo', focusSelected: 'Focus selected',
     collapseComposer: 'Collapse creation tray', expandComposer: 'Expand creation tray',
-    selectedCount: 'selected', batchDelete: 'Delete selected', batchDeleteConfirm: 'Remove the selected nodes from the canvas? Cloud images and history remain.', searchCanvas: 'Search canvas', searchPlaceholder: 'Search names or prompts', noSearchResults: 'No matching nodes', minimap: 'Minimap',
-    compareTitle: 'Version comparison', remove: 'Remove from canvas', chooseIdea: 'Select idea', cancelTask: 'Cancel task', queued: 'Queued', running: 'Generating', cancelling: 'Cancelling',
+    selectedCount: 'selected', batchDelete: 'Remove from canvas', batchDeleteConfirm: 'Remove the selected entities from the canvas? Cloud images and history remain.', boxSelect: 'Box select', boxSelectHint: 'Drag to select multiple entities, then move them together', forceRemove: 'Force remove', referenceRemoveConfirm: (count, relationshipCount, externalCount, protectedCount) => `${count} selected entities are involved in ${relationshipCount} reference relationship${relationshipCount === 1 ? '' : 's'}${externalCount ? `, including ${externalCount} linked to unselected entities` : ''}${protectedCount ? `, and include ${protectedCount} final version${protectedCount === 1 ? '' : 's'}` : ''}. Removing them will unlink those references. Force remove from the canvas?`, searchCanvas: 'Search canvas', searchPlaceholder: 'Search names or prompts', noSearchResults: 'No matching nodes', minimap: 'Minimap',
+    compareTitle: 'Version comparison', remove: 'Remove from canvas', chooseIdea: 'Select idea', cancelTask: 'Cancel task', queued: 'Queued', running: 'Generating', processing: 'Generating video', saving: 'Saving video', cancelling: 'Cancelling',
     failedTask: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted; it can be submitted again', uploadDone: 'The image is safely stored in your asset library.',
     localEditReady: 'The edit marks are saved. Describe the change and generate a new branch.',
     branchPresets: ['Replace the background with a premium commercial scene while preserving the subject', 'Extend the canvas while preserving the original style and subject', 'Create a different composition with the same subject', 'Improve lighting, texture, and commercial polish without changing other content'],
     zoomHint: 'Drag empty space to pan · wheel to zoom · drag cards to organize', home: 'Home', backStudio: 'Image Studio', hideAssets: 'Hide assets', showAssets: 'Show assets',
     ratio: 'Ratio', saveSizeTemplate: 'Save as the default size for this service', confirmAction: 'Confirm', cancelAction: 'Cancel', minimapMove: 'Drag minimap',
-    folderUpload: 'Folder', assetLibrary: 'Library', referenceTray: 'Supporting references', referenceHint: 'Only additional reference images appear here.', referencePromptHint: 'Prompt names: call the selected image “Master”; call the images on the right “Reference 1, Reference 2…” in order. Do not use filenames as image roles.', addReference: 'Add reference', addReferenceImages: 'Add references', removeReference: 'Remove reference', referenceLimit: 'This model has reached its reference-image limit.', referenceTooMany: 'Too many reference images for this model. Remove some before generating.', noAssets: 'No usable images are available in the library.', assetSearch: 'Search library images', addAssetReference: 'Add to canvas as reference', assetAdd: 'Add', assetRemove: 'Remove', closeLibrary: 'Close library', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`,
-    roleGeneral: 'General', roleSubject: 'Subject', roleStyle: 'Style', roleComposition: 'Composition', roleColor: 'Color', dropReference: 'Drop to add to canvas and references', primaryImage: 'Master', dragToReference: 'Drag to supporting references', dropIntoReference: 'Drop to reference the current master image', pasteReferenceDone: 'Clipboard image added as a reference.'
+    folderUpload: 'Folder', assetLibrary: 'Library', referenceTray: 'References', referenceHint: 'Reference roles are inferred automatically and can be adjusted here.', referencePromptHint: 'Prompt names: call the selected image “Master”; call the images on the right “Reference 1, Reference 2…” in order. Do not use filenames as image roles.', addReference: 'Add reference', addReferenceImages: 'Add references', removeReference: 'Remove reference', referenceLimit: 'This model has reached its reference-image limit.', referenceTooMany: 'Too many reference images for this model. Remove some before generating.', noAssets: 'No usable images are available in the library.', assetSearch: 'Search library images', addAssetReference: 'Add to canvas as reference', assetAdd: 'Add', assetRemove: 'Remove', closeLibrary: 'Close library', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`,
+    roleGeneral: 'General', roleSubject: 'Subject', roleStyle: 'Style', roleComposition: 'Composition', roleColor: 'Color', dropReference: 'Drop to add to canvas and references', primaryImage: 'Master', dragToReference: 'Drag the link handle to a target image', dropIntoReference: 'Drop to reference the target image', pasteReferenceDone: 'Clipboard image added as a reference.', referenceTo: (name) => `Reference to ${name}`, removeReferenceFrom: (name) => `Remove reference from ${name}`, referenceCount: (count, limit) => `${count}/${limit} references`, batchReference: 'Pick references', finishBatchReference: 'Done', batchReferenceHint: (name) => `Picking references for ${name}: click images to add or remove; press Esc to finish`, referenceDetails: 'Manage references', connectReference: 'Drag to a target image to create a reference', assetReferenceTo: (name) => `Reference to ${name}`
   }
 };
 
@@ -259,10 +268,14 @@ function nodeLabel(node, t) {
   if (String(node.title || '').trim()) return compactText(node.title, 24);
   if (node.type === 'idea') return t.idea;
   if (node.type === 'task') return t.task;
+  if (node.type === 'video') return t.videoResult;
   return node.assetId && !node.generationId ? t.uploaded : t.generated;
 }
 
 function taskStatusLabel(status, t) {
+  if (status === 'processing') return t.processing;
+  if (status === 'saving') return t.saving;
+  if (status === 'waiting') return t.interrupted;
   if (status === 'running') return t.running;
   if (status === 'cancelling') return t.cancelling;
   if (status === 'failed') return t.failedTask;
@@ -277,6 +290,17 @@ function referenceRoleLabel(role, t) {
   if (role === 'composition') return t.roleComposition;
   if (role === 'color') return t.roleColor;
   return t.roleGeneral;
+}
+
+function canvasReferenceDraftPath(source, point) {
+  if (!source || !point) return '';
+  const sourceCenterX = Number(source.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
+  const leftToRight = point.x >= sourceCenterX;
+  const startX = Number(source.x || 0) + (leftToRight ? INFINITE_CANVAS_NODE_WIDTH : 0);
+  const startY = Number(source.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const direction = leftToRight ? 1 : -1;
+  const bend = Math.max(64, Math.abs(point.x - startX) * 0.38);
+  return `M ${startX} ${startY} C ${startX + bend * direction} ${startY}, ${point.x - bend * direction} ${point.y}, ${point.x} ${point.y}`;
 }
 
 function versionMeta(node, providers, language) {
@@ -295,6 +319,8 @@ function generationErrorMessage(code, t) {
   if (['INVALID_IMAGE_SIZE', 'INVALID_SIZE', 'PROVIDER_SOURCE_SIZE_UNSUPPORTED'].includes(code)) return t.sizeUnsupported;
   if (['REFERENCE_IMAGES_UNSUPPORTED', 'TOO_MANY_REFERENCE_IMAGES', 'INVALID_REFERENCE_IMAGE_FORMAT', 'PROVIDER_REFERENCE_UNSUPPORTED'].includes(code)) return t.referenceUnsupported;
   if (['INSUFFICIENT_CREDITS', 'GROUP_BUDGET_EXCEEDED'].includes(code)) return t.creditsRequired;
+  if (code === 'CONTENT_MODERATION_BLOCKED') return t.contentModerationBlocked;
+  if (String(code || '').startsWith('VIDEO_')) return t.videoFailed;
   return t.failed;
 }
 
@@ -309,9 +335,11 @@ function worldRect(nodes) {
   };
 }
 
-function loadMinimapPosition() {
+function loadMinimapPosition(storageKey = `${STORAGE_PREFIX}.minimap-position`) {
   try {
-    const parsed = JSON.parse(globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.minimap-position`) || 'null');
+    const stored = globalThis.localStorage?.getItem(storageKey)
+      || (storageKey === `${STORAGE_PREFIX}.minimap-position` ? '' : globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.minimap-position`));
+    const parsed = JSON.parse(stored || 'null');
     if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y)) return null;
     return { x: Math.max(8, parsed.x), y: Math.max(8, parsed.y) };
   } catch {
@@ -334,7 +362,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const referenceTrayRef = useRef(null);
   const uploadRef = useRef(null);
   const folderUploadRef = useRef(null);
-  const referenceFolderUploadRef = useRef(null);
   const interactionRef = useRef(null);
   const saveTimerRef = useRef(null);
   const saveRetryTimerRef = useRef(null);
@@ -355,9 +382,11 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const removedGenerationIdsRef = useRef(new Set());
   const removedTaskIdsRef = useRef(new Set());
   const confirmationActionRef = useRef(null);
+  const suppressNodeClickRef = useRef(false);
   const isSignedIn = isAuthenticatedSession(session);
   const hasFullWorkspace = isSignedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
   const guestStorageKey = `${STORAGE_PREFIX}:${profile?.id || session?.user?.id || 'guest'}`;
+  const minimapStorageKey = `${STORAGE_PREFIX}.minimap-position`;
 
   const [projects, setProjects] = useState([]);
   const [currentProjectId, setCurrentProjectId] = useState('');
@@ -372,6 +401,11 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const [prompt, setPrompt] = useState('');
   const [providers, setProviders] = useState([]);
   const [providerId, setProviderId] = useState('');
+  const [videoProviders, setVideoProviders] = useState([]);
+  const [videoProviderId, setVideoProviderId] = useState('');
+  const [creationMode, setCreationMode] = useState('image');
+  const [videoSeconds, setVideoSeconds] = useState(4);
+  const [videoDirection, setVideoDirection] = useState('auto');
   const [size, setSize] = useState('1024x1024');
   const [sizePreferences, setSizePreferences] = useState(loadImageSizePreferences);
   const [quality, setQuality] = useState('low');
@@ -386,7 +420,9 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const [assetPickerQuery, setAssetPickerQuery] = useState('');
   const [assetPickerItems, setAssetPickerItems] = useState([]);
   const [assetPickerSelectedIds, setAssetPickerSelectedIds] = useState([]);
-  const [referenceSourceMenuOpen, setReferenceSourceMenuOpen] = useState(false);
+  const [referenceDetailsOpen, setReferenceDetailsOpen] = useState(false);
+  const [referencePickTargetId, setReferencePickTargetId] = useState('');
+  const [referenceConnection, setReferenceConnection] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -405,12 +441,13 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const [canvasQuery, setCanvasQuery] = useState('');
   const [canvasFilter, setCanvasFilter] = useState('all');
   const [minimapOpen, setMinimapOpen] = useState(true);
-  const [minimapPosition, setMinimapPosition] = useState(loadMinimapPosition);
+  const [minimapPosition, setMinimapPosition] = useState(() => loadMinimapPosition(minimapStorageKey));
   const [confirmation, setConfirmation] = useState(null);
   const [imageContextMenu, setImageContextMenu] = useState(null);
   const [copyingImageId, setCopyingImageId] = useState('');
   const [stageSize, setStageSize] = useState({ width: 900, height: 620 });
   const [selectionBox, setSelectionBox] = useState(null);
+  const [boxSelectMode, setBoxSelectMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.sidebar`) !== 'closed');
   const [sidebarTab, setSidebarTab] = useState(() => globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.sidebar-tab`) === 'projects' ? 'projects' : 'recent');
   const [trashOpen, setTrashOpen] = useState(false);
@@ -420,7 +457,10 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
 
   const selectedNode = nodes.find((node) => node.id === selectedId) || null;
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const selectedImageNodes = useMemo(() => selectedIds.map((id) => nodes.find((node) => node.id === id)).filter((node) => node?.type === 'image'), [nodes, selectedIds]);
+  const selectedNodes = useMemo(() => selectedIds.map((id) => nodes.find((node) => node.id === id)).filter(Boolean), [nodes, selectedIds]);
+  const selectedImageNodes = useMemo(() => selectedNodes.filter((node) => node.type === 'image'), [selectedNodes]);
+  const selectedLockedImageNodes = useMemo(() => selectedImageNodes.filter((node) => node.locked), [selectedImageNodes]);
+  const lockedImageNodes = useMemo(() => nodes.filter((node) => node.type === 'image' && node.locked), [nodes]);
   const currentProject = projects.find((project) => project.id === currentProjectId) || null;
   const availableProjects = projects.filter((project) => project.status !== 'deleted');
   const trashedProjects = projects.filter((project) => project.status === 'deleted');
@@ -428,6 +468,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const projectDeleted = currentProject?.status === 'deleted';
   const projectReadOnly = projectArchived || projectDeleted;
   const selectedProvider = providers.find((provider) => provider.id === providerId) || null;
+  const selectedVideoProvider = videoProviders.find((provider) => provider.id === videoProviderId) || null;
+  const allGenerationProviders = useMemo(() => [...providers, ...videoProviders], [providers, videoProviders]);
   const sizeTemplate = useMemo(() => imageSizeTemplateForModel(selectedProvider?.model), [selectedProvider?.model]);
   const preferredSize = providerId ? preferredImageSize(sizePreferences, providerId, selectedProvider?.model) : sizeTemplate.defaultSize;
   const savedSizeTemplate = providerId && validateImageSizeForModel(sizePreferences[providerId], selectedProvider?.model).valid ? sizePreferences[providerId] : '';
@@ -437,14 +479,24 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const parsedSize = String(size).match(/^(\d+)x(\d+)$/i);
   const ratioGraphic = parsedSize ? { width: Number(parsedSize[1]), height: Number(parsedSize[2]) } : { width: 1, height: 1 };
   const referenceSelected = selectedNode?.type === 'image';
+  const videoSourceSupported = !selectedNode || selectedNode.type === 'idea' || selectedNode.type === 'image' || selectedNode.type === 'video';
+  const videoSourceNode = selectedNode?.type === 'video' ? (selectedNode.parentId ? nodes.find((node) => node.id === selectedNode.parentId) : null) : selectedNode;
+  const videoSourceSize = String(videoSourceNode?.size || '').match(/^(\d+)x(\d+)$/i);
+  const videoSize = videoSizeForSource({
+    width: videoSourceNode?.width || Number(videoSourceSize?.[1] || 0),
+    height: videoSourceNode?.height || Number(videoSourceSize?.[2] || 0),
+    direction: videoDirection
+  });
   const modelConstraints = getImageModelConstraints(selectedProvider?.model);
   const supportReferenceNodes = useMemo(() => referenceSelected ? orderedCanvasReferenceNodes(nodes, selectedNode.id).slice(1) : [], [nodes, referenceSelected, selectedNode?.id]);
+  const supportReferenceIds = useMemo(() => new Set(supportReferenceNodes.map((node) => node.id)), [supportReferenceNodes]);
   const activeReferenceNodes = useMemo(() => orderedCanvasReferenceNodes(nodes, referenceSelected ? selectedNode.id : ''), [nodes, referenceSelected, selectedNode?.id]);
   const maxSupportReferenceImages = Math.max(0, modelConstraints.maxReferenceImages - (referenceSelected ? 1 : 0));
   const assetPickerSelectionLimit = referenceSelected
     ? Math.max(0, maxSupportReferenceImages - supportReferenceNodes.length)
     : modelConstraints.maxReferenceImages;
   const showSupportingReferences = supportReferenceNodes.length > 0 || Boolean(draggingReferenceNodeId);
+  const referenceDetailsVisible = referenceDetailsOpen || Boolean(draggingReferenceNodeId);
   const supportReferenceByAssetId = useMemo(() => new Map(supportReferenceNodes.filter((node) => node.assetId).map((node) => [node.assetId, node])), [supportReferenceNodes]);
   const canvasImageByAssetId = useMemo(() => new Map(nodes.filter((node) => node.type === 'image' && node.assetId).map((node) => [node.assetId, node])), [nodes]);
   const referenceEdges = useMemo(() => canvasReferenceEdges(nodes), [nodes]);
@@ -459,12 +511,18 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     { size, quality, count, providerId },
     { enabled: hasFullWorkspace && Boolean(providerId) }
   );
+  const { pricing: videoPricing, loading: videoPricingLoading } = useVideoPricing(
+    { providerId: videoProviderId, seconds: videoSeconds },
+    { enabled: hasFullWorkspace && creationMode === 'video' && Boolean(videoProviderId) }
+  );
   const historyIdsOnCanvas = useMemo(() => new Set(nodes.map((node) => node.generationId).filter(Boolean)), [nodes]);
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const referencePickTarget = referencePickTargetId ? nodeById.get(referencePickTargetId) : null;
+  const referencePickIds = useMemo(() => new Set((referencePickTarget?.referenceLinks || []).map((link) => link.nodeId)), [referencePickTarget]);
+  const referenceConnectionSource = referenceConnection?.sourceId ? nodeById.get(referenceConnection.sourceId) : null;
   const world = useMemo(() => worldRect(nodes), [nodes]);
   const compareNodes = compareIds.map((id) => nodeById.get(id)).filter(Boolean);
   const adoptedNode = adoptedNodeId ? nodeById.get(adoptedNodeId) : null;
-  const selectedParent = selectedNode?.parentId ? nodeById.get(selectedNode.parentId) : null;
   const selectedChildren = selectedNode ? nodes.filter((node) => node.parentId === selectedNode.id) : [];
   const canvasMatches = useMemo(() => {
     const query = canvasQuery.trim().toLowerCase();
@@ -496,6 +554,14 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     width: stageSize.width / viewport.zoom,
     height: stageSize.height / viewport.zoom
   };
+  const selectionActionPosition = useMemo(() => {
+    if (selectedNodes.length < 2) return null;
+    const bounds = canvasNodeBounds(selectedNodes);
+    return {
+      left: Math.max(12, Math.min(stageSize.width - 252, viewport.x + bounds.right * viewport.zoom - 174)),
+      top: Math.max(116, Math.min(stageSize.height - 58, viewport.y + bounds.top * viewport.zoom - 50))
+    };
+  }, [selectedNodes, stageSize.height, stageSize.width, viewport.x, viewport.y, viewport.zoom]);
 
   const namingSignature = useMemo(() => nodes.map((node) => [node.id, node.parentId, node.createdAt, node.name, node.autoName, node.pipelineCode, node.pipelineDepth, node.copyIndex].join(':')).join('|'), [nodes]);
   useEffect(() => {
@@ -512,6 +578,9 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { adoptedNodeIdRef.current = adoptedNodeId; }, [adoptedNodeId]);
   useEffect(() => {
+    if (referencePickTargetId && !nodes.some((node) => node.id === referencePickTargetId && node.type === 'image')) setReferencePickTargetId('');
+  }, [nodes, referencePickTargetId]);
+  useEffect(() => {
     globalThis.localStorage?.setItem(`${STORAGE_PREFIX}.sidebar`, sidebarOpen ? 'open' : 'closed');
   }, [sidebarOpen]);
   useEffect(() => {
@@ -523,8 +592,12 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   useEffect(() => { saveImageSizePreferences(sizePreferences); }, [sizePreferences]);
   useEffect(() => {
     if (!minimapPosition) return;
-    try { globalThis.localStorage?.setItem(`${STORAGE_PREFIX}.minimap-position`, JSON.stringify(minimapPosition)); } catch { /* best effort */ }
-  }, [minimapPosition]);
+    try {
+      const serialized = JSON.stringify(minimapPosition);
+      globalThis.localStorage?.setItem(minimapStorageKey, serialized);
+      globalThis.localStorage?.setItem(`${STORAGE_PREFIX}.minimap-position`, serialized);
+    } catch { /* best effort */ }
+  }, [minimapPosition, minimapStorageKey]);
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return undefined;
@@ -735,6 +808,15 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
         setProviderId((current) => current || nextProviders.find((provider) => provider.isDefault)?.id || nextProviders[0]?.id || '');
       })
       .catch(() => undefined);
+    fetch('/api/video-providers', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!payload?.ok) return;
+        const nextProviders = payload.providers || [];
+        setVideoProviders(nextProviders);
+        setVideoProviderId((current) => current || nextProviders.find((provider) => provider.isDefault)?.id || nextProviders[0]?.id || '');
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -742,9 +824,9 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     setSize(preferredSize);
   }, [preferredSize, selectedProvider?.id]);
 
-  function requestConfirmation(message, action) {
+  function requestConfirmation(message, action, options = {}) {
     confirmationActionRef.current = action;
-    setConfirmation({ message });
+    setConfirmation({ message, confirmLabel: options.confirmLabel || t.confirmAction });
   }
 
   function cancelConfirmation() {
@@ -1103,6 +1185,97 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     });
   }
 
+  function videoTaskResultNode(task, baseNode) {
+    const result = task.result || {};
+    return {
+      ...(baseNode || {}),
+      id: baseNode?.id || task.canvasTaskNodeId || `video-${task.id}`,
+      type: 'video',
+      mediaType: 'video',
+      x: Number(baseNode?.x ?? 120),
+      y: Number(baseNode?.y ?? 120),
+      parentId: task.canvasParentNodeId || baseNode?.parentId || '',
+      prompt: task.displayPrompt || task.prompt || '',
+      draftPrompt: baseNode?.draftPrompt || task.displayPrompt || task.prompt || '',
+      taskId: task.id,
+      providerId: task.providerId,
+      assetId: result.assetId || '',
+      videoGenerationId: result.videoGenerationId || '',
+      videoUrl: result.videoUrl || result.originalUrl || '',
+      posterUrl: result.posterUrl || '',
+      downloadUrl: result.downloadUrl || result.originalUrl || '',
+      mimeType: result.mimeType || 'video/mp4',
+      size: result.size || task.size,
+      seconds: Number(result.seconds || task.seconds || 4),
+      hasAudio: result.hasAudio,
+      creditsCharged: Number(result.creditsCharged || task.settledCredits || 0),
+      title: compactText(task.displayPrompt || task.prompt, 22),
+      status: 'completed',
+      createdAt: task.completedAt || task.createdAt || new Date().toISOString()
+    };
+  }
+
+  const syncVideoTasks = useCallback(async () => {
+    if (!isSignedIn || !projectIdRef.current) return true;
+    try {
+      const response = await fetch('/api/video-tasks', { headers: authHeaders(session), cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) return false;
+      const relevant = (payload.tasks || []).filter((task) => task.projectId === projectIdRef.current && !removedTaskIdsRef.current.has(task.id));
+      setNodes((current) => {
+        let changed = false;
+        const next = [...current];
+        for (const task of relevant) {
+          const index = next.findIndex((node) => node.taskId === task.id || node.id === task.canvasTaskNodeId);
+          const existing = index >= 0 ? next[index] : null;
+          if (task.status === 'completed' && task.result?.assetId) {
+            const videoNode = videoTaskResultNode(task, existing);
+            if (!existing || existing.type !== 'video' || existing.assetId !== videoNode.assetId) {
+              if (index >= 0) next[index] = videoNode; else next.push(videoNode);
+              changed = true;
+            }
+            continue;
+          }
+          const taskNode = {
+            ...(existing || {}),
+            id: existing?.id || task.canvasTaskNodeId || `video-task-${task.id}`,
+            type: 'task',
+            mediaType: 'video',
+            x: Number(existing?.x ?? 120),
+            y: Number(existing?.y ?? 120),
+            parentId: task.canvasParentNodeId || existing?.parentId || '',
+            prompt: task.displayPrompt || task.prompt || '',
+            draftPrompt: existing?.draftPrompt || task.displayPrompt || task.prompt || '',
+            taskId: task.id,
+            providerId: task.providerId,
+            size: task.size,
+            seconds: task.seconds,
+            phase: task.phase,
+            progress: task.progress,
+            status: task.status,
+            error: task.error || '',
+            createdAt: task.createdAt
+          };
+          if (!existing || existing.status !== taskNode.status || existing.phase !== taskNode.phase || existing.progress !== taskNode.progress || existing.error !== taskNode.error) {
+            if (index >= 0) next[index] = taskNode; else next.push(taskNode);
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      const newlySettled = relevant.filter((task) => ['completed', 'failed', 'cancelled'].includes(task.status) && !settledTasksRef.current.has(`video:${task.id}`));
+      if (newlySettled.length) {
+        newlySettled.forEach((task) => settledTasksRef.current.add(`video:${task.id}`));
+        const profileResponse = await fetch('/api/me', { headers: authHeaders(session), cache: 'no-store' });
+        const profilePayload = await profileResponse.json().catch(() => ({}));
+        if (profileResponse.ok && profilePayload.ok) onProfileChange?.(profilePayload.user);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [isSignedIn, onProfileChange, session]);
+
   const syncTasks = useCallback(async () => {
     if (!isSignedIn || !projectIdRef.current) return true;
     try {
@@ -1168,7 +1341,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     if (!isSignedIn || !currentProjectId) return undefined;
     let cancelled = false;
     const poll = async () => {
-      const ok = await syncTasks();
+      const outcomes = await Promise.all([syncTasks(), syncVideoTasks()]);
+      const ok = outcomes.every(Boolean);
       if (cancelled) return;
       taskPollDelayRef.current = ok ? 1800 : Math.min(30_000, Math.max(3600, taskPollDelayRef.current * 2));
       taskPollTimerRef.current = globalThis.setTimeout(poll, taskPollDelayRef.current);
@@ -1178,7 +1352,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       cancelled = true;
       globalThis.clearTimeout(taskPollTimerRef.current);
     };
-  }, [currentProjectId, isSignedIn, syncTasks]);
+  }, [currentProjectId, isSignedIn, syncTasks, syncVideoTasks]);
 
   useEffect(() => {
     function onOnline() {
@@ -1186,11 +1360,11 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       taskPollDelayRef.current = 1800;
       globalThis.clearTimeout(saveRetryTimerRef.current);
       if (saveStatus === 'failed') void flushSave();
-      void syncTasks();
+      void Promise.all([syncTasks(), syncVideoTasks()]);
     }
     globalThis.addEventListener?.('online', onOnline);
     return () => globalThis.removeEventListener?.('online', onOnline);
-  }, [flushSave, saveStatus, syncTasks]);
+  }, [flushSave, saveStatus, syncTasks, syncVideoTasks]);
 
   function canvasCenter() {
     const bounds = stageRef.current?.getBoundingClientRect();
@@ -1237,6 +1411,14 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     setSelectedId(node.id);
     setSelectedIds([node.id]);
     setPrompt(node.draftPrompt || (node.type === 'idea' ? node.prompt || '' : ''));
+    if (node.type === 'video' || node.mediaType === 'video') {
+      setCreationMode('video');
+      if (node.providerId) setVideoProviderId(node.providerId);
+      if (node.seconds) setVideoSeconds(Number(node.seconds));
+      if (node.size) setVideoDirection(node.size === '720x1280' ? 'portrait' : 'landscape');
+      setMessage('');
+      return;
+    }
     const nodeProvider = node.providerId ? providers.find((provider) => provider.id === node.providerId) : selectedProvider;
     if (nodeProvider) setProviderId(nodeProvider.id);
     if (node.size && nodeProvider && validateImageSizeForModel(node.size, nodeProvider.model).valid) setSize(node.size);
@@ -1248,7 +1430,10 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     if (projectReadOnly) return;
     if (historyIdsOnCanvas.has(item.id)) {
       const existing = nodes.find((node) => node.generationId === item.id);
-      if (existing) selectNode(existing);
+      if (existing) {
+        if (referenceSelected && existing.id !== selectedId) toggleReference(existing);
+        else selectNode(existing);
+      }
       return;
     }
     const center = nextOpenPosition(canvasCenter());
@@ -1258,8 +1443,11 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       thumbnailUrl: item.thumbnailUrl || item.imageUrl, downloadUrl: item.imageUrl, generationId: item.id, mimeType: item.mimeType || '', size: item.size || '',
       quality: item.quality || '', status: 'completed', createdAt: item.createdAt || new Date().toISOString()
     };
-    setNodes((current) => [...current, node]);
-    selectNode(node);
+    if (referenceSelected) addImportedNodes([node], { asReferences: true, preservePrimary: true });
+    else {
+      setNodes((current) => [...current, node]);
+      selectNode(node);
+    }
   }
 
   function nodeFromAsset(asset, fallbackName, position, overrides = {}) {
@@ -1287,7 +1475,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
           ...(node.referenceLinks || []),
           ...references.filter((reference) => !(node.referenceLinks || []).some((link) => link.nodeId === reference.id)).map((reference, index) => ({
             nodeId: reference.id,
-            role: 'general',
+            role: inferCanvasReferenceRole(reference),
             order: (node.referenceLinks || []).length + index + 1
           }))
         ]
@@ -1348,36 +1536,35 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     return imported.length > 0 && !failedFile;
   }
 
-  function toggleReference(node) {
-    if (!node || node.type !== 'image' || !referenceSelected || node.id === selectedId) return;
-    const existing = supportReferenceNodes.some((item) => item.id === node.id);
-    if (!existing && activeReferenceNodes.length >= modelConstraints.maxReferenceImages) {
+  function setReferenceForTarget(targetId, node, mode = 'toggle') {
+    const target = nodesRef.current.find((item) => item.id === targetId && item.type === 'image');
+    if (!target || !node || node.type !== 'image' || node.id === target.id || projectReadOnly) return false;
+    const links = target.referenceLinks || [];
+    const existing = links.some((link) => link.nodeId === node.id);
+    if (mode === 'add' && existing) return true;
+    if (!existing && links.length + 1 >= modelConstraints.maxReferenceImages) {
       setMessage(t.referenceLimit);
-      return;
+      return false;
     }
     rememberCanvasState();
-    setNodes((current) => current.map((item) => item.id === selectedId ? {
+    setNodes((current) => current.map((item) => item.id === target.id ? {
       ...item,
       referenceLinks: existing
         ? (item.referenceLinks || []).filter((link) => link.nodeId !== node.id).map((link, index) => ({ ...link, order: index + 1 }))
-        : [...(item.referenceLinks || []), { nodeId: node.id, role: 'general', order: (item.referenceLinks || []).length + 1 }]
+        : [...(item.referenceLinks || []), { nodeId: node.id, role: inferCanvasReferenceRole(node), order: (item.referenceLinks || []).length + 1 }]
     } : item));
     setMessage('');
+    return true;
+  }
+
+  function toggleReference(node) {
+    if (!referenceSelected) return;
+    setReferenceForTarget(selectedId, node, 'toggle');
   }
 
   function addReference(node) {
-    if (!node || node.type !== 'image' || !referenceSelected || node.id === selectedId) return;
-    if (supportReferenceNodes.some((item) => item.id === node.id)) return;
-    if (activeReferenceNodes.length >= modelConstraints.maxReferenceImages) {
-      setMessage(t.referenceLimit);
-      return;
-    }
-    rememberCanvasState();
-    setNodes((current) => current.map((item) => item.id === selectedId ? {
-      ...item,
-      referenceLinks: [...(item.referenceLinks || []), { nodeId: node.id, role: 'general', order: (item.referenceLinks || []).length + 1 }]
-    } : item));
-    setMessage('');
+    if (!referenceSelected) return;
+    setReferenceForTarget(selectedId, node, 'add');
   }
 
   function updateReferenceRole(nodeId, role) {
@@ -1390,22 +1577,34 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   }
 
   function beginReferenceDrag(event, node) {
-    if (!node || node.type !== 'image' || projectReadOnly || !referenceSelected || node.id === selectedId || event.button !== 0) return;
+    if (!node || node.type !== 'image' || projectReadOnly || event.button !== 0) return;
+    event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const stageBounds = stageRef.current?.getBoundingClientRect();
+    if (!stageBounds) return;
+    const point = {
+      x: (event.clientX - stageBounds.left - viewport.x) / viewport.zoom,
+      y: (event.clientY - stageBounds.top - viewport.y) / viewport.zoom
+    };
     interactionRef.current = {
-      type: 'reference-drag',
-      nodeId: node.id,
+      type: 'reference-connect',
+      sourceId: node.id,
       startX: event.clientX,
       startY: event.clientY,
-      moved: false
+      stageLeft: stageBounds.left,
+      stageTop: stageBounds.top,
+      targetId: ''
     };
     setDraggingReferenceNodeId(node.id);
+    setReferenceConnection({ sourceId: node.id, point, targetId: '' });
   }
 
   function finishReferenceDrag() {
-    if (interactionRef.current?.type === 'reference-drag') interactionRef.current = null;
+    if (interactionRef.current?.type === 'reference-connect') interactionRef.current = null;
     setDraggingReferenceNodeId('');
     setReferenceDropActive(false);
+    setReferenceConnection(null);
   }
 
   function dropReferenceNode(event) {
@@ -1432,10 +1631,15 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
 
   function removeNodesById(ids) {
     const removing = new Set(ids);
+    const lockedImages = nodesRef.current.filter((node) => removing.has(node.id) && node.type === 'image' && node.locked);
+    if (lockedImages.length) {
+      setMessage(lockedImages.length === 1 ? t.lockedCannotRemove : t.lockedSelectionCannotRemove(lockedImages.length));
+      return false;
+    }
     const removedNodes = nodesRef.current.filter((node) => removing.has(node.id));
     removedNodes.forEach((node) => {
       if (node.generationId) removedGenerationIdsRef.current.add(node.generationId);
-      if (node.type === 'task' && node.taskId) removedTaskIdsRef.current.add(node.taskId);
+      if (node.taskId && (node.type === 'task' || node.type === 'video')) removedTaskIdsRef.current.add(node.taskId);
     });
     rememberCanvasState();
     const nextNodes = nodesRef.current
@@ -1459,30 +1663,55 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     setPrompt(nextNode?.draftPrompt || (nextNode?.type === 'idea' ? nextNode.prompt || '' : ''));
     globalThis.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = globalThis.setTimeout(() => void flushSave(), 0);
+    return true;
+  }
+
+  function removalConfirmationFor(ids) {
+    const selected = ids.map((id) => nodeById.get(id)).filter(Boolean);
+    const protectedCount = selected.filter((node) => node.id === adoptedNodeId).length;
+    const impact = canvasReferenceRemovalImpact(nodesRef.current, ids);
+    if (impact.total) {
+      return {
+        message: t.referenceRemoveConfirm(selected.length, impact.total, impact.external, protectedCount),
+        confirmLabel: t.forceRemove
+      };
+    }
+    return {
+      message: protectedCount ? t.protectedRemoveConfirm : selected.length > 1 ? t.batchDeleteConfirm : t.removeConfirm,
+      confirmLabel: t.confirmAction
+    };
   }
 
   function removeNode(node) {
     if (projectReadOnly) return;
-    requestConfirmation(
-      node.locked || node.id === adoptedNodeId ? t.protectedRemoveConfirm : t.removeConfirm,
-      () => removeNodesById([node.id])
-    );
+    if (node.type === 'image' && node.locked) {
+      setMessage(t.lockedCannotRemove);
+      return;
+    }
+    const removal = removalConfirmationFor([node.id]);
+    requestConfirmation(removal.message, () => removeNodesById([node.id]), removal);
   }
 
   function removeSelectedNodes() {
     if (projectReadOnly || !selectedIds.length) return;
-    const selectedNodes = selectedIds.map((id) => nodeById.get(id)).filter(Boolean);
-    const confirmation = selectedNodes.some((node) => node.locked || node.id === adoptedNodeId)
-      ? t.protectedRemoveConfirm
-      : t.batchDeleteConfirm;
-    requestConfirmation(confirmation, () => removeNodesById(selectedIds));
+    if (selectedLockedImageNodes.length) {
+      setMessage(selectedLockedImageNodes.length === 1 ? t.lockedCannotRemove : t.lockedSelectionCannotRemove(selectedLockedImageNodes.length));
+      return;
+    }
+    const removingIds = [...selectedIds];
+    const removal = removalConfirmationFor(removingIds);
+    requestConfirmation(removal.message, () => removeNodesById(removingIds), removal);
   }
 
   function clearCanvas() {
     if (projectReadOnly) return;
+    if (lockedImageNodes.length) {
+      setMessage(t.lockedCanvasCannotClear(lockedImageNodes.length));
+      return;
+    }
     requestConfirmation(t.clearConfirm, () => {
       const ids = nodesRef.current.map((node) => node.id);
-      removeNodesById(ids);
+      if (!removeNodesById(ids)) return;
       const node = createCanvasIdeaNode({ id: randomId('idea'), x: 150, y: 170 });
       nodesRef.current = [node];
       adoptedNodeIdRef.current = '';
@@ -1498,11 +1727,21 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
 
   function beginNodeDrag(event, node) {
     if (projectReadOnly || event.button !== 0) return;
+    if (node.type === 'image' && node.locked) {
+      event.stopPropagation();
+      setMessage(t.lockedPosition);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    const requestedIds = selectedIdSet.has(node.id) ? selectedIds : [node.id];
+    const movingIds = requestedIds.filter((id) => {
+      const movingNode = nodeById.get(id);
+      return !(movingNode?.type === 'image' && movingNode.locked);
+    });
+    if (!movingIds.length) return;
     rememberCanvasState();
-    const movingIds = selectedIdSet.has(node.id) ? selectedIds : [node.id];
     if (!selectedIdSet.has(node.id)) {
       setSelectedId(node.id);
       setSelectedIds([node.id]);
@@ -1512,6 +1751,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       ids: movingIds,
       startX: event.clientX,
       startY: event.clientY,
+      moved: false,
       origins: new Map(nodes.filter((item) => movingIds.includes(item.id)).map((item) => [item.id, { x: item.x, y: item.y }]))
     };
   }
@@ -1520,11 +1760,23 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     event.stopPropagation();
   }
 
+  function releaseCanvasSelection(event) {
+    if (event?.target?.closest?.('.infiniteCanvasNode, [data-canvas-ui="true"]')) return;
+    event?.preventDefault?.();
+    interactionRef.current = null;
+    setSelectionBox(null);
+    setBoxSelectMode(false);
+    setSelectedId('');
+    setSelectedIds([]);
+    setPrompt('');
+    setImageContextMenu(null);
+  }
+
   function beginPan(event) {
     if (event.button !== 0 || isCanvasUiTarget(event.target)) return;
     event.preventDefault();
     const stageBounds = stageRef.current?.getBoundingClientRect();
-    if (event.shiftKey && stageBounds) {
+    if ((boxSelectMode || event.shiftKey) && stageBounds) {
       event.currentTarget.setPointerCapture?.(event.pointerId);
       interactionRef.current = {
         type: 'lasso',
@@ -1532,7 +1784,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
         startY: event.clientY,
         stageLeft: stageBounds.left,
         stageTop: stageBounds.top,
-        baseIds: selectedIds
+        baseIds: event.shiftKey ? selectedIds : []
       };
       setSelectionBox({ left: event.clientX - stageBounds.left, top: event.clientY - stageBounds.top, width: 0, height: 0 });
       return;
@@ -1569,12 +1821,19 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     const interaction = interactionRef.current;
     if (!interaction) return;
     event.preventDefault();
-    if (interaction.type === 'reference-drag') {
-      if (!interaction.moved && Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY) >= 5) interaction.moved = true;
+    if (interaction.type === 'reference-connect') {
+      const point = {
+        x: (event.clientX - interaction.stageLeft - viewport.x) / viewport.zoom,
+        y: (event.clientY - interaction.stageTop - viewport.y) / viewport.zoom
+      };
+      const hovered = globalThis.document?.elementFromPoint?.(event.clientX, event.clientY)?.closest?.('.infiniteCanvasNode.image');
+      const targetId = hovered?.dataset?.nodeId && hovered.dataset.nodeId !== interaction.sourceId ? hovered.dataset.nodeId : '';
+      interaction.targetId = targetId;
       const bounds = referenceTrayRef.current?.getBoundingClientRect();
-      setReferenceDropActive(Boolean(interaction.moved && bounds
+      setReferenceDropActive(Boolean(bounds
         && event.clientX >= bounds.left && event.clientX <= bounds.right
         && event.clientY >= bounds.top && event.clientY <= bounds.bottom));
+      setReferenceConnection({ sourceId: interaction.sourceId, point, targetId });
       return;
     }
     if (interaction.type === 'minimap') {
@@ -1596,6 +1855,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       setSelectionBox({ left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
       return;
     }
+    if (interaction.type === 'node' && !interaction.moved && Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY) > 3) interaction.moved = true;
     const dx = (event.clientX - interaction.startX) / viewport.zoom;
     const dy = (event.clientY - interaction.startY) / viewport.zoom;
     setNodes((current) => current.map((node) => {
@@ -1607,18 +1867,31 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   function endPointer(event) {
     const interaction = interactionRef.current;
     interactionRef.current = null;
-    if (interaction?.type === 'reference-drag') {
+    if (interaction?.type === 'reference-connect') {
       const bounds = referenceTrayRef.current?.getBoundingClientRect();
-      const inside = Boolean(interaction.moved && bounds
+      const inside = Boolean(bounds
         && event.clientX >= bounds.left && event.clientX <= bounds.right
         && event.clientY >= bounds.top && event.clientY <= bounds.bottom);
-      if (inside) addReference(nodeById.get(interaction.nodeId));
-      else if (!interaction.moved) selectNode(nodeById.get(interaction.nodeId));
+      const targetId = interaction.targetId || (inside && referenceSelected ? selectedId : '');
+      const source = nodeById.get(interaction.sourceId);
+      const target = nodeById.get(targetId);
+      if (source && target && setReferenceForTarget(target.id, source, 'add')) {
+        selectNode(target);
+        setReferenceDetailsOpen(false);
+      }
       setDraggingReferenceNodeId('');
       setReferenceDropActive(false);
+      setReferenceConnection(null);
       return;
     }
     if (interaction?.type === 'minimap') return;
+    if (interaction?.type === 'node') {
+      if (interaction.moved) {
+        suppressNodeClickRef.current = true;
+        globalThis.setTimeout?.(() => { suppressNodeClickRef.current = false; }, 0);
+      }
+      return;
+    }
     if (interaction?.type !== 'lasso') return;
     const x1 = (Math.min(interaction.startX, event.clientX) - interaction.stageLeft - viewport.x) / viewport.zoom;
     const y1 = (Math.min(interaction.startY, event.clientY) - interaction.stageTop - viewport.y) / viewport.zoom;
@@ -1813,6 +2086,17 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
         setImageContextMenu(null);
         return;
       }
+      if (event.key === 'Escape' && referencePickTargetId) {
+        event.preventDefault();
+        setReferencePickTargetId('');
+        return;
+      }
+      if (event.key === 'Escape' && boxSelectMode) {
+        event.preventDefault();
+        setBoxSelectMode(false);
+        setSelectionBox(null);
+        return;
+      }
       if ((event.key === 'Delete' || event.key === 'Backspace') && !editing && selectedNode) {
         event.preventDefault();
         if (selectedIds.length > 1) removeSelectedNodes(); else removeNode(selectedNode);
@@ -1825,7 +2109,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     }
     globalThis.addEventListener?.('keydown', onKeyDown);
     return () => globalThis.removeEventListener?.('keydown', onKeyDown);
-  }, [selectedNode, selectedId, selectedIds, viewport.zoom, historyRevision, imageContextMenu, copyingImageId]);
+  }, [selectedNode, selectedId, selectedIds, viewport.zoom, historyRevision, imageContextMenu, copyingImageId, referencePickTargetId, boxSelectMode]);
 
   async function enqueueGeneration({
     sourceNode = selectedNode,
@@ -1918,6 +2202,107 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     await enqueueGeneration();
   }
 
+  async function enqueueVideo({
+    sourceNode = selectedNode,
+    requestPrompt = prompt,
+    reuseParent = false,
+    clearPrompt = true,
+    placement = 'branch'
+  } = {}) {
+    const selectedSource = sourceNode?.type === 'video' && sourceNode.parentId ? nodeById.get(sourceNode.parentId) : sourceNode;
+    const trimmedPrompt = String(requestPrompt || (selectedSource?.type === 'image' ? t.videoDefaultPrompt : '')).trim();
+    if (projectReadOnly) return;
+    if (!trimmedPrompt) return setMessage(t.promptRequired);
+    if (!isSignedIn) { onSignIn?.(); return setMessage(t.signIn); }
+    if (!hasFullWorkspace) { if (!profile?.groupAccount) onBilling?.(); return setMessage(t.creditsRequired); }
+    if (!selectedVideoProvider) return setMessage(t.videoProviderMissing);
+    const source = selectedSource;
+    if (source && !['idea', 'image'].includes(source.type)) return setMessage(t.videoSourceUnsupported);
+    let confirmedPricing;
+    try { confirmedPricing = await requestVideoPricing({ providerId: videoProviderId, seconds: videoSeconds }); } catch { return setMessage(t.videoFailed); }
+    if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < Number(confirmedPricing.credits || 0)) {
+      if (!profile?.groupAccount) onBilling?.();
+      return setMessage(t.creditsRequired);
+    }
+    if (projectName.trim() === t.unnamedProject) setProjectName(compactText(trimmedPrompt, 40));
+    const parent = source || nodes[0] || null;
+    const siblingCount = nodes.filter((node) => node.parentId === parent?.id).length;
+    const taskId = randomId('canvas-video');
+    const taskNodeId = randomId('video-task');
+    const position = placement === 'viewport-right'
+      ? viewportRightMiddlePosition(viewport, stageSize.width, stageSize.height)
+      : parent ? { x: parent.x + 370, y: parent.y + siblingCount * 300 } : nextOpenPosition(canvasCenter());
+    const taskNode = {
+      id: taskNodeId,
+      type: 'task',
+      mediaType: 'video',
+      x: position.x,
+      y: position.y,
+      parentId: parent?.id || '',
+      prompt: trimmedPrompt,
+      draftPrompt: trimmedPrompt,
+      taskId,
+      providerId: videoProviderId,
+      size: videoSize,
+      seconds: videoSeconds,
+      status: 'queued',
+      progress: 0,
+      createdAt: new Date().toISOString()
+    };
+    rememberCanvasState();
+    setNodes((current) => [...current, taskNode]);
+    setSelectedId(taskNodeId);
+    setSelectedIds([taskNodeId]);
+    setSubmitting(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/video-tasks', {
+        method: 'POST',
+        headers: authHeaders(session, true),
+        body: JSON.stringify({
+          clientTaskId: taskId,
+          prompt: trimmedPrompt,
+          displayPrompt: trimmedPrompt,
+          providerId: videoProviderId,
+          seconds: videoSeconds,
+          size: videoSize,
+          sourceAssetId: source?.type === 'image' ? source.assetId || '' : '',
+          sourceGenerationId: source?.type === 'image' ? source.generationId || '' : '',
+          sourceWidth: source?.width || Number(String(source?.size || '').split('x')[0] || 0),
+          sourceHeight: source?.height || Number(String(source?.size || '').split('x')[1] || 0),
+          canvasProjectId: currentProjectId,
+          canvasParentNodeId: parent?.id || '',
+          canvasTaskNodeId: taskNodeId
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'VIDEO_TASK_CREATE_FAILED');
+      setNodes((current) => current.map((node) => node.id === taskNodeId ? { ...node, status: payload.task?.status || 'queued' } : node));
+      if (clearPrompt) setPrompt('');
+      void syncVideoTasks();
+    } catch (error) {
+      setNodes((current) => current.map((node) => node.id === taskNodeId ? { ...node, status: 'failed', error: error.message } : node));
+      setMessage(generationErrorMessage(error.message, t));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function regenerateVideo(node) {
+    if (!node || node.type !== 'video') return;
+    setCreationMode('video');
+    setVideoProviderId(node.providerId || videoProviderId);
+    setVideoSeconds(Number(node.seconds || 4));
+    setVideoDirection(String(node.size || '') === '720x1280' ? 'portrait' : 'landscape');
+    await enqueueVideo({
+      sourceNode: node,
+      requestPrompt: node.prompt,
+      reuseParent: true,
+      clearPrompt: false,
+      placement: 'viewport-right'
+    });
+  }
+
   async function regenerateNode(node) {
     if (!node || node.type !== 'image') return;
     const originalReferences = Array.isArray(node.referenceNodeIds)
@@ -1942,8 +2327,9 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     if (!node.taskId || !ACTIVE_TASK_STATUSES.has(node.status)) return;
     setNodes((current) => current.map((item) => item.id === node.id ? { ...item, status: 'cancelling' } : item));
     try {
-      await fetch('/api/generation-tasks/cancel', { method: 'POST', headers: authHeaders(session, true), body: JSON.stringify({ taskId: node.taskId }) });
-      void syncTasks();
+      const endpoint = node.mediaType === 'video' ? '/api/video-tasks/cancel' : '/api/generation-tasks/cancel';
+      await fetch(endpoint, { method: 'POST', headers: authHeaders(session, true), body: JSON.stringify({ taskId: node.taskId }) });
+      if (node.mediaType === 'video') void syncVideoTasks(); else void syncTasks();
     } catch { setMessage(t.failed); }
   }
 
@@ -1974,7 +2360,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     setMessage(t.retryingTask);
     setNodes((current) => current.map((item) => item.id === node.id ? { ...item, status: 'queued', error: '' } : item));
     try {
-      const response = await fetch('/api/generation-tasks', {
+      const videoTask = node.mediaType === 'video';
+      const response = await fetch(videoTask ? '/api/video-tasks' : '/api/generation-tasks', {
         method: 'POST',
         headers: authHeaders(session, true),
         body: JSON.stringify({
@@ -1996,7 +2383,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
         id: nextTaskId
       }));
       setMessage('');
-      void syncTasks();
+      if (videoTask) void syncVideoTasks(); else void syncTasks();
     } catch (error) {
       removedTaskIdsRef.current.delete(previousTaskId);
       setNodes((current) => current.map((item) => item.id === node.id ? { ...item, taskId: previousTaskId, status: previousStatus, error: previousError || error.message } : item));
@@ -2027,9 +2414,29 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     </article>;
   }
 
+  const projectDock = <div className="infiniteCanvasProjectDock" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}>
+    <button className="infiniteCanvasHome" type="button" onClick={onGoHome} title={t.home} aria-label={t.home}><House size={16} /><span>{t.home}</span></button>
+    <button className="infiniteCanvasExit" type="button" onClick={onExitCanvas} title={t.backStudio} aria-label={t.backStudio}><ArrowLeft size={16} /><span>{t.backStudio}</span></button>
+    <input value={projectName} maxLength={120} disabled={projectDeleted} onChange={(event) => setProjectName(event.target.value)} aria-label={language === 'zh' ? '画布项目名称' : 'Canvas project name'} />
+    <button type="button" onClick={() => void createProject()} title={t.newProject} aria-label={t.newProject}><FolderPlus size={15} /></button>
+    {isSignedIn && currentProjectId ? <>
+      {!projectDeleted ? <button type="button" onClick={() => void copyCurrentProject()} title={t.copyProject} aria-label={t.copyProject}><Copy size={15} /></button> : null}
+      <button type="button" onClick={() => void removeCurrentProject(projectReadOnly ? 'active' : 'archived')} title={projectReadOnly ? t.restoreProject : t.archiveProject} aria-label={projectReadOnly ? t.restoreProject : t.archiveProject}>{projectReadOnly ? t.restoreProject : t.archiveProject}</button>
+      {!projectDeleted ? <button className="danger" type="button" onClick={() => void moveProjectToTrash(currentProject)} title={t.moveToTrash} aria-label={t.moveToTrash}><Trash2 size={15} /></button> : null}
+    </> : null}
+    <div className={`infiniteCanvasSaveState ${saveStatus}`}>
+      {saveStatus === 'saving' ? <LoaderCircle className="spin" size={13} /> : saveStatus === 'saved' ? <Save size={13} /> : <RefreshCw size={13} />}
+      <span>{saveStatus === 'saving' ? t.saveSaving : saveStatus === 'conflict' ? t.saveConflict : saveStatus === 'failed' ? t.saveFailed : t.saveSaved}</span>
+      {saveStatus === 'conflict' ? <button type="button" onClick={() => void loadProject(currentProjectId)}>{t.reload}</button> : null}
+    </div>
+    {profile ? <em><Sparkles size={14} />{profile.creditBalance || 0}</em> : null}
+    {adoptedNode?.imageUrl ? <a className="infiniteCanvasAdoptedDownload" href={adoptedNode.downloadUrl || adoptedNode.imageUrl} download={canvasImageDownloadFilename(adoptedNode, language)} title={t.adoptedDownload} aria-label={t.adoptedDownload}><Download size={15} /></a> : null}
+  </div>;
+
   return (
     <section className={`infiniteCanvasPage ${theme === 'light' ? 'themeLight' : 'themeDark'} ${projectReadOnly ? 'projectArchived' : ''}`} data-theme={theme} aria-label={t.title}>
       <div className={`infiniteCanvasLayout ${sidebarOpen ? '' : 'sidebarCollapsed'}`} aria-busy={projectLoading}>
+        {projectDock}
         {sidebarOpen ? <aside className="infiniteCanvasSidebar">
           <header className="infiniteCanvasSidebarHeader">
             <strong>{t.sidebarTitle}</strong>
@@ -2038,7 +2445,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
           <div className="infiniteCanvasSidebarActions">
             <button type="button" onClick={addIdeaNode} disabled={projectReadOnly}><Plus size={16} /> {t.newIdea}</button>
             <button type="button" onClick={() => uploadRef.current?.click()} disabled={projectReadOnly || uploading}>{uploading ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} {uploading ? `${t.uploading} ${uploadProgress}%` : t.upload}</button>
-            <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void handleUpload(event.target.files)} />
+            <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void handleUpload(event.target.files, { asReferences: referenceSelected, preservePrimary: referenceSelected })} />
             <button type="button" onClick={() => folderUploadRef.current?.click()} disabled={projectReadOnly || uploading || modelConstraints.maxReferenceImages === 0}><FolderOpen size={16} /> {t.folderUpload}</button>
             <input ref={folderUploadRef} type="file" accept="image/jpeg,image/png,image/webp" multiple directory="" webkitdirectory="" hidden onChange={(event) => void handleUpload(event.target.files, { asReferences: true, preservePrimary: referenceSelected })} />
             <button type="button" onClick={() => { setAssetPickerSelectedIds([]); setAssetPickerOpen(true); }} disabled={projectReadOnly || !isSignedIn || modelConstraints.maxReferenceImages === 0}><Images size={16} /> {t.assetLibrary}</button>
@@ -2056,13 +2463,18 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
             <div className="infiniteCanvasHistoryList">
               {filteredHistory.map((item) => {
                 const added = historyIdsOnCanvas.has(item.id);
+                const existingNode = added ? nodes.find((node) => node.generationId === item.id) : null;
+                const currentMaster = existingNode?.id === selectedId;
+                const currentReference = Boolean(existingNode && supportReferenceIds.has(existingNode.id));
+                const historyActionLabel = currentMaster ? t.primaryImage : referenceSelected
+                  ? currentReference ? t.removeReferenceFrom(nodeLabel(selectedNode, t)) : t.referenceTo(nodeLabel(selectedNode, t))
+                  : added ? t.onCanvas : t.addToCanvas;
                 return <article className={added ? 'added' : ''} key={item.id}>
-                  <button className="infiniteCanvasHistoryAdd" type="button" onClick={() => addHistoryNode(item)}>
+                  <button className="infiniteCanvasHistoryAdd" type="button" onClick={() => addHistoryNode(item)} aria-label={historyActionLabel} title={historyActionLabel}>
                     <img src={item.thumbnailUrl || item.imageUrl} alt="" loading="lazy" decoding="async" />
-                    <span><strong>{compactText(item.prompt, 38) || t.generated}</strong><small>{item.size?.replace('x', '×')}</small></span>
-                    <em>{added ? <Check size={13} /> : <Plus size={13} />}{added ? t.onCanvas : t.addToCanvas}</em>
+                    <em className={referenceSelected ? 'referenceAction' : ''} aria-hidden="true">{currentMaster ? <><Sparkles size={12} /><span>{t.primaryImage}</span></> : referenceSelected ? <><Link2 size={12} /><span>{currentReference ? t.removeReference : t.referenceTo(nodeLabel(selectedNode, t))}</span></> : added ? <Check size={13} /> : <Plus size={13} />}</em>
                   </button>
-                  <button className="infiniteCanvasHistoryDelete" type="button" title={t.deleteHistory} aria-label={t.deleteHistory} onClick={(event) => { event.stopPropagation(); requestConfirmation(t.deleteHistoryConfirm, () => removeHistoryItem(item)); }}><X size={13} /></button>
+                  <button className="infiniteCanvasHistoryDelete" type="button" title={t.deleteHistory} aria-label={t.deleteHistory} onClick={(event) => { event.stopPropagation(); void removeHistoryItem(item); }}><X size={13} /></button>
                 </article>;
               })}
               {historyHasMore ? <button className="infiniteCanvasHistoryMore" type="button" onClick={() => void refreshHistory({ append: true })} disabled={historyLoading}>{historyLoading ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />}{t.historyMore}</button> : null}
@@ -2080,10 +2492,16 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
               {trashOpen ? <div className="infiniteCanvasTrashList">{trashedProjects.length ? trashedProjects.map((project) => renderCanvasProject(project, { trashed: true })) : <p className="infiniteCanvasSidebarState">{t.trashEmpty}</p>}</div> : null}
             </section>
           </div>}
-        </aside> : null}
+        </aside> : <aside className="infiniteCanvasSidebarCollapsed" aria-label={t.sidebarTitle}>
+          <button type="button" onClick={() => setSidebarOpen(true)} title={t.showAssets} aria-label={t.showAssets}>
+            <PanelLeftOpen size={17} />
+            <Images size={19} />
+            <span>{t.sidebarTitle}</span>
+          </button>
+        </aside>}
 
         <div className="infiniteCanvasWorkspace">
-          <div className="infiniteCanvasStage" ref={stageRef} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={(event) => { endPointer(event); setSelectionBox(null); }} onWheel={handleWheel} onDragStart={(event) => { if (!event.target.closest?.('.infiniteCanvasNodeImage[draggable="true"]')) event.preventDefault(); }} onDragEnter={(event) => { if (event.dataTransfer?.types?.includes('Files')) { event.preventDefault(); setDraggingFiles(true); } }} onDragOver={(event) => { if (event.dataTransfer?.types?.includes('Files')) { event.preventDefault(); setDraggingFiles(true); } }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingFiles(false); }} onDrop={(event) => {
+          <div className={`infiniteCanvasStage ${boxSelectMode ? 'boxSelectMode' : ''}`} ref={stageRef} onPointerDown={beginPan} onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={(event) => { endPointer(event); setSelectionBox(null); }} onDoubleClick={releaseCanvasSelection} onWheel={handleWheel} onDragStart={(event) => { if (!event.target.closest?.('.infiniteCanvasNodeImage[draggable="true"]')) event.preventDefault(); }} onDragEnter={(event) => { if (event.dataTransfer?.types?.includes('Files')) { event.preventDefault(); setDraggingFiles(true); } }} onDragOver={(event) => { if (event.dataTransfer?.types?.includes('Files')) { event.preventDefault(); setDraggingFiles(true); } }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingFiles(false); }} onDrop={(event) => {
             event.preventDefault();
             setDraggingFiles(false);
             const bounds = stageRef.current?.getBoundingClientRect();
@@ -2094,28 +2512,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
             void handleUpload(event.dataTransfer?.files, { asReferences: true, preservePrimary: referenceSelected, anchor });
           }}>
             {draggingFiles ? <div className="infiniteCanvasDropReference"><ImagePlus size={24} /><strong>{t.dropReference}</strong></div> : null}
-            <div className="infiniteCanvasProjectDock" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}>
-              <button className="infiniteCanvasHome" type="button" onClick={onGoHome} title={t.home} aria-label={t.home}><House size={16} /><span>{t.home}</span></button>
-              <button className="infiniteCanvasExit" type="button" onClick={onExitCanvas} title={t.backStudio} aria-label={t.backStudio}><ArrowLeft size={16} /><span>{t.backStudio}</span></button>
-              {!sidebarOpen ? <button type="button" onClick={() => setSidebarOpen(true)} title={t.showAssets} aria-label={t.showAssets}><PanelLeftOpen size={16} /></button> : null}
-              {isSignedIn ? <select value={currentProjectId} onChange={(event) => void switchProject(event.target.value)} aria-label={language === 'zh' ? '选择画布项目' : 'Choose canvas project'}>
-                {availableProjects.map((project) => <option value={project.id} key={project.id}>{project.name}{project.status === 'archived' ? ` · ${t.archived}` : ''}</option>)}
-              </select> : null}
-              <input value={projectName} maxLength={120} disabled={projectDeleted} onChange={(event) => setProjectName(event.target.value)} aria-label={language === 'zh' ? '画布项目名称' : 'Canvas project name'} />
-              <button type="button" onClick={() => void createProject()} title={t.newProject} aria-label={t.newProject}><FolderPlus size={15} /></button>
-              {isSignedIn && currentProjectId ? <>
-                {!projectDeleted ? <button type="button" onClick={() => void copyCurrentProject()} title={t.copyProject} aria-label={t.copyProject}><Copy size={15} /></button> : null}
-                <button type="button" onClick={() => void removeCurrentProject(projectReadOnly ? 'active' : 'archived')} title={projectReadOnly ? t.restoreProject : t.archiveProject} aria-label={projectReadOnly ? t.restoreProject : t.archiveProject}>{projectReadOnly ? t.restoreProject : t.archiveProject}</button>
-                {!projectDeleted ? <button className="danger" type="button" onClick={() => void moveProjectToTrash(currentProject)} title={t.moveToTrash} aria-label={t.moveToTrash}><Trash2 size={15} /></button> : null}
-              </> : null}
-              <div className={`infiniteCanvasSaveState ${saveStatus}`}>
-                {saveStatus === 'saving' ? <LoaderCircle className="spin" size={13} /> : saveStatus === 'saved' ? <Save size={13} /> : <RefreshCw size={13} />}
-                <span>{saveStatus === 'saving' ? t.saveSaving : saveStatus === 'conflict' ? t.saveConflict : saveStatus === 'failed' ? t.saveFailed : t.saveSaved}</span>
-                {saveStatus === 'conflict' ? <button type="button" onClick={() => void loadProject(currentProjectId)}>{t.reload}</button> : null}
-              </div>
-              {profile ? <em><Sparkles size={14} />{profile.creditBalance || 0}</em> : null}
-              {adoptedNode?.imageUrl ? <a className="infiniteCanvasAdoptedDownload" href={adoptedNode.downloadUrl || adoptedNode.imageUrl} download title={t.adoptedDownload} aria-label={t.adoptedDownload}><Download size={15} /></a> : null}
-            </div>
             <div className="infiniteCanvasWorld" style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }}>
               <svg className="infiniteCanvasConnections" style={{ left: world.left, top: world.top, width: world.width, height: world.height }} viewBox={`${world.left} ${world.top} ${world.width} ${world.height}`} aria-hidden="true">
                 {nodes.map((node) => {
@@ -2123,10 +2519,11 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                   return parent ? <path key={`${parent.id}-${node.id}`} d={canvasConnectorPath(parent, node)} /> : null;
                 })}
                 {referenceEdges.map((edge) => <path className="referenceLink" key={`reference-${edge.source.id}-${edge.target.id}`} d={canvasReferenceConnectorPath(edge.source, edge.target)} />)}
+                {referenceConnectionSource && referenceConnection?.point ? <path className="referenceLink referenceDraft" d={canvasReferenceDraftPath(referenceConnectionSource, referenceConnection.point)} /> : null}
               </svg>
               {nodes.map((node) => <article
-                className={`infiniteCanvasNode ${node.type} ${selectedIdSet.has(node.id) ? 'selected' : ''} ${node.id === selectedId ? 'primarySelected' : ''} ${node.id === selectedId && node.type === 'image' ? 'primaryImageSelected' : ''} ${referencedSourceIds.has(node.id) ? 'referencedEntity' : ''} ${node.id === adoptedNodeId ? 'adopted' : ''} ${node.locked ? 'locked' : ''}`}
-                data-node-id={node.id} tabIndex="0" aria-label={nodeLabel(node, t)} style={{ left: node.x, top: node.y }} key={node.id} onClick={(event) => { event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); setImageContextMenu(null); selectNode(node, event); }} onDoubleClick={() => { if (node.type === 'image') setPreviewNode(node); }} onContextMenu={(event) => openImageContextMenu(event, node)} onKeyDown={(event) => {
+                className={`infiniteCanvasNode ${node.type} ${selectedIdSet.has(node.id) ? 'selected' : ''} ${node.id === selectedId ? 'primarySelected' : ''} ${node.id === selectedId && node.type === 'image' ? 'primaryImageSelected' : ''} ${referencedSourceIds.has(node.id) ? 'referencedEntity' : ''} ${node.id === adoptedNodeId ? 'adopted' : ''} ${node.locked ? 'locked' : ''} ${node.id === referencePickTargetId ? 'referencePickTarget' : referencePickTargetId && node.type === 'image' ? 'referencePickCandidate' : ''} ${referencePickIds.has(node.id) ? 'referencePickLinked' : ''} ${node.id === referenceConnection?.targetId ? 'referenceConnectTarget' : ''}`}
+                data-node-id={node.id} tabIndex="0" aria-label={nodeLabel(node, t)} style={{ left: node.x, top: node.y }} key={node.id} onClick={(event) => { event.stopPropagation(); if (suppressNodeClickRef.current) { suppressNodeClickRef.current = false; return; } event.currentTarget.focus({ preventScroll: true }); setImageContextMenu(null); if (referencePickTargetId && node.type === 'image' && node.id !== referencePickTargetId) { setReferenceForTarget(referencePickTargetId, node, 'toggle'); return; } selectNode(node, event); }} onDoubleClick={() => { if (!referencePickTargetId && (node.type === 'image' || node.type === 'video')) setPreviewNode(node); }} onContextMenu={(event) => openImageContextMenu(event, node)} onKeyDown={(event) => {
                   if (node.type !== 'image' || (!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'c') return;
                   event.preventDefault();
                   event.stopPropagation();
@@ -2134,45 +2531,21 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                 }}
               >
                 <header onPointerDown={(event) => beginNodeDrag(event, node)}>
-                  <span>{node.type === 'idea' ? <Sparkles size={14} /> : node.type === 'task' ? <LoaderCircle className={ACTIVE_TASK_STATUSES.has(node.status) ? 'spin' : ''} size={14} /> : <ImagePlus size={14} />}{nodeLabel(node, t)}</span>
+                  <span>{node.type === 'idea' ? <Sparkles size={14} /> : node.type === 'task' ? <LoaderCircle className={ACTIVE_TASK_STATUSES.has(node.status) ? 'spin' : ''} size={14} /> : node.type === 'video' ? <Film size={14} /> : <ImagePlus size={14} />}{nodeLabel(node, t)}</span>
                   <span className="infiniteCanvasNodeBadges">
                     {node.id === selectedId && node.type === 'image' ? <i className="primaryImageBadge"><Sparkles size={11} />{t.primaryImage}</i> : null}{referencedSourceIds.has(node.id) ? <i className="referenceEntityBadge" title={t.addReference}><Link2 size={11} /></i> : null}{Number(node.batchSize || 1) > 1 ? <i className="batchIndex">{Number(node.variantIndex || 0) + 1}/{node.batchSize}</i> : null}{node.id === adoptedNodeId ? <i title={t.adopted}><CheckCircle2 size={13} /></i> : null}{node.favorite ? <i title={t.favorite}><Star size={13} /></i> : null}
-                    <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeNode(node); }} aria-label={t.remove}><Trash2 size={14} /></button>
+                    <button type="button" disabled={node.type === 'image' && node.locked} title={node.type === 'image' && node.locked ? t.lockedCannotRemove : t.remove} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeNode(node); }} aria-label={node.type === 'image' && node.locked ? t.lockedCannotRemove : t.remove}><Trash2 size={14} /></button>
                   </span>
                 </header>
-                {node.type === 'image' ? <div
-                  className="infiniteCanvasNodeImage"
-                  onPointerDown={(event) => beginReferenceDrag(event, node)}
-                  onPointerMove={(event) => {
-                    if (interactionRef.current?.type !== 'reference-drag') return;
-                    event.stopPropagation();
-                    movePointer(event);
-                  }}
-                  onPointerUp={(event) => {
-                    if (interactionRef.current?.type !== 'reference-drag') return;
-                    event.stopPropagation();
-                    endPointer(event);
-                  }}
-                  onPointerCancel={(event) => {
-                    if (interactionRef.current?.type !== 'reference-drag') return;
-                    event.stopPropagation();
-                    endPointer(event);
-                  }}
-                  draggable={!projectReadOnly && referenceSelected && node.id !== selectedId}
-                  onDragStart={(event) => {
-                    if (projectReadOnly || !referenceSelected || node.id === selectedId) {
-                      event.preventDefault();
-                      return;
-                    }
-                    event.stopPropagation();
-                    event.dataTransfer.effectAllowed = 'link';
-                    event.dataTransfer.setData('application/x-pic365-canvas-node', node.id);
-                    setDraggingReferenceNodeId(node.id);
-                  }}
-                  onDragEnd={finishReferenceDrag}
-                  title={referenceSelected && node.id !== selectedId ? t.dragToReference : undefined}
-                ><img src={node.thumbnailUrl || node.imageUrl} alt={compactText(node.prompt) || t.generated} draggable={false} loading="lazy" decoding="async" />{referenceSelected && node.id !== selectedId ? <i className="infiniteCanvasReferenceDragHint"><Link2 size={13} />{t.dragToReference}</i> : null}<span>{node.size?.replace('x', '×') || ''}</span></div>
-                  : node.type === 'task' ? <div className={`infiniteCanvasTaskBody ${node.status || 'queued'}`}>{ACTIVE_TASK_STATUSES.has(node.status) ? <LoaderCircle className="spin" size={28} /> : <StopCircle size={28} />}<strong>{taskStatusLabel(node.status, t)}{Number(node.count || 1) > 1 ? ` · ${node.count}${language === 'zh' ? '张' : ''}` : ''}</strong><small>{compactText(node.error || node.prompt, 72)}</small></div>
+                {node.type === 'image' ? <div className="infiniteCanvasNodeImage">
+                  <img src={node.thumbnailUrl || node.imageUrl} alt={compactText(node.prompt) || t.generated} draggable={false} loading="lazy" decoding="async" />
+                  {!projectReadOnly ? <button className="infiniteCanvasReferenceHandle" type="button" title={t.connectReference} aria-label={t.connectReference} onClick={(event) => event.stopPropagation()} onPointerDown={(event) => beginReferenceDrag(event, node)} onPointerMove={(event) => { if (interactionRef.current?.type === 'reference-connect') movePointer(event); }} onPointerUp={(event) => { if (interactionRef.current?.type === 'reference-connect') endPointer(event); }} onPointerCancel={(event) => { if (interactionRef.current?.type === 'reference-connect') endPointer(event); }}><Link2 size={14} /></button> : null}
+                  {referenceSelected && node.id !== selectedId && !referencePickTargetId ? <button className={`infiniteCanvasReferenceQuick ${supportReferenceIds.has(node.id) ? 'active' : ''}`} type="button" onClick={(event) => { event.stopPropagation(); toggleReference(node); }}><Link2 size={13} />{supportReferenceIds.has(node.id) ? t.removeReferenceFrom(nodeLabel(selectedNode, t)) : t.referenceTo(nodeLabel(selectedNode, t))}</button> : null}
+                  {referencePickTargetId && node.id !== referencePickTargetId ? <i className="infiniteCanvasReferencePickState"><Link2 size={12} />{referencePickIds.has(node.id) ? t.removeReference : t.addReference}</i> : null}
+                  <span>{node.size?.replace('x', '×') || ''}</span>
+                </div>
+                  : node.type === 'video' ? <button className="infiniteCanvasNodeVideo" type="button" onClick={(event) => { event.stopPropagation(); setPreviewNode(node); }}><video src={node.videoUrl} poster={node.posterUrl || undefined} muted preload="metadata" playsInline /><i><Play size={22} /></i><span>{node.seconds || 4}{t.secondsUnit} · {node.size?.replace('x', '×')}</span></button>
+                    : node.type === 'task' ? <div className={`infiniteCanvasTaskBody ${node.status || 'queued'}`}>{ACTIVE_TASK_STATUSES.has(node.status) ? <LoaderCircle className="spin" size={28} /> : <StopCircle size={28} />}<strong>{taskStatusLabel(node.phase || node.status, t)}{node.mediaType === 'video' ? ` · ${node.seconds || 4}${t.secondsUnit}` : Number(node.count || 1) > 1 ? ` · ${node.count}${language === 'zh' ? '张' : ''}` : ''}</strong>{node.mediaType === 'video' && Number(node.progress || 0) > 0 ? <progress max="100" value={node.progress} /> : null}<small>{compactText(node.error || node.prompt, 72)}</small></div>
                     : <div className="infiniteCanvasIdeaBody"><MousePointer2 size={24} /><strong>{t.chooseIdea}</strong><p>{compactText(node.prompt, 92) || t.promptPlaceholder}</p></div>}
                 {node.type !== 'task' ? <p>{compactText(node.prompt, 96) || t.promptPlaceholder}</p> : null}
                 {node.type !== 'idea' ? <footer>
@@ -2182,13 +2555,16 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                     <button type="button" title={t.preview} aria-label={t.preview} onClick={(event) => { event.stopPropagation(); setPreviewZoom(1); setPreviewNode(node); }}><Eye size={13} /></button>
                     <button type="button" title={t.compare} aria-label={t.compare} className={compareIds.includes(node.id) ? 'active' : ''} onClick={(event) => { event.stopPropagation(); toggleCompare(node); }}><LayoutGrid size={13} /></button>
                     <button type="button" title={t.localEdit} aria-label={t.localEdit} onClick={(event) => { event.stopPropagation(); setEditNode(node); }}><Edit3 size={13} /></button>
+                    <button type="button" title={t.makeVideo} aria-label={t.makeVideo} onClick={(event) => { event.stopPropagation(); selectNode(node); setCreationMode('video'); setPrompt(node.draftPrompt || t.videoDefaultPrompt); }}><Film size={13} /></button>
                   </> : null}
+                  {node.type === 'video' ? <><button className="nodePrimaryAction" type="button" title={t.regenerateVideo} disabled={submitting || projectReadOnly} onClick={(event) => { event.stopPropagation(); void regenerateVideo(node); }}><RefreshCw size={13} /><span>{t.regenerateVideo}</span></button><button type="button" title={t.playVideo} aria-label={t.playVideo} onClick={(event) => { event.stopPropagation(); setPreviewNode(node); }}><Play size={13} /></button>{node.downloadUrl ? <a href={node.downloadUrl} download title={t.downloadVideo} aria-label={t.downloadVideo}><Download size={13} /></a> : null}</> : null}
                   {node.type === 'task' && ACTIVE_TASK_STATUSES.has(node.status) ? <button className="nodePrimaryAction" type="button" onClick={(event) => { event.stopPropagation(); void cancelTask(node); }}><StopCircle size={13} /><span>{t.cancelTask}</span></button> : null}
                   {node.type === 'task' && ['failed', 'cancelled', 'interrupted'].includes(node.status) ? <button className="nodePrimaryAction" type="button" disabled={submitting} onClick={(event) => { event.stopPropagation(); void retryTask(node); }}><RefreshCw size={13} /><span>{t.retryTask}</span></button> : null}
                 </footer> : null}
               </article>)}
             </div>
             {selectionBox ? <div className="infiniteCanvasSelectionBox" style={selectionBox} aria-hidden="true" /> : null}
+            {selectedIds.length > 1 && selectionActionPosition ? <div className="infiniteCanvasSelectionActions" data-canvas-ui="true" style={selectionActionPosition} onPointerDown={stopCanvasUiPointer}><span><BoxSelect size={14} />{selectedIds.length} {t.selectedCount}</span><button type="button" disabled={Boolean(selectedLockedImageNodes.length)} title={selectedLockedImageNodes.length ? t.lockedSelectionCannotRemove(selectedLockedImageNodes.length) : t.batchDelete} onClick={removeSelectedNodes}><Trash2 size={14} />{t.batchDelete}</button></div> : null}
             {imageContextMenu ? <div
               className="infiniteCanvasImageContextMenu"
               data-canvas-ui="true"
@@ -2210,7 +2586,21 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
             {!nodes.length ? <div className="infiniteCanvasEmpty"><Sparkles size={32} /><strong>{t.emptyTitle}</strong><p>{t.emptyText}</p></div> : null}
             {projectReadOnly ? <div className="infiniteCanvasArchivedNotice" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><strong>{projectDeleted ? t.deleted : t.archived}</strong><button type="button" onClick={() => void removeCurrentProject('active')}>{t.restoreProject}</button></div> : null}
             {projectLoading ? <div className="infiniteCanvasLoading" data-canvas-ui="true"><LoaderCircle className="spin" size={30} /></div> : null}
-            <div className="infiniteCanvasTools" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><button type="button" onClick={undoCanvas} disabled={!undoStackRef.current.length} title={t.undo} aria-label={t.undo}><Undo2 size={17} /></button><button type="button" onClick={redoCanvas} disabled={!redoStackRef.current.length} title={t.redo} aria-label={t.redo}><Redo2 size={17} /></button><button type="button" onClick={() => changeZoom(viewport.zoom - 0.1)} aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut size={17} /></button><span>{Math.round(viewport.zoom * 100)}%</span><button type="button" onClick={() => changeZoom(viewport.zoom + 0.1)} aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn size={17} /></button><button type="button" onClick={fitContent} title={t.fitView} aria-label={t.fitView}><Focus size={17} /></button><button type="button" onClick={focusSelected} title={t.focusSelected} aria-label={t.focusSelected}><MousePointer2 size={17} /></button><button type="button" className={canvasSearchOpen ? 'active' : ''} onClick={() => setCanvasSearchOpen((value) => !value)} title={t.searchCanvas} aria-label={t.searchCanvas}><Search size={17} /></button><button type="button" className={minimapOpen ? 'active' : ''} onClick={() => setMinimapOpen((value) => !value)} title={t.minimap} aria-label={t.minimap}><MapIcon size={17} /></button><button type="button" onClick={autoArrange} disabled={projectReadOnly} title={t.arrange} aria-label={t.arrange}><LayoutGrid size={17} /></button><button type="button" onClick={clearCanvas} disabled={projectReadOnly} title={t.clearCanvas} aria-label={t.clearCanvas}><Trash2 size={17} /></button></div>
+            {referencePickTarget ? <div className="infiniteCanvasReferencePickBanner" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><Link2 size={15} /><span>{t.batchReferenceHint(nodeLabel(referencePickTarget, t))}</span><button type="button" onClick={() => setReferencePickTargetId('')}>{t.finishBatchReference}</button></div> : null}
+            <div className="infiniteCanvasTools" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}>
+              <button type="button" onClick={undoCanvas} disabled={!undoStackRef.current.length} title={t.undo} aria-label={t.undo}><Undo2 size={17} /></button>
+              <button type="button" onClick={redoCanvas} disabled={!redoStackRef.current.length} title={t.redo} aria-label={t.redo}><Redo2 size={17} /></button>
+              <button type="button" onClick={() => changeZoom(viewport.zoom - 0.1)} aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut size={17} /></button>
+              <span>{Math.round(viewport.zoom * 100)}%</span>
+              <button type="button" onClick={() => changeZoom(viewport.zoom + 0.1)} aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn size={17} /></button>
+              <button type="button" onClick={fitContent} title={t.fitView} aria-label={t.fitView}><Focus size={17} /></button>
+              <button type="button" onClick={focusSelected} title={t.focusSelected} aria-label={t.focusSelected}><MousePointer2 size={17} /></button>
+              <button type="button" className={boxSelectMode ? 'active boxSelectActive' : ''} onClick={() => setBoxSelectMode((value) => !value)} title={t.boxSelectHint} aria-label={t.boxSelect} aria-pressed={boxSelectMode}><BoxSelect size={17} /></button>
+              <button type="button" className={canvasSearchOpen ? 'active' : ''} onClick={() => setCanvasSearchOpen((value) => !value)} title={t.searchCanvas} aria-label={t.searchCanvas}><Search size={17} /></button>
+              <button type="button" className={minimapOpen ? 'active' : ''} onClick={() => setMinimapOpen((value) => !value)} title={t.minimap} aria-label={t.minimap}><MapIcon size={17} /></button>
+              <button type="button" onClick={autoArrange} disabled={projectReadOnly} title={t.arrange} aria-label={t.arrange}><LayoutGrid size={17} /></button>
+              <button type="button" onClick={clearCanvas} disabled={projectReadOnly || Boolean(lockedImageNodes.length)} title={lockedImageNodes.length ? t.lockedCanvasCannotClear(lockedImageNodes.length) : t.clearCanvas} aria-label={lockedImageNodes.length ? t.lockedCanvasCannotClear(lockedImageNodes.length) : t.clearCanvas}><Trash2 size={17} /></button>
+            </div>
             {canvasSearchOpen ? <div className="infiniteCanvasSearchPanel" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><label><Search size={14} /><input autoFocus value={canvasQuery} onChange={(event) => setCanvasQuery(event.target.value)} placeholder={t.searchPlaceholder} /></label><select aria-label={language === 'zh' ? '筛选画布节点' : 'Filter canvas nodes'} value={canvasFilter} onChange={(event) => setCanvasFilter(event.target.value)}><option value="all">{t.allNodes}</option><option value="favorite">{t.favoriteNodes}</option><option value="locked">{t.lockedNodes}</option><option value="adopted">{t.adoptedNodes}</option><option value="active">{t.activeTasks}</option><option value="failed">{t.failedTasks}</option></select><div>{!canvasMatches.length ? <p>{t.noSearchResults}</p> : canvasMatches.map((node) => <button type="button" key={node.id} onClick={() => selectSearchResult(node)}><strong>{nodeLabel(node, t)}</strong><span>{compactText(node.prompt || node.draftPrompt, 52)}</span></button>)}</div></div> : null}
             {minimapOpen && nodes.length ? <div className="infiniteCanvasMinimap" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer} style={minimapPosition ? { left: minimapPosition.x, top: minimapPosition.y, right: 'auto', bottom: 'auto' } : undefined} role="region" aria-label={t.minimap}>
               <button className="infiniteCanvasMinimapHandle" type="button" onPointerDown={beginMinimapDrag} title={t.minimapMove} aria-label={t.minimapMove}><GripHorizontal size={15} /><span>{t.minimap}</span></button>
@@ -2221,26 +2611,26 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
           <div className={`infiniteCanvasComposer ${composerCollapsed ? 'collapsed' : ''}`}>
             <div className="infiniteCanvasComposerTop">
               <div className="infiniteCanvasComposerContext">
-                <span>{selectedIds.length > 1 ? `${selectedIds.length} ${t.selectedCount}` : selectedNode ? t.selected : t.selectHint}</span>{selectedNode ? <strong>{nodeLabel(selectedNode, t)}{selectedNode.prompt ? ` · ${compactText(selectedNode.prompt, 48)}` : ''}</strong> : null}
+                <span>{selectedIds.length > 1 ? `${selectedIds.length} ${t.selectedCount}` : selectedNode ? t.selected : t.selectHint}</span>{selectedNode ? <strong>{nodeLabel(selectedNode, t)}</strong> : null}
               </div>
               <div className="infiniteCanvasComposerNavigation">
-                {referenceSelected ? <div className="infiniteCanvasReferenceSourceControl">
-                  <button type="button" onClick={() => setReferenceSourceMenuOpen((current) => !current)} disabled={projectReadOnly || uploading}><ImagePlus size={13} />{t.addReferenceImages}</button>
-                  {referenceSourceMenuOpen ? <div className="infiniteCanvasReferenceSourceMenu">
-                    <button type="button" onClick={() => { setReferenceSourceMenuOpen(false); referenceFolderUploadRef.current?.click(); }}><FolderOpen size={14} />{t.folderUpload}</button>
-                    <button type="button" onClick={() => { setReferenceSourceMenuOpen(false); setAssetPickerSelectedIds([]); setAssetPickerOpen(true); }}><Images size={14} />{t.assetLibrary}</button>
-                  </div> : null}
-                  <input ref={referenceFolderUploadRef} type="file" accept="image/jpeg,image/png,image/webp" multiple directory="" webkitdirectory="" hidden onChange={(event) => void handleUpload(event.target.files, { asReferences: true, preservePrimary: true })} />
-                </div> : null}
-                {selectedIds.length > 1 ? <div className="infiniteCanvasBatchActions">{selectedImageNodes.length >= 2 ? <button type="button" onClick={compareSelectedImages}><LayoutGrid size={13} />{t.compareSelected}</button> : null}<button className="danger" type="button" onClick={removeSelectedNodes}><Trash2 size={13} />{t.batchDelete}</button></div> : null}
-                {selectedIds.length === 1 && selectedNode ? <div className="infiniteCanvasBranchNav">{selectedParent ? <button type="button" onClick={() => { selectNode(selectedParent); focusNode(selectedParent); }}>{t.parentVersion}</button> : null}{selectedChildren.length ? <button type="button" onClick={() => { selectNode(selectedChildren[0]); focusNode(selectedChildren[0]); }}>{selectedChildren.length} {t.childVersions}</button> : null}</div> : null}
+                {selectedIds.length > 1 ? <div className="infiniteCanvasBatchActions">{selectedImageNodes.length >= 2 ? <button type="button" onClick={compareSelectedImages}><LayoutGrid size={13} />{t.compareSelected}</button> : null}<button className="danger" type="button" disabled={Boolean(selectedLockedImageNodes.length)} title={selectedLockedImageNodes.length ? t.lockedSelectionCannotRemove(selectedLockedImageNodes.length) : t.batchDelete} onClick={removeSelectedNodes}><Trash2 size={13} />{t.batchDelete}</button></div> : null}
               </div>
-              {selectedNode?.type === 'image' ? <div className="infiniteCanvasVersionActions"><button className={selectedNode.id === adoptedNodeId ? 'active' : ''} type="button" onClick={() => { rememberCanvasState(); setAdoptedNodeId(selectedNode.id); }}><CheckCircle2 size={13} />{selectedNode.id === adoptedNodeId ? t.adopted : t.adopt}</button><button className={selectedNode.locked ? 'active' : ''} type="button" onClick={() => { rememberCanvasState(); setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, locked: !node.locked } : node)); }}><Save size={13} />{selectedNode.locked ? t.unlock : t.lock}</button><button className={selectedNode.favorite ? 'active' : ''} type="button" onClick={() => { rememberCanvasState(); setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, favorite: !node.favorite } : node)); }}><Star size={13} />{t.favorite}</button><button type="button" onClick={() => duplicateNode(selectedNode)}><Copy size={13} />{t.duplicate}</button>{selectedNode.downloadUrl || selectedNode.imageUrl ? <a href={selectedNode.downloadUrl || selectedNode.imageUrl} download><Download size={13} />{t.download}</a> : null}{onOpenInStudio ? <button className="primary" type="button" onClick={() => onOpenInStudio(selectedNode)}><WandSparkles size={13} />{t.refine}</button> : null}</div> : null}
+              {selectedNode?.type === 'image' ? <div className="infiniteCanvasVersionActions">
+                <button className={selectedNode.locked ? 'active' : ''} type="button" onClick={() => { rememberCanvasState(); setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, locked: !node.locked } : node)); }}><LockKeyhole size={13} />{selectedNode.locked ? t.unlock : t.lock}</button>
+                <button type="button" disabled={!selectedChildren.length} onClick={() => { if (selectedChildren[0]) { selectNode(selectedChildren[0]); focusNode(selectedChildren[0]); } }}><GitBranch size={13} />{t.childVersions}{selectedChildren.length ? ` (${selectedChildren.length})` : ''}</button>
+                <button className={`infiniteCanvasBatchReferenceToggle ${referencePickTargetId === selectedId ? 'active' : ''}`} type="button" onClick={() => setReferencePickTargetId((current) => current === selectedId ? '' : selectedId)}><Link2 size={13} />{referencePickTargetId === selectedId ? t.finishBatchReference : t.batchReference}</button>
+                <button type="button" onClick={() => { setCreationMode('video'); if (!prompt.trim()) setPrompt(t.videoDefaultPrompt); }}><Film size={13} />{t.makeVideo}</button>
+                {onOpenInStudio ? <button className="primary" type="button" disabled={selectedNode.locked} title={selectedNode.locked ? t.lockedRefineUnavailable : t.refine} onClick={() => onOpenInStudio(selectedNode)}><WandSparkles size={13} />{t.refine}</button> : null}
+                {selectedNode.downloadUrl || selectedNode.imageUrl ? <a href={selectedNode.downloadUrl || selectedNode.imageUrl} download={canvasImageDownloadFilename(selectedNode, language)}><Download size={13} />{t.download}</a> : null}
+                <button type="button" onClick={() => duplicateNode(selectedNode)}><Copy size={13} />{t.duplicate}</button>
+              </div> : null}
+              {selectedNode?.type === 'video' ? <div className="infiniteCanvasVersionActions"><button type="button" onClick={() => setPreviewNode(selectedNode)}><Play size={13} />{t.playVideo}</button><button type="button" onClick={() => duplicateNode(selectedNode)}><Copy size={13} />{t.duplicate}</button>{selectedNode.downloadUrl ? <a href={selectedNode.downloadUrl} download><Download size={13} />{t.downloadVideo}</a> : null}</div> : null}
               <button className="infiniteCanvasComposerCollapse" type="button" aria-expanded={!composerCollapsed} title={composerCollapsed ? t.expandComposer : t.collapseComposer} aria-label={composerCollapsed ? t.expandComposer : t.collapseComposer} onClick={() => setComposerCollapsed((current) => !current)}>{composerCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
             </div>
-            {referenceSelected ? <div ref={referenceTrayRef} className={`infiniteCanvasReferenceTray ${showSupportingReferences ? 'hasSupportingReferences' : ''} ${referenceDropActive ? 'dropActive' : ''}`} onDragEnter={(event) => { event.preventDefault(); setReferenceDropActive(true); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setReferenceDropActive(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReferenceDropActive(false); }} onDrop={dropReferenceNode}>
-              <div className="infiniteCanvasPrimaryReference"><article><button type="button" onClick={() => { setPreviewZoom(1); setPreviewNode(selectedNode); }}><img src={selectedNode.thumbnailUrl || selectedNode.imageUrl} alt="" /><span>{t.primaryImage}</span></button><input aria-label={language === 'zh' ? '修改图片名称' : 'Rename image'} value={selectedNode.name || selectedNode.autoName || ''} maxLength={80} onFocus={rememberCanvasState} onChange={(event) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, name: event.target.value } : node))} /></article></div>
-              {showSupportingReferences ? <div className="infiniteCanvasSupportingReferences">
+            {referenceSelected && creationMode === 'image' ? <div ref={referenceTrayRef} className={`infiniteCanvasReferenceTray ${referenceDetailsVisible && showSupportingReferences ? 'hasSupportingReferences detailsOpen' : ''} ${referenceDropActive ? 'dropActive' : ''}`} onDragEnter={(event) => { event.preventDefault(); setReferenceDropActive(true); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setReferenceDropActive(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReferenceDropActive(false); }} onDrop={dropReferenceNode}>
+              <div className="infiniteCanvasPrimaryReference"><article><button type="button" onClick={() => { setPreviewZoom(1); setPreviewNode(selectedNode); }}><img src={selectedNode.thumbnailUrl || selectedNode.imageUrl} alt="" /><span>{t.primaryImage}</span></button><input aria-label={language === 'zh' ? '修改图片名称' : 'Rename image'} value={selectedNode.name || selectedNode.autoName || ''} maxLength={80} onFocus={rememberCanvasState} onChange={(event) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, name: event.target.value } : node))} /><button className="infiniteCanvasReferenceDetailsToggle" type="button" aria-expanded={referenceDetailsOpen} title={t.referenceDetails} onClick={() => setReferenceDetailsOpen((current) => !current)}><Link2 size={12} /><span>{t.referenceCount(supportReferenceNodes.length, maxSupportReferenceImages)}</span>{referenceDetailsOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</button></article></div>
+              {referenceDetailsVisible && showSupportingReferences ? <div className="infiniteCanvasSupportingReferences">
                 <header><span><Images size={14} />{t.referenceTray} <b>{supportReferenceNodes.length}/{maxSupportReferenceImages}</b></span><small>{t.referenceHint}</small></header>
                 <div>
                   {supportReferenceNodes.filter((node) => node.id !== selectedId).map((node, index) => <article key={node.id}>
@@ -2252,12 +2642,13 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                 </div>
               </div> : null}
             </div> : null}
+            <div className="infiniteCanvasCreationMode" role="tablist" aria-label={language === 'zh' ? '创作类型' : 'Creation type'}><button className={creationMode === 'image' ? 'active' : ''} type="button" role="tab" aria-selected={creationMode === 'image'} onClick={() => setCreationMode('image')}><ImagePlus size={14} />{t.imageMode}</button><button className={creationMode === 'video' ? 'active' : ''} type="button" role="tab" aria-selected={creationMode === 'video'} onClick={() => { setCreationMode('video'); if (!prompt.trim() && selectedNode?.type === 'image') setPrompt(t.videoDefaultPrompt); }}><Film size={14} />{t.videoMode}</button></div>
             <div className="infiniteCanvasPromptRow">
-              <textarea value={prompt} onChange={(event) => { const value = event.target.value; setPrompt(value); if (selectedNode) setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, draftPrompt: value, ...(node.type === 'idea' ? { prompt: value } : {}) } : node)); }} placeholder={t.promptPlaceholder} maxLength={6000} />
-              {referenceSelected ? <small className="infiniteCanvasReferencePromptHint">{t.referencePromptHint}</small> : null}
-              {referenceSelected ? <div className="infiniteCanvasPresets">{t.branchPresets.map((preset) => <button type="button" key={preset} onClick={() => applyPreset(preset)}>{compactText(preset, 20)}</button>)}</div> : null}
+              <textarea value={prompt} onChange={(event) => { const value = event.target.value; setPrompt(value); if (selectedNode) setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, draftPrompt: value, ...(node.type === 'idea' ? { prompt: value } : {}) } : node)); }} placeholder={creationMode === 'video' ? t.videoPromptPlaceholder : t.promptPlaceholder} maxLength={6000} />
+              {referenceSelected && creationMode === 'image' && referenceDetailsOpen ? <small className="infiniteCanvasReferencePromptHint">{t.referencePromptHint}</small> : null}
+              {referenceSelected && creationMode === 'image' ? <div className="infiniteCanvasPresets">{t.branchPresets.map((preset) => <button type="button" key={preset} onClick={() => applyPreset(preset)}>{compactText(preset, 20)}</button>)}</div> : null}
             </div>
-            <div className="infiniteCanvasComposerFooter">
+            {creationMode === 'image' ? <div className="infiniteCanvasComposerFooter">
               <label><span>{t.provider}</span><select value={providerId} onChange={(event) => setProviderId(event.target.value)}>{providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}</select></label>
               <label><span>{t.ratio}</span><select value={selectedRatio} onChange={(event) => selectCanvasRatio(event.target.value)}>{sizeTemplate.ratios.map((preset) => <option value={preset.id} key={preset.id}>{preset.id}</option>)}</select></label>
               <div className="infiniteCanvasSizeField"><span>{t.size}</span><div className="infiniteCanvasSizePicker"><span className="infiniteCanvasRatioPreview" title={`${selectedRatio} · ${size.replace('x', '×')}`}><CanvasRatioGraphic ratioWidth={ratioGraphic.width} ratioHeight={ratioGraphic.height} /></span><select aria-label={t.size} className={!sizeCheck.valid ? 'invalid' : ''} value={size} onChange={(event) => setSize(event.target.value)}>{sizeOptions.map((item) => <option value={item} key={item}>{savedSizeTemplate === item ? '★ ' : ''}{ratioIdForImageSize(item, sizeTemplate.ratios)} · {item.replace('x', '×')}</option>)}</select><button className={savedSizeTemplate === size ? 'active' : ''} type="button" onClick={saveCurrentSizeTemplate} title={t.saveSizeTemplate} aria-label={t.saveSizeTemplate}><LockKeyhole size={14} /></button></div></div>
@@ -2265,30 +2656,36 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
               <label><span>{t.count}</span><select value={count} onChange={(event) => setCount(Number(event.target.value))}>{[1, 2, 3, 4].map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
               <div className="infiniteCanvasPrice">{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact /> : null}</div>
               <button className="infiniteCanvasGenerate" type="button" onClick={() => void generateBranch()} disabled={projectReadOnly || submitting || pricingLoading || !providerId || !sizeCheck.valid || !referenceCheck.valid}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{submitting ? t.submitting : t.generate}</button>
-            </div>
+            </div> : <div className="infiniteCanvasComposerFooter videoMode">
+              {videoProviders.length > 1 ? <label><span>{t.videoProvider}</span><select value={videoProviderId} onChange={(event) => setVideoProviderId(event.target.value)}>{videoProviders.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}</select></label> : <label><span>{t.videoProvider}</span><strong className="infiniteCanvasReadOnlyValue">{selectedVideoProvider?.name || 'Sora 2'}</strong></label>}
+              <label><span>{t.duration}</span><select value={videoSeconds} onChange={(event) => setVideoSeconds(Number(event.target.value))}>{[4, 8, 12].map((value) => <option value={value} key={value}>{value}{t.secondsUnit}</option>)}</select></label>
+              <label><span>{t.direction}</span><select value={videoDirection} onChange={(event) => setVideoDirection(event.target.value)}><option value="auto">{t.directionAuto}</option><option value="landscape">{t.landscape}</option><option value="portrait">{t.portrait}</option></select></label>
+              <div className="infiniteCanvasPrice">{hasFullWorkspace ? <VideoCreditPrice pricing={videoPricing} language={language} /> : null}</div>
+              <button className="infiniteCanvasGenerate" type="button" onClick={() => void enqueueVideo()} disabled={projectReadOnly || submitting || videoPricingLoading || !videoProviderId || !videoSourceSupported}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Film size={17} />}{submitting ? t.submitting : t.generateVideo}</button>
+            </div>}
             {!sizeCheck.valid ? <p className="infiniteCanvasMessage">{t.sizeUnsupported}</p> : !referenceCheck.valid ? <p className="infiniteCanvasMessage">{referenceCheck.error === 'TOO_MANY_REFERENCE_IMAGES' ? t.referenceTooMany : t.referenceUnsupported}</p> : message ? <p className="infiniteCanvasMessage">{message}</p> : null}
           </div>
         </div>
       </div>
 
       {assetPickerOpen ? <div className="infiniteCanvasModalBackdrop"><section className="infiniteCanvasAssetPicker" role="dialog" aria-modal="true" aria-label={t.assetLibrary}>
-        <header><strong><Images size={17} />{t.assetLibrary} · {supportReferenceNodes.length}/{maxSupportReferenceImages}</strong><button type="button" onClick={() => { setAssetPickerSelectedIds([]); setAssetPickerOpen(false); }} aria-label={t.closeLibrary}><X size={17} /></button></header>
+        <header><strong><Images size={17} />{referenceSelected ? t.assetReferenceTo(nodeLabel(selectedNode, t)) : t.assetLibrary} · {supportReferenceNodes.length}/{maxSupportReferenceImages}</strong><button type="button" onClick={() => { setAssetPickerSelectedIds([]); setAssetPickerOpen(false); }} aria-label={t.closeLibrary}><X size={17} /></button></header>
         <label><Search size={15} /><input autoFocus value={assetPickerQuery} onChange={(event) => setAssetPickerQuery(event.target.value)} placeholder={t.assetSearch} /></label>
         <div>{assetPickerLoading ? <p><LoaderCircle className="spin" size={22} /></p> : !assetPickerItems.length ? <p>{t.noAssets}</p> : assetPickerItems.map((asset) => {
           const activeReference = supportReferenceByAssetId.get(asset.id);
           const primaryAsset = selectedNode?.assetId === asset.id;
           const selected = assetPickerSelectedIds.includes(asset.id);
-          const selectionFull = !selected && assetPickerSelectedIds.length >= assetPickerSelectionLimit;
-          return <button type="button" key={asset.id} className={`${activeReference ? 'active' : primaryAsset ? 'primary' : ''} ${selected ? 'selected' : ''}`.trim()} disabled={primaryAsset || selectionFull} aria-pressed={selected} onClick={() => activeReference ? addAssetReference(asset) : toggleAssetPickerSelection(asset.id)} title={primaryAsset ? t.primaryImage : activeReference ? t.assetRemove : t.addAssetReference}>
+          const selectionFull = !referenceSelected && !selected && assetPickerSelectedIds.length >= assetPickerSelectionLimit;
+          return <button type="button" key={asset.id} className={`${activeReference ? 'active' : primaryAsset ? 'primary' : ''} ${selected ? 'selected' : ''}`.trim()} disabled={primaryAsset || selectionFull} aria-pressed={referenceSelected ? Boolean(activeReference) : selected} onClick={() => referenceSelected ? addAssetReference(asset) : activeReference ? addAssetReference(asset) : toggleAssetPickerSelection(asset.id)} title={primaryAsset ? t.primaryImage : activeReference ? t.assetRemove : referenceSelected ? t.assetReferenceTo(nodeLabel(selectedNode, t)) : t.addAssetReference}>
             <span className="infiniteCanvasAssetPreview"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} />{activeReference || primaryAsset || selected ? <i>{activeReference ? t.assetRemove : primaryAsset ? t.primaryImage : t.assetAdd}</i> : null}</span>
             <span className="infiniteCanvasAssetMeta"><strong>{asset.name}</strong><small>{asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.mimeType}</small></span>
-            <b className="infiniteCanvasAssetAction">{activeReference ? <X size={13} /> : primaryAsset || selected ? <Check size={13} /> : <Plus size={13} />}{activeReference ? t.assetRemove : primaryAsset ? t.primaryImage : t.assetAdd}</b>
+            <b className="infiniteCanvasAssetAction">{activeReference ? <X size={13} /> : primaryAsset || selected ? <Check size={13} /> : referenceSelected ? <Link2 size={13} /> : <Plus size={13} />}{activeReference ? t.assetRemove : primaryAsset ? t.primaryImage : referenceSelected ? t.referenceTo(nodeLabel(selectedNode, t)) : t.assetAdd}</b>
           </button>;
         })}</div>
-        <footer><span>{t.assetSelected(assetPickerSelectedIds.length, assetPickerSelectionLimit)}</span><button type="button" onClick={confirmAssetPickerSelection} disabled={!assetPickerSelectedIds.length}><Check size={15} />{t.confirmAssets(assetPickerSelectedIds.length)}</button></footer>
+        {!referenceSelected ? <footer><span>{t.assetSelected(assetPickerSelectedIds.length, assetPickerSelectionLimit)}</span><button type="button" onClick={confirmAssetPickerSelection} disabled={!assetPickerSelectedIds.length}><Check size={15} />{t.confirmAssets(assetPickerSelectedIds.length)}</button></footer> : null}
       </section></div> : null}
-      {confirmation ? <div className="infiniteCanvasModalBackdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) cancelConfirmation(); }}><section className="infiniteCanvasConfirm" role="alertdialog" aria-modal="true" aria-label={t.confirmAction}><Trash2 size={24} /><p>{confirmation.message}</p><div><button type="button" onClick={cancelConfirmation}>{t.cancelAction}</button><button className="danger" type="button" onClick={confirmPendingAction}>{t.confirmAction}</button></div></section></div> : null}
-      {previewNode ? <div className="infiniteCanvasModalBackdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewNode(null); }}><section className="infiniteCanvasPreview" role="dialog" aria-modal="true" aria-label={t.preview}><header><strong>{previewNode.id === adoptedNodeId ? t.adopted : nodeLabel(previewNode, t)}</strong><div className="infiniteCanvasPreviewTools"><button type="button" aria-label={language === 'zh' ? '缩小预览' : 'Zoom preview out'} onClick={() => setPreviewZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button><span>{Math.round(previewZoom * 100)}%</span><button type="button" aria-label={language === 'zh' ? '放大预览' : 'Zoom preview in'} onClick={() => setPreviewZoom((value) => Math.min(4, value + 0.25))}><ZoomIn size={16} /></button><button type="button" aria-label={language === 'zh' ? '重置预览' : 'Reset preview'} onClick={() => setPreviewZoom(1)}><Focus size={16} /></button><button type="button" aria-label={language === 'zh' ? '关闭预览' : 'Close preview'} onClick={() => setPreviewNode(null)}><X size={18} /></button></div></header><div className="infiniteCanvasPreviewViewport"><img style={{ width: `${previewZoom * 100}%` }} src={previewNode.imageUrl} alt={compactText(previewNode.prompt)} /></div><footer><p>{previewNode.prompt}<small>{t.originalSize}：{previewNode.size?.replace('x', '×') || '—'}</small></p><a href={previewNode.downloadUrl || previewNode.imageUrl} download><Download size={15} />{t.download}</a></footer></section></div> : null}
+      {confirmation ? <div className="infiniteCanvasModalBackdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) cancelConfirmation(); }}><section className="infiniteCanvasConfirm" role="alertdialog" aria-modal="true" aria-label={t.confirmAction}><Trash2 size={24} /><p>{confirmation.message}</p><div><button type="button" onClick={cancelConfirmation}>{t.cancelAction}</button><button className="danger" type="button" onClick={confirmPendingAction}>{confirmation.confirmLabel || t.confirmAction}</button></div></section></div> : null}
+      {previewNode ? <div className="infiniteCanvasModalBackdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewNode(null); }}><section className={`infiniteCanvasPreview ${previewNode.type === 'video' ? 'videoPreview' : ''}`} role="dialog" aria-modal="true" aria-label={t.preview}><header><strong>{previewNode.id === adoptedNodeId ? t.adopted : nodeLabel(previewNode, t)}</strong><div className="infiniteCanvasPreviewTools">{previewNode.type !== 'video' ? <><button type="button" aria-label={language === 'zh' ? '缩小预览' : 'Zoom preview out'} onClick={() => setPreviewZoom((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={16} /></button><span>{Math.round(previewZoom * 100)}%</span><button type="button" aria-label={language === 'zh' ? '放大预览' : 'Zoom preview in'} onClick={() => setPreviewZoom((value) => Math.min(4, value + 0.25))}><ZoomIn size={16} /></button><button type="button" aria-label={language === 'zh' ? '重置预览' : 'Reset preview'} onClick={() => setPreviewZoom(1)}><Focus size={16} /></button></> : null}<button type="button" aria-label={language === 'zh' ? '关闭预览' : 'Close preview'} onClick={() => setPreviewNode(null)}><X size={18} /></button></div></header><div className="infiniteCanvasPreviewViewport">{previewNode.type === 'video' ? <video src={previewNode.videoUrl} poster={previewNode.posterUrl || undefined} controls autoPlay playsInline /> : <img style={{ width: `${previewZoom * 100}%` }} src={previewNode.imageUrl} alt={compactText(previewNode.prompt)} />}</div><footer><p>{previewNode.prompt}<small>{t.originalSize}：{previewNode.size?.replace('x', '×') || '—'}{previewNode.type === 'video' ? ` · ${previewNode.seconds || 4}${t.secondsUnit}` : ''}</small></p><a href={previewNode.downloadUrl || previewNode.videoUrl || previewNode.imageUrl} download={previewNode.type === 'image' ? canvasImageDownloadFilename(previewNode, language) : true}><Download size={15} />{previewNode.type === 'video' ? t.downloadVideo : t.download}</a></footer></section></div> : null}
       {compareNodes.length >= 2 ? <div className="infiniteCanvasModalBackdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCompareIds([]); }}><section className="infiniteCanvasCompare" role="dialog" aria-modal="true" aria-label={t.compareTitle}><header><strong>{t.compareTitle} · {compareNodes.length}</strong><button type="button" aria-label={language === 'zh' ? '关闭对比' : 'Close comparison'} onClick={() => setCompareIds([])}><X size={18} /></button></header>{compareNodes.length === 2 ? <><div className="infiniteCanvasCompareSlider"><img src={compareNodes[0].imageUrl} alt={compactText(compareNodes[0].prompt)} /><div style={{ clipPath: `inset(0 ${100 - comparePosition}% 0 0)` }}><img src={compareNodes[1].imageUrl} alt={compactText(compareNodes[1].prompt)} /></div><i style={{ left: `${comparePosition}%` }} /><input aria-label={t.comparisonPosition} type="range" min="0" max="100" value={comparePosition} onInput={(event) => setComparePosition(Number(event.currentTarget.value))} onChange={(event) => setComparePosition(Number(event.target.value))} /></div><div className="infiniteCanvasCompareDetails">{compareNodes.map((node) => <article key={node.id}><strong>{node.id === adoptedNodeId ? t.adopted : nodeLabel(node, t)}</strong><small>{versionMeta(node, providers, language)}</small><p>{node.prompt}</p><button type="button" onClick={() => { rememberCanvasState(); setAdoptedNodeId(node.id); setCompareIds([]); }}><CheckCircle2 size={14} />{t.adopt}</button></article>)}</div></> : <div className="infiniteCanvasCompareGrid">{compareNodes.map((node) => <article key={node.id}><img src={node.imageUrl} alt={compactText(node.prompt)} /><strong>{node.id === adoptedNodeId ? t.adopted : nodeLabel(node, t)}</strong><small>{versionMeta(node, providers, language)}</small><p>{node.prompt}</p><button type="button" onClick={() => { rememberCanvasState(); setAdoptedNodeId(node.id); setCompareIds([]); }}><CheckCircle2 size={14} />{t.adopt}</button></article>)}</div>}</section></div> : null}
       {editNode ? <FreeImageReferenceEditor reference={{ ...editNode, imageUrl: editNode.imageUrl, annotations: editNode.annotations || [] }} language={language} onClose={() => setEditNode(null)} onSave={(annotations) => {
         const localPrompt = language === 'zh' ? '仅修改已标记区域，未标记区域的主体、构图、背景、光影、颜色、文字与细节必须保持不变。' : 'Modify only the marked region. Preserve the subject, composition, background, lighting, colors, text, and detail everywhere else.';

@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 
-const WATERMARK_TEXT = 'pic365.org';
+const WATERMARK_TEXT = 'www.pic365.org';
 const WATERMARK_WIDTH_RATIO = 0.08;
 const WATERMARK_MARGIN_RATIO = 0.015;
 const MAX_SOURCE_BYTES = 32 * 1024 * 1024;
@@ -78,12 +78,12 @@ export async function addFreeImageWatermark(image, { fetchImpl = fetch } = {}) {
   const watermark = await sharp(watermarkSvg(layout.width, layout.height)).png().toBuffer();
   const bytes = await rotated
     .composite([{ input: watermark, left: layout.left, top: layout.top }])
-    .png({ compressionLevel: 9 })
+    .webp({ quality: 88, effort: 5 })
     .toBuffer();
 
   return {
-    image: `data:image/png;base64,${bytes.toString('base64')}`,
-    contentType: 'image/png',
+    image: `data:image/webp;base64,${bytes.toString('base64')}`,
+    contentType: 'image/webp',
     width: metadata.width,
     height: metadata.height,
     watermark: {
@@ -91,4 +91,12 @@ export async function addFreeImageWatermark(image, { fetchImpl = fetch } = {}) {
       ...layout
     }
   };
+}
+
+export async function ensureFreeImageWatermark(result, options = {}) {
+  const source = typeof result === 'string' ? result : result?.image;
+  const knownWatermark = typeof result === 'object' && result?.watermarked === true
+    && result?.watermark?.text === WATERMARK_TEXT;
+  if (knownWatermark && source) return result;
+  return addFreeImageWatermark(source, options);
 }

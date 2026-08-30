@@ -19,6 +19,7 @@ import { formatStoragePriceYuan, normalizeStorageBillingConfig } from '../shared
 import { getClientImagePricing, ImageCreditPrice, refreshImagePromotion, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
 import {
   ArrowUpRight,
+  AudioLines,
   BarChart3,
   Bell,
   Building2,
@@ -63,6 +64,7 @@ import { fetchImageGeneration } from './image-generation-client.js';
 import { SITE_NOTICE_EXAMPLES } from '../shared/site-notice.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import AdminChatProvider from './admin-chat-provider.jsx';
+import AdminVideoProvider from './admin-video-provider.jsx';
 import ChatCompanion from './chat-companion.jsx';
 import GroupAccountPanel from './group-account-panel.jsx';
 import {
@@ -3654,9 +3656,10 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         ) : null}
 
         {activeSection === 'channels' ? (
-          <section className="adminBlock adminProviderBlock">
-            <div className="adminSectionHeading"><div><h3><KeyRound size={18} />{language === 'zh' ? '渠道配置' : 'Channel configuration'}</h3><p>{language === 'zh' ? '显示名称会成为用户看到的生图服务名称；API Key 加密保存。' : 'The display name is shown to users. API keys are encrypted at rest.'}</p></div></div>
-            <form className="adminProviderForm adminChannelForm" onSubmit={saveProvider}>
+          <div className="adminDashboard">
+          <section className="adminBlock adminProviderBlock adminChannelSection">
+            <div className="adminSectionHeading"><div><h3><ImageIcon size={18} />{language === 'zh' ? '图片渠道配置' : 'Image channels'}</h3><p>{language === 'zh' ? '编辑区每行四项；渠道名称、模型、接口、掩码 Key、启停和默认状态在下方表格统一查看。' : 'The editor uses four fields per row. Review names, models, endpoints, masked keys, and status in the table below.'}</p></div><button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><Plus size={15} />{language === 'zh' ? '新增图片渠道' : 'Add image channel'}</button></div>
+            <form className="adminProviderForm adminChannelForm adminChannelEditor" onSubmit={saveProvider}>
               <label><span>{language === 'zh' ? '显示名称' : 'Display name'}</span><input required value={providerDraft.name} onChange={(event) => setProviderDraft((current) => ({ ...current, name: event.target.value }))} placeholder="GPT Image 2 / Gemini Banana" /></label>
               <label><span>{language === 'zh' ? '接口类型' : 'Provider type'}</span><select value={providerDraft.providerType} onChange={(event) => setProviderDraft((current) => ({ ...current, providerType: event.target.value }))}>
                 <option value="openai-compatible">{language === 'zh' ? 'OpenAI 兼容 · 自动识别' : 'OpenAI compatible · Auto'}</option>
@@ -3668,12 +3671,15 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
               <label><span>API Key</span><input type="password" required={!providerDraft.id} value={providerDraft.apiKey} onChange={(event) => setProviderDraft((current) => ({ ...current, apiKey: event.target.value }))} placeholder={providerDraft.id ? (providerDraft.apiKeyMasked || (language === 'zh' ? '留空保持不变' : 'Leave blank to keep')) : 'sk-...'} /></label>
               <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.enabled} onChange={(event) => setProviderDraft((current) => ({ ...current, enabled: event.target.checked }))} /><span>{language === 'zh' ? '启用' : 'Enabled'}</span></label>
               <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.isDefault} onChange={(event) => setProviderDraft((current) => ({ ...current, isDefault: event.target.checked }))} /><span>{language === 'zh' ? '默认服务' : 'Default'}</span></label>
-              <button className="adminProviderAction adminProviderSave" type="submit"><Settings size={16} />{providerDraft.id ? (language === 'zh' ? '保存渠道' : 'Save channel') : (language === 'zh' ? '新增渠道' : 'Add channel')}</button>
-              {providerDraft.id ? <button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><X size={16} />{language === 'zh' ? '取消编辑' : 'Cancel edit'}</button> : null}
+              <label><span>{language === 'zh' ? '计费规则' : 'Pricing rule'}</span><input value={providerPricingLabel(providerDraft, language)} disabled /></label>
+              <div className="adminChannelEditorActions"><button className="adminProviderAction adminProviderSave" type="submit"><Settings size={16} />{providerDraft.id ? (language === 'zh' ? '保存图片渠道' : 'Save image channel') : (language === 'zh' ? '新增图片渠道' : 'Add image channel')}</button>{providerDraft.id ? <button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><X size={16} />{language === 'zh' ? '取消编辑' : 'Cancel edit'}</button> : null}</div>
             </form>
-            <div className="adminProviderList">{providers.map((provider) => <article key={provider.id}><div><strong>{provider.name}</strong><span>{provider.model} · {provider.baseUrl} · {providerPricingLabel(provider, language)} · {provider.apiKeyMasked || (language === 'zh' ? '未配置' : 'Not configured')} {provider.isDefault ? `· ${language === 'zh' ? '默认' : 'Default'}` : ''}</span></div><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除服务' : 'Delete service'}><Trash2 size={15} /></button></article>)}</div>
+            <div className="adminChannelTableWrap"><table className="adminChannelTable"><thead><tr><th>{language === 'zh' ? '渠道名称' : 'Channel'}</th><th>{language === 'zh' ? '模型与协议' : 'Model & protocol'}</th><th>{language === 'zh' ? '接口与密钥' : 'Endpoint & key'}</th><th>{language === 'zh' ? '计费规则' : 'Pricing'}</th><th>{language === 'zh' ? '状态' : 'Status'}</th><th>{language === 'zh' ? '操作' : 'Actions'}</th></tr></thead><tbody>{providers.map((provider) => <tr key={provider.id}><td><strong>{provider.name}</strong></td><td><span>{provider.model}</span><small>{provider.providerType}</small></td><td><span>{provider.baseUrl}</span><small>{provider.apiKeyMasked || (language === 'zh' ? '未配置 Key' : 'No key')}</small></td><td><span>{providerPricingLabel(provider, language)}</span><small>{language === 'zh' ? '100 积分 = 1 元' : '100 credits = RMB 1'}</small></td><td><div className="adminChannelStatus"><i className={provider.enabled ? 'enabled' : 'disabled'}>{provider.enabled ? (language === 'zh' ? '启用' : 'Enabled') : (language === 'zh' ? '停用' : 'Disabled')}</i>{provider.isDefault ? <i className="default">{language === 'zh' ? '默认' : 'Default'}</i> : null}</div></td><td><div className="adminChannelRowActions"><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除图片渠道' : 'Delete image channel'}><Trash2 size={15} /></button></div></td></tr>)}</tbody></table></div>
             {providerMessage ? <p className="adminNotice">{providerMessage}</p> : null}
           </section>
+          <AdminVideoProvider language={language} session={session} imageProviders={providers} />
+          <section className="adminBlock adminProviderBlock adminChannelSection adminTtsPlaceholder"><div className="adminSectionHeading"><div><h3><AudioLines size={18} />{language === 'zh' ? 'TTS 语音渠道' : 'TTS voice channels'}</h3><p>{language === 'zh' ? '已预留独立配置区。当前版本暂不启用，后续接入 Azure Speech 后再开放渠道、声音和计费设置。' : 'Reserved for a future Azure Speech integration, including channel, voice, and pricing settings.'}</p></div><span>{language === 'zh' ? '暂未启用' : 'Not enabled yet'}</span></div></section>
+          </div>
         ) : null}
 
         {activeSection === 'chat-assistant' ? <AdminChatProvider language={language} session={session} /> : null}

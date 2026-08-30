@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from './local-db.js';
 
 export const MAX_INFINITE_CANVAS_NODES = 500;
-const NODE_TYPES = new Set(['idea', 'image', 'task', 'group']);
+const NODE_TYPES = new Set(['idea', 'image', 'video', 'task', 'group']);
 const PROJECT_STATUSES = new Set(['active', 'archived', 'deleted']);
 const MAX_COORDINATE = 1_000_000;
 
@@ -58,13 +58,21 @@ function nodeMetadata(node = {}) {
     copyIndex: Math.max(0, Math.round(finiteNumber(node.copyIndex, 0, 0, 10_000))),
     imageUrl: safeUrl(node.imageUrl),
     thumbnailUrl: safeUrl(node.thumbnailUrl),
+    videoUrl: safeUrl(node.videoUrl),
+    posterUrl: safeUrl(node.posterUrl),
     downloadUrl: safeUrl(node.downloadUrl),
+    mediaType: node.mediaType === 'video' ? 'video' : node.mediaType === 'image' ? 'image' : '',
+    videoGenerationId: cleanId(node.videoGenerationId),
     mimeType: cleanText(node.mimeType, 120),
     size: cleanText(node.size, 40),
     quality: cleanText(node.quality, 30),
     count: Math.max(1, Math.min(4, Math.round(finiteNumber(node.count, 1, 1, 4)))),
     providerId: cleanId(node.providerId),
     status: cleanText(node.status, 40),
+    phase: cleanText(node.phase, 40),
+    progress: Math.max(0, Math.min(100, Math.round(finiteNumber(node.progress, 0, 0, 100)))),
+    seconds: Math.max(0, Math.min(60, Math.round(finiteNumber(node.seconds, 0, 0, 60)))),
+    hasAudio: node.hasAudio == null ? null : Boolean(node.hasAudio),
     error: cleanText(node.error, 160),
     width: Math.max(0, Math.round(finiteNumber(node.width, 0, 0, 100_000))),
     height: Math.max(0, Math.round(finiteNumber(node.height, 0, 0, 100_000))),
@@ -236,11 +244,16 @@ function writeNodes(db, userId, projectId, nodes, timestamp) {
     )
   `);
   const ownsGeneration = db.prepare('SELECT 1 FROM generations WHERE id = ? AND user_id = ?');
-  const ownsTask = db.prepare('SELECT 1 FROM free_generation_tasks WHERE id = ? AND user_id = ?');
+  const ownsTask = db.prepare(`
+    SELECT 1 FROM free_generation_tasks WHERE id = ? AND user_id = ?
+    UNION ALL
+    SELECT 1 FROM video_generation_tasks WHERE id = ? AND user_id = ?
+    LIMIT 1
+  `);
   for (const node of nodes) {
     const assetAllowed = !node.assetId || canAccessAsset.get(node.assetId, userId, userId, userId);
     const generationAllowed = !node.generationId || ownsGeneration.get(node.generationId, userId);
-    const taskAllowed = !node.taskId || ownsTask.get(node.taskId, userId);
+    const taskAllowed = !node.taskId || ownsTask.get(node.taskId, userId, node.taskId, userId);
     if (!assetAllowed || !generationAllowed || !taskAllowed) {
       const error = new Error('CANVAS_NODE_RESOURCE_FORBIDDEN');
       error.code = 'CANVAS_NODE_RESOURCE_FORBIDDEN';
@@ -315,6 +328,10 @@ function writeNodes(db, userId, projectId, nodes, timestamp) {
           UPDATE free_generation_tasks SET deleted_at = ?, updated_at = ?
           WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed', 'cancelled', 'interrupted')
         `).run(timestamp, timestamp, row.task_id, userId);
+        db.prepare(`
+          UPDATE video_generation_tasks SET deleted_at = ?, updated_at = ?
+          WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed', 'cancelled')
+        `).run(timestamp, timestamp, row.task_id, userId);
       }
     }
   }
@@ -322,9 +339,16 @@ function writeNodes(db, userId, projectId, nodes, timestamp) {
     UPDATE free_generation_tasks SET deleted_at = ?, updated_at = ?
     WHERE id = ? AND user_id = ? AND status = 'completed'
   `);
+  const releaseCompletedVideoTask = db.prepare(`
+    UPDATE video_generation_tasks SET deleted_at = ?, updated_at = ?
+    WHERE id = ? AND user_id = ? AND status = 'completed'
+  `);
   for (const node of nodes) {
     if (node.type === 'image' && node.taskId && node.generationId) {
       releaseCompletedTask.run(timestamp, timestamp, node.taskId, userId);
+    }
+    if (node.type === 'video' && node.taskId && node.assetId) {
+      releaseCompletedVideoTask.run(timestamp, timestamp, node.taskId, userId);
     }
   }
 

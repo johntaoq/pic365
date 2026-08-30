@@ -2674,48 +2674,6 @@ export default function FreeImageWorkspace({
         {workspaceTab === 'control' ? (
           <form className="freeImageComposer" onPaste={handleComposerPaste} onSubmit={creationMode === 'batch-repair' ? queueBatchRepair : handleSubmit}>
           {creationMode === 'single' ? <>
-          <div className="freeImagePromptHeader">
-            <label htmlFor="free-image-prompt">{t.prompt}</label>
-            <button className="freeImageMagicButton" type="button" onClick={optimizePrompt} disabled={optimizing || isGenerating}>
-              {optimizing ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
-              <span>{optimizing ? t.optimizing : t.optimize}</span>
-            </button>
-          </div>
-          <div className="freeImagePromptWrap">
-            {localEditLockedRule ? (
-              <div className="freeImageLockedPromptRule" role="note" aria-label={localEditLockedRule}>
-                <LockKeyhole size={15} aria-hidden="true" />
-                <span>{localEditLockedRule}</span>
-              </div>
-            ) : null}
-            <textarea
-              ref={textareaRef}
-              id="free-image-prompt"
-              className={promptOptimized ? 'optimized' : ''}
-              value={prompt}
-              onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
-              onClick={(event) => setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart))}
-              onKeyUp={(event) => {
-                if (event.key === 'Escape') setMention(null);
-                else setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart));
-              }}
-              placeholder={maxReferenceImages ? t.placeholder : t.placeholderNoReferences}
-              maxLength={6000}
-              disabled={isGenerating}
-            />
-            {primaryReference ? <div className="freeImagePromptFormatExample" role="note"><strong>{t.promptFormatExampleLabel}</strong><span>{t.promptFormatExample}</span></div> : null}
-            {mention && maxReferenceImages ? (
-              <div className="freeImageMentionMenu">
-                <strong><AtSign size={15} /> {t.history}</strong>
-                {mentionMatches.length ? mentionMatches.map((item) => (
-                  <button type="button" onClick={() => useImageAsReference(item, { fromMention: true })} key={item.id}>
-                    <img src={item.thumbnailUrl || item.imageUrl} alt="" loading="lazy" decoding="async" />
-                    {item.prompt ? <span>{compactPrompt(item.prompt)}</span> : null}
-                  </button>
-                )) : <em>{t.noHistory}</em>}
-              </div>
-            ) : null}
-          </div>
           <section
             className={`freeImageReferenceTray ${referenceDragging ? 'dragActive' : ''}`}
             onDragEnter={(event) => { event.preventDefault(); setReferenceDragging(true); }}
@@ -2776,6 +2734,48 @@ export default function FreeImageWorkspace({
               </div> : null}
             </div>
           </section>
+          <div className="freeImagePromptHeader">
+            <label htmlFor="free-image-prompt">{t.prompt}</label>
+            <button className="freeImageMagicButton" type="button" onClick={optimizePrompt} disabled={optimizing || isGenerating}>
+              {optimizing ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
+              <span>{optimizing ? t.optimizing : t.optimize}</span>
+            </button>
+          </div>
+          <div className="freeImagePromptWrap">
+            {localEditLockedRule ? (
+              <div className="freeImageLockedPromptRule" role="note" aria-label={localEditLockedRule}>
+                <LockKeyhole size={15} aria-hidden="true" />
+                <span>{localEditLockedRule}</span>
+              </div>
+            ) : null}
+            <textarea
+              ref={textareaRef}
+              id="free-image-prompt"
+              className={promptOptimized ? 'optimized' : ''}
+              value={prompt}
+              onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
+              onClick={(event) => setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart))}
+              onKeyUp={(event) => {
+                if (event.key === 'Escape') setMention(null);
+                else setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart));
+              }}
+              placeholder={maxReferenceImages ? t.placeholder : t.placeholderNoReferences}
+              maxLength={6000}
+              disabled={isGenerating}
+            />
+            {primaryReference ? <div className="freeImagePromptFormatExample" role="note"><strong>{t.promptFormatExampleLabel}</strong><span>{t.promptFormatExample}</span></div> : null}
+            {mention && maxReferenceImages ? (
+              <div className="freeImageMentionMenu">
+                <strong><AtSign size={15} /> {t.history}</strong>
+                {mentionMatches.length ? mentionMatches.map((item) => (
+                  <button type="button" onClick={() => useImageAsReference(item, { fromMention: true })} key={item.id}>
+                    <img src={item.thumbnailUrl || item.imageUrl} alt="" loading="lazy" decoding="async" />
+                    {item.prompt ? <span>{compactPrompt(item.prompt)}</span> : null}
+                  </button>
+                )) : <em>{t.noHistory}</em>}
+              </div>
+            ) : null}
+          </div>
           </> : <>
           <section className="freeImageBatchModeBar">
             <div><strong>{t.batchRepair}</strong><span>{t.batchUploadHint}</span></div>

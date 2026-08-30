@@ -132,8 +132,11 @@
 }
 
 .infiniteCanvasLayout {
+  --canvas-sidebar-width: 270px;
+  --canvas-sidebar-collapsed-width: 58px;
+  --canvas-top-menu-height: 62px;
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: var(--canvas-sidebar-width) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -145,7 +148,7 @@
   transition: grid-template-columns 180ms ease;
 }
 
-.infiniteCanvasLayout.sidebarCollapsed { grid-template-columns: minmax(0, 1fr); }
+.infiniteCanvasLayout.sidebarCollapsed { grid-template-columns: var(--canvas-sidebar-collapsed-width) minmax(0, 1fr); }
 
 .infiniteCanvasSidebar {
   position: relative;
@@ -153,12 +156,58 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100%;
+  height: calc(100% - var(--canvas-top-menu-height));
+  margin-top: var(--canvas-top-menu-height);
   overflow: hidden;
   border-right: 1px solid rgba(137, 165, 204, 0.16);
-  padding: 12px;
+  padding: 10px 12px 12px;
   background: linear-gradient(180deg, rgba(17, 27, 45, 0.96), rgba(8, 14, 27, 0.98));
   box-shadow: 14px 0 36px rgba(0, 0, 0, 0.2);
+}
+
+.infiniteCanvasSidebarCollapsed {
+  position: relative;
+  z-index: 12;
+  display: flex;
+  min-width: 0;
+  height: calc(100% - var(--canvas-top-menu-height));
+  margin-top: var(--canvas-top-menu-height);
+  justify-content: center;
+  border-right: 1px solid rgba(137, 165, 204, 0.16);
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(17, 27, 45, 0.96), rgba(8, 14, 27, 0.98));
+  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.16);
+}
+
+.infiniteCanvasSidebarCollapsed > button {
+  display: flex;
+  width: 44px;
+  height: 230px;
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(137, 165, 204, 0.24);
+  border-radius: 999px;
+  padding: 14px 0 16px;
+  background: rgba(7, 12, 24, 0.84);
+  color: #9bacc5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 28px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.infiniteCanvasSidebarCollapsed > button:hover {
+  border-color: rgba(121, 239, 202, 0.46);
+  background: rgba(121, 239, 202, 0.08);
+  color: #d9fff2;
+}
+
+.infiniteCanvasSidebarCollapsed > button > svg:nth-of-type(2) { color: #9ef2d5; }
+.infiniteCanvasSidebarCollapsed > button span {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  writing-mode: vertical-rl;
 }
 
 .infiniteCanvasSidebarHeader {
@@ -371,6 +420,11 @@
   display: grid;
   flex: 1;
   min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+  grid-auto-rows: max-content;
+  align-content: start;
+  align-items: start;
   gap: 8px;
   overflow-y: auto;
   padding-right: 3px;
@@ -378,20 +432,27 @@
 
 .infiniteCanvasHistoryList > article {
   position: relative;
+  isolation: isolate;
+  contain: layout paint;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
+  box-sizing: border-box;
   border: 1px solid rgba(143, 161, 185, 0.15);
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.025);
 }
 
 .infiniteCanvasHistoryAdd {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 8px;
+  position: absolute;
+  inset: 0;
+  display: block;
   width: 100%;
+  height: 100%;
   border: 0;
   border-radius: inherit;
-  padding: 7px 34px 7px 7px;
+  padding: 0;
   background: transparent;
   color: #dce8f7;
   text-align: left;
@@ -400,6 +461,7 @@
 
 .infiniteCanvasHistoryList > button.infiniteCanvasHistoryMore {
   display: flex;
+  grid-column: 1 / -1;
   min-height: 36px;
   align-items: center;
   justify-content: center;
@@ -415,9 +477,9 @@
 
 .infiniteCanvasHistoryDelete {
   position: absolute;
-  z-index: 1;
-  top: 6px;
-  right: 6px;
+  z-index: 3;
+  top: 5px;
+  right: 5px;
   display: grid;
   width: 24px;
   height: 24px;
@@ -440,38 +502,53 @@
 }
 
 .infiniteCanvasHistoryList img {
-  width: 54px;
-  height: 54px;
-  grid-row: span 2;
-  border-radius: 8px;
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: inherit;
   object-fit: cover;
+  pointer-events: none;
   background: #040815;
 }
 
-.infiniteCanvasHistoryList span {
+.infiniteCanvasHistoryList em {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
   display: grid;
-  min-width: 0;
-  align-content: center;
-  gap: 3px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(5, 14, 29, 0.82);
+  color: #baf8e4;
+  font-style: normal;
+  backdrop-filter: blur(8px);
 }
 
-.infiniteCanvasHistoryList strong {
+.infiniteCanvasHistoryList em.referenceAction {
+  width: auto;
+  max-width: calc(100% - 12px);
+  min-height: 27px;
+  border: 1px solid rgba(110, 231, 194, 0.72);
+  padding: 0 8px;
+  gap: 4px;
+  border-radius: 999px;
+  background: rgba(239, 255, 250, 0.94);
+  color: #075e52;
+  box-shadow: 0 4px 14px rgba(3, 14, 25, 0.24);
+  backdrop-filter: blur(10px) saturate(1.15);
+}
+
+.infiniteCanvasHistoryList em.referenceAction span {
   overflow: hidden;
-  color: #e8f1fb;
-  font-size: 11px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.infiniteCanvasHistoryList small { color: #73849e; font-size: 10px; }
-.infiniteCanvasHistoryList em {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #83e8c8;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 800;
 }
 
 .infiniteCanvasProjectsPanel { gap: 9px; }
@@ -660,7 +737,11 @@
     radial-gradient(circle at 50% 20%, rgba(63, 210, 176, 0.065), transparent 32%);
   background-position: -1px -1px;
   background-size: 24px 24px, 24px 24px, 100% 100%;
+  box-shadow: inset 0 0 0 2px rgba(45, 212, 191, 0.72), inset 0 0 28px rgba(45, 212, 191, 0.08);
 }
+
+.infiniteCanvasStage.boxSelectMode,
+.infiniteCanvasStage.boxSelectMode:active { cursor: crosshair; }
 
 .infiniteCanvasStage input,
 .infiniteCanvasStage textarea {
@@ -674,12 +755,12 @@
 
 .infiniteCanvasProjectDock {
   position: absolute;
-  z-index: 14;
-  top: 12px;
-  left: 12px;
+  z-index: 30;
+  top: 8px;
+  left: 8px;
   display: flex;
   width: fit-content;
-  max-width: calc(100% - 390px);
+  max-width: calc(100% - 360px);
   height: 36px;
   align-items: center;
   gap: 4px;
@@ -692,10 +773,22 @@
   background: rgba(7, 12, 24, 0.9);
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(18px);
-  scrollbar-width: none;
+  scrollbar-width: none !important;
+  transform: scale(1.3);
+  transform-origin: left top;
 }
 
-.infiniteCanvasProjectDock::-webkit-scrollbar { display: none; }
+.infiniteCanvasLayout.sidebarCollapsed .infiniteCanvasProjectDock {
+  left: 8px;
+  max-width: calc(100% - 360px);
+}
+
+.infiniteCanvasProjectDock::-webkit-scrollbar,
+.infiniteCanvasTools::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
 .infiniteCanvasProjectDock > button,
 .infiniteCanvasProjectDock select,
 .infiniteCanvasProjectDock input {
@@ -784,6 +877,13 @@
   animation: infiniteCanvasReferenceFlow 1.2s linear infinite;
 }
 
+.infiniteCanvasConnections path.referenceDraft {
+  stroke-width: 3;
+  stroke-dasharray: 7 6;
+  opacity: 0.95;
+  animation-duration: 0.75s;
+}
+
 @keyframes infiniteCanvasReferenceFlow {
   to { stroke-dashoffset: -18; }
 }
@@ -791,12 +891,52 @@
 .infiniteCanvasSelectionBox {
   position: absolute;
   z-index: 12;
-  border: 1px solid rgba(121, 239, 202, 0.9);
-  border-radius: 5px;
-  background: rgba(121, 239, 202, 0.1);
-  box-shadow: 0 0 20px rgba(121, 239, 202, 0.12);
+  border: 2px solid #5eead4;
+  border-radius: 7px;
+  background: rgba(45, 212, 191, 0.15);
+  box-shadow: 0 0 0 1px rgba(8, 15, 28, 0.72), 0 0 26px rgba(45, 212, 191, 0.28);
   pointer-events: none;
 }
+
+.infiniteCanvasSelectionActions {
+  position: absolute;
+  z-index: 65;
+  display: flex;
+  max-width: calc(100% - 24px);
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.72);
+  border-radius: 11px;
+  padding: 5px 6px 5px 10px;
+  background: rgba(7, 18, 30, 0.96);
+  color: #cffff2;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42), 0 0 24px rgba(45, 212, 191, 0.2);
+  backdrop-filter: blur(16px);
+}
+
+.infiniteCanvasSelectionActions span,
+.infiniteCanvasSelectionActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.infiniteCanvasSelectionActions button {
+  height: 28px;
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: rgba(248, 113, 113, 0.13);
+  color: #fecaca;
+  cursor: pointer;
+}
+
+.infiniteCanvasSelectionActions button:hover { background: rgba(248, 113, 113, 0.22); color: #fff1f2; }
+.infiniteCanvasSelectionActions button:disabled { border-color: rgba(148, 163, 184, 0.22); background: rgba(148, 163, 184, 0.1); color: #8290a3; cursor: not-allowed; opacity: 0.72; }
 
 .infiniteCanvasImageContextMenu {
   position: fixed;
@@ -883,11 +1023,14 @@
 }
 
 .infiniteCanvasNode.selected {
-  border-color: rgba(121, 239, 202, 0.78);
-  box-shadow: 0 0 0 2px rgba(121, 239, 202, 0.13), 0 20px 58px rgba(0, 0, 0, 0.44);
+  z-index: 6;
+  border: 2px solid #5eead4;
+  outline: 2px solid rgba(45, 212, 191, 0.42);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.2), 0 0 28px rgba(45, 212, 191, 0.28), 0 20px 58px rgba(0, 0, 0, 0.5);
 }
 
-.infiniteCanvasNode.primarySelected { box-shadow: 0 0 0 3px rgba(121, 239, 202, 0.2), 0 20px 58px rgba(0, 0, 0, 0.48); }
+.infiniteCanvasNode.primarySelected { border-color: #67e8f9; outline-color: rgba(103, 232, 249, 0.62); box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25), 0 0 34px rgba(34, 211, 238, 0.38), 0 22px 62px rgba(0, 0, 0, 0.54); }
 
 .infiniteCanvasNode.primaryImageSelected {
   z-index: 7;
@@ -920,6 +1063,7 @@
 
 .infiniteCanvasNode.adopted > header { background: rgba(250, 204, 21, 0.065); }
 .infiniteCanvasNode.locked > header { border-bottom-color: rgba(125, 211, 252, 0.28); }
+.infiniteCanvasNode.locked > header { cursor: not-allowed; }
 
 .infiniteCanvasNode > header {
   display: flex;
@@ -962,6 +1106,8 @@
   background: rgba(248, 113, 113, 0.1);
   color: #fda4af;
 }
+
+.infiniteCanvasNode > header button:disabled { background: rgba(125, 211, 252, 0.08); color: #63758b; cursor: not-allowed; opacity: 0.72; }
 
 .infiniteCanvasNodeBadges {
   display: inline-flex;
@@ -1022,6 +1168,80 @@
   pointer-events: none;
 }
 
+.infiniteCanvasReferenceHandle {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(96, 165, 250, 0.48);
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(5, 14, 29, 0.82);
+  color: #a9d2ff;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.28);
+  cursor: crosshair;
+  opacity: 0.78;
+  touch-action: none;
+}
+
+.infiniteCanvasNodeImage:hover .infiniteCanvasReferenceHandle,
+.infiniteCanvasReferenceHandle:focus-visible { opacity: 1; transform: scale(1.06); }
+
+.infiniteCanvasReferenceQuick {
+  position: absolute;
+  z-index: 3;
+  left: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  max-width: calc(100% - 76px);
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  border-radius: 999px;
+  padding: 0 9px;
+  background: rgba(5, 14, 29, 0.86);
+  color: #b8d8ff;
+  font-size: 9px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.infiniteCanvasReferenceQuick:hover,
+.infiniteCanvasReferenceQuick.active { border-color: rgba(121, 239, 202, 0.62); background: rgba(17, 94, 89, 0.9); color: #dcfff4; }
+
+.infiniteCanvasReferencePickState {
+  position: absolute;
+  z-index: 3;
+  left: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(5, 14, 29, 0.86);
+  color: #b8d8ff;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 850;
+  pointer-events: none;
+}
+
+.infiniteCanvasNode.referencePickCandidate { cursor: pointer; }
+.infiniteCanvasNode.referencePickCandidate:hover,
+.infiniteCanvasNode.referenceConnectTarget { border-color: rgba(96, 165, 250, 0.92); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), 0 18px 42px rgba(0, 0, 0, 0.3); }
+.infiniteCanvasNode.referencePickLinked { border-color: rgba(121, 239, 202, 0.78); box-shadow: 0 0 0 3px rgba(121, 239, 202, 0.15), 0 18px 42px rgba(0, 0, 0, 0.3); }
+.infiniteCanvasNode.referencePickLinked .infiniteCanvasReferencePickState { background: rgba(17, 94, 89, 0.9); color: #dcfff4; }
+.infiniteCanvasNode.referencePickTarget { border-color: #8df4cc; outline: 3px solid rgba(121, 239, 202, 0.32); }
+
 .infiniteCanvasNodeImage span {
   position: absolute;
   right: 8px;
@@ -1031,6 +1251,52 @@
   background: rgba(3, 8, 17, 0.78);
   color: #b8c8dc;
   font-size: 9px;
+}
+
+.infiniteCanvasNodeVideo {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 194px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #080d18;
+  color: #fff;
+  cursor: pointer;
+}
+
+.infiniteCanvasNodeVideo video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.infiniteCanvasNodeVideo > i {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 50%;
+  background: rgba(5, 11, 24, 0.72);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(8px);
+}
+
+.infiniteCanvasNodeVideo > span {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(5, 11, 24, 0.76);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .infiniteCanvasReferenceDragHint {
@@ -1094,6 +1360,7 @@
 .infiniteCanvasTaskBody.interrupted svg { color: #fbbf24; }
 .infiniteCanvasTaskBody strong { color: #edf7ff; font-size: 15px; }
 .infiniteCanvasTaskBody small { color: #8395ad; font-size: 10px; line-height: 1.5; }
+.infiniteCanvasTaskBody progress { width: 72%; height: 6px; accent-color: #79efca; }
 
 .infiniteCanvasNode > p {
   min-height: 38px;
@@ -1195,8 +1462,8 @@
 .infiniteCanvasTools {
   position: absolute;
   z-index: 5;
-  right: 14px;
-  top: 12px;
+  right: 8px;
+  top: 8px;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -1206,6 +1473,9 @@
   background: rgba(7, 12, 24, 0.88);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(16px);
+  scrollbar-width: none !important;
+  transform: scale(1.3);
+  transform-origin: right top;
 }
 
 .infiniteCanvasTools button {
@@ -1222,6 +1492,7 @@
 
 .infiniteCanvasTools button:hover { background: rgba(121, 239, 202, 0.1); color: #d9fff2; }
 .infiniteCanvasTools button.active { background: rgba(121, 239, 202, 0.14); color: #9ff0d4; }
+.infiniteCanvasTools button.boxSelectActive { background: #63e6c5; color: #071711; box-shadow: 0 0 0 2px rgba(99, 230, 197, 0.24), 0 0 18px rgba(45, 212, 191, 0.28); }
 .infiniteCanvasTools button:disabled { cursor: not-allowed; opacity: 0.3; }
 .infiniteCanvasTools span {
   min-width: 38px;
@@ -1234,7 +1505,7 @@
 .infiniteCanvasSearchPanel {
   position: absolute;
   z-index: 13;
-  top: 64px;
+  top: 42px;
   right: 14px;
   width: min(320px, calc(100% - 28px));
   overflow: hidden;
@@ -1375,7 +1646,7 @@
   overflow: auto;
   border: 1px solid rgba(137, 165, 204, 0.2);
   border-radius: 14px;
-  padding: 7px 10px 9px;
+  padding: 7px 10px 9px 74px;
   background: rgba(9, 16, 30, 0.94);
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(20px);
@@ -1383,7 +1654,7 @@
 
 .infiniteCanvasComposerTop {
   display: grid;
-  grid-template-columns: minmax(220px, 0.85fr) auto minmax(420px, 1.15fr) auto;
+  grid-template-columns: minmax(160px, 0.35fr) auto minmax(0, 1.65fr) auto;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -1454,6 +1725,46 @@
   gap: 5px;
 }
 
+.infiniteCanvasBatchReferenceToggle {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: rgba(59, 130, 246, 0.09);
+  color: #bad8ff;
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.infiniteCanvasBatchReferenceToggle.active { border-color: rgba(121, 239, 202, 0.56); background: rgba(121, 239, 202, 0.14); color: #dcfff4; }
+
+.infiniteCanvasReferencePickBanner {
+  position: fixed;
+  z-index: 72;
+  top: 70px;
+  left: 50%;
+  display: flex;
+  max-width: min(620px, calc(100% - 32px));
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 999px;
+  padding: 5px 6px 5px 12px;
+  background: rgba(7, 17, 34, 0.94);
+  color: #cbe1ff;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+}
+
+.infiniteCanvasReferencePickBanner span { overflow: hidden; font-size: 10px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.infiniteCanvasReferencePickBanner button { flex: 0 0 auto; height: 28px; border: 0; border-radius: 999px; padding: 0 10px; background: rgba(121, 239, 202, 0.16); color: #cffff0; font-size: 9px; font-weight: 900; cursor: pointer; }
+
 .infiniteCanvasBatchActions,
 .infiniteCanvasBranchNav {
   display: flex;
@@ -1491,7 +1802,7 @@
   min-width: 0;
   align-items: center;
   gap: 5px;
-  justify-content: flex-end;
+  justify-content: flex-start;
   overflow-x: auto;
 }
 
@@ -1523,6 +1834,14 @@
   border-color: rgba(121, 239, 202, 0.4);
   background: rgba(121, 239, 202, 0.12);
   color: #dcfff4;
+}
+
+.infiniteCanvasVersionActions button:disabled {
+  border-color: rgba(137, 165, 204, 0.1);
+  background: rgba(255, 255, 255, 0.018);
+  color: #5f7087;
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .infiniteCanvasReferenceSourceControl {
@@ -1581,7 +1900,7 @@
 
 .infiniteCanvasReferenceTray {
   display: grid;
-  grid-template-columns: minmax(170px, 210px);
+  grid-template-columns: minmax(260px, 320px);
   align-items: center;
   justify-content: start;
   gap: 8px;
@@ -1593,7 +1912,7 @@
 }
 
 .infiniteCanvasReferenceTray.hasSupportingReferences {
-  grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   justify-content: stretch;
 }
 
@@ -1617,12 +1936,14 @@
 .infiniteCanvasSupportingReferences { display: grid; min-width: 0; gap: 4px; overflow: hidden; }
 .infiniteCanvasSupportingReferences > div { display: flex; min-width: 0; gap: 6px; overflow-x: auto; scrollbar-width: thin; }
 .infiniteCanvasPrimaryReference { display: grid; min-width: 0; border-right: 1px solid rgba(137, 165, 204, 0.12); padding-right: 7px; }
-.infiniteCanvasPrimaryReference article { display: grid; width: 100%; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 6px; }
-.infiniteCanvasPrimaryReference article > button { position: relative; width: 52px; height: 34px; overflow: hidden; border: 0; border-radius: 7px; padding: 0; background: #050a14; cursor: pointer; }
-.infiniteCanvasPrimaryReference article img { width: 100%; height: 100%; object-fit: cover; }
-.infiniteCanvasPrimaryReference article span { position: absolute; top: 3px; left: 3px; border-radius: 999px; padding: 2px 5px; background: rgba(15, 104, 86, 0.9); color: #e7fff7; font-size: 8px; font-weight: 900; }
+.infiniteCanvasPrimaryReference article { display: grid; width: 100%; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.infiniteCanvasPrimaryReference article > button:first-child { position: relative; width: 52px; height: 34px; overflow: hidden; border: 0; border-radius: 7px; padding: 0; background: #050a14; cursor: pointer; }
+.infiniteCanvasPrimaryReference article > button:first-child img { width: 100%; height: 100%; object-fit: cover; }
+.infiniteCanvasPrimaryReference article > button:first-child span { position: absolute; top: 3px; left: 3px; border-radius: 999px; padding: 2px 5px; background: rgba(15, 104, 86, 0.9); color: #e7fff7; font-size: 8px; font-weight: 900; }
 .infiniteCanvasPrimaryReference article input { width: 100%; min-width: 0; height: 30px; border: 1px solid rgba(121, 239, 202, 0.22); border-radius: 7px; outline: 0; padding: 0 8px; background: rgba(3, 8, 18, 0.68); color: #e9fff8; font-size: 11px; font-weight: 850; }
 .infiniteCanvasPrimaryReference article input:focus { border-color: rgba(121, 239, 202, 0.72); box-shadow: 0 0 0 2px rgba(121, 239, 202, 0.08); }
+.infiniteCanvasReferenceDetailsToggle { display: flex; width: auto; height: 30px; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: 7px; padding: 0 7px; background: rgba(96, 165, 250, 0.08); color: #9cc9ff; font-size: 9px; font-weight: 850; cursor: pointer; white-space: nowrap; }
+.infiniteCanvasReferenceDetailsToggle:hover { background: rgba(96, 165, 250, 0.14); color: #dcecff; }
 .infiniteCanvasSupportingReferences article { display: flex; flex: 0 0 auto; height: 38px; align-items: center; gap: 4px; border: 1px solid rgba(137, 165, 204, 0.15); border-radius: 9px; padding: 3px; background: rgba(3, 8, 18, 0.62); }
 .infiniteCanvasReferenceThumb { width: 42px; height: 30px; overflow: hidden; border: 0; border-radius: 6px; padding: 0; background: #050a14; cursor: pointer; }
 .infiniteCanvasReferenceThumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -1708,11 +2029,54 @@
   box-shadow: 0 0 0 3px rgba(121, 239, 202, 0.075);
 }
 
+.infiniteCanvasCreationMode {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: grid;
+  width: 56px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 0 8px 0 0;
+  border: 0;
+  border-right: 1px solid rgba(137, 167, 207, 0.22);
+  border-radius: 0;
+  background: transparent;
+}
+
+.infiniteCanvasCreationMode button {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-items: center;
+  justify-items: center;
+  gap: 3px;
+  min-height: 0;
+  padding: 4px 2px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #8fa0b9;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.infiniteCanvasCreationMode button.active {
+  border-color: rgba(121, 239, 202, 0.22);
+  background: rgba(121, 239, 202, 0.16);
+  color: #b9ffe7;
+}
+
+.infiniteCanvasComposerFooter.videoMode { grid-template-columns: minmax(170px, 1.25fr) repeat(2, minmax(110px, 0.8fr)) auto minmax(150px, 0.9fr); }
+.infiniteCanvasReadOnlyValue { display: flex; min-height: 38px; align-items: center; color: #dbe7f5; font-size: 13px; }
+
 .infiniteCanvasComposerFooter {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) 106px minmax(210px, 1.25fr) 118px 88px auto auto;
   align-items: center;
   gap: 6px;
+  padding-right: 66px;
 }
 
 .infiniteCanvasComposerFooter label,
@@ -1944,6 +2308,10 @@
   object-fit: contain;
 }
 
+.infiniteCanvasPreview.videoPreview { width: min(1040px, calc(100vw - 48px)); }
+.infiniteCanvasPreview.videoPreview .infiniteCanvasPreviewViewport { display: grid; place-items: center; background: #030712; }
+.infiniteCanvasPreview.videoPreview video { display: block; max-width: 100%; max-height: 70vh; }
+
 .infiniteCanvasPreview > footer {
   display: flex;
   align-items: center;
@@ -2093,6 +2461,27 @@
   box-shadow: 14px 0 36px rgba(73, 94, 118, 0.1);
 }
 
+.infiniteCanvasPage.themeLight .infiniteCanvasSidebarCollapsed {
+  border-right-color: rgba(71, 94, 120, 0.16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(242, 247, 251, 0.99));
+  box-shadow: 10px 0 28px rgba(73, 94, 118, 0.08);
+}
+
+.infiniteCanvasPage.themeLight .infiniteCanvasSidebarCollapsed > button {
+  border-color: #ccd8e3;
+  background: rgba(255, 255, 255, 0.92);
+  color: #526980;
+  box-shadow: inset 0 1px 0 #ffffff, 0 10px 24px rgba(55, 78, 103, 0.1);
+}
+
+.infiniteCanvasPage.themeLight .infiniteCanvasSidebarCollapsed > button:hover {
+  border-color: rgba(13, 148, 136, 0.46);
+  background: #eaf7f3;
+  color: #116657;
+}
+
+.infiniteCanvasPage.themeLight .infiniteCanvasSidebarCollapsed > button > svg:nth-of-type(2) { color: #0d9488; }
+
 .infiniteCanvasPage.themeLight .infiniteCanvasSidebarHeader,
 .infiniteCanvasPage.themeLight .infiniteCanvasHistoryHeading { color: #26384d; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSidebarHeader button,
@@ -2167,6 +2556,12 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasHistoryList strong { color: #26384d; }
 .infiniteCanvasPage.themeLight .infiniteCanvasHistoryList small { color: #728399; }
 .infiniteCanvasPage.themeLight .infiniteCanvasHistoryList em { color: #167463; }
+.infiniteCanvasPage.themeLight .infiniteCanvasHistoryList em.referenceAction {
+  border-color: rgba(13, 148, 136, 0.46);
+  background: rgba(248, 255, 253, 0.95);
+  color: #075e52;
+  box-shadow: 0 4px 12px rgba(36, 58, 82, 0.2);
+}
 
 .infiniteCanvasPage.themeLight .infiniteCanvasProjectsHeading strong { color: #26384d; }
 .infiniteCanvasPage.themeLight .infiniteCanvasProjectsHeading small { color: #728399; }
@@ -2209,6 +2604,7 @@
     linear-gradient(rgba(83, 111, 142, 0.1) 1px, transparent 1px),
     linear-gradient(90deg, rgba(83, 111, 142, 0.1) 1px, transparent 1px),
     radial-gradient(circle at 50% 20%, rgba(16, 185, 129, 0.08), transparent 34%);
+  box-shadow: inset 0 0 0 2px rgba(13, 148, 136, 0.78), inset 0 0 24px rgba(13, 148, 136, 0.08);
 }
 
 .infiniteCanvasPage.themeLight .infiniteCanvasProjectDock,
@@ -2239,6 +2635,7 @@
 
 .infiniteCanvasPage.themeLight .infiniteCanvasTools button { color: #60758d; }
 .infiniteCanvasPage.themeLight .infiniteCanvasTools button.active { background: #d9f1ea; color: #116657; }
+.infiniteCanvasPage.themeLight .infiniteCanvasTools button.boxSelectActive { background: #0f9f8e; color: #ffffff; box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.18), 0 0 18px rgba(13, 148, 136, 0.2); }
 .infiniteCanvasPage.themeLight .infiniteCanvasTools span { color: #5d7087; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSearchPanel > label { color: #70849a; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSearchPanel input { color: #26384d; }
@@ -2265,7 +2662,10 @@
   stroke: rgba(37, 99, 235, 0.84);
   filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.24));
 }
-.infiniteCanvasPage.themeLight .infiniteCanvasSelectionBox { border-color: #0d9488; background: rgba(13, 148, 136, 0.1); }
+.infiniteCanvasPage.themeLight .infiniteCanvasSelectionBox { border-color: #0d9488; background: rgba(13, 148, 136, 0.14); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.86), 0 0 24px rgba(13, 148, 136, 0.2); }
+.infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions { border-color: rgba(13, 148, 136, 0.58); background: rgba(255, 255, 255, 0.97); color: #17685a; box-shadow: 0 14px 34px rgba(55, 78, 103, 0.2), 0 0 20px rgba(13, 148, 136, 0.13); }
+.infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions button { border-color: rgba(225, 70, 82, 0.34); background: #fff0f1; color: #b83e47; }
+.infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions button:hover { background: #ffe4e6; color: #a62f3a; }
 .infiniteCanvasPage.themeLight .infiniteCanvasDropReference { background: rgba(236, 253, 245, 0.86); color: #116657; }
 
 .infiniteCanvasPage.themeLight .infiniteCanvasNode {
@@ -2276,10 +2676,11 @@
 }
 
 .infiniteCanvasPage.themeLight .infiniteCanvasNode.selected {
-  border-color: rgba(13, 148, 136, 0.82);
-  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.12), 0 20px 44px rgba(55, 78, 103, 0.2);
+  border-color: #0f9f8e;
+  outline-color: rgba(13, 148, 136, 0.46);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.18), 0 0 28px rgba(13, 148, 136, 0.2), 0 20px 44px rgba(55, 78, 103, 0.22);
 }
-.infiniteCanvasPage.themeLight .infiniteCanvasNode.primarySelected { box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.17), 0 20px 46px rgba(55, 78, 103, 0.22); }
+.infiniteCanvasPage.themeLight .infiniteCanvasNode.primarySelected { border-color: #0284c7; outline-color: rgba(14, 165, 233, 0.5); box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.18), 0 0 32px rgba(14, 165, 233, 0.22), 0 20px 46px rgba(55, 78, 103, 0.24); }
 .infiniteCanvasPage.themeLight .infiniteCanvasNode.primaryImageSelected {
   border-color: #0d9488;
   outline-color: rgba(13, 148, 136, 0.42);
@@ -2293,10 +2694,20 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasNode > header span { color: #435870; }
 .infiniteCanvasPage.themeLight .infiniteCanvasNode > header button { color: #72849a; }
 .infiniteCanvasPage.themeLight .infiniteCanvasNode > header button:hover { background: #feecef; color: #bd3d49; }
+.infiniteCanvasPage.themeLight .infiniteCanvasNode > header button:disabled { background: #eef4f7; color: #9aa8b6; }
 .infiniteCanvasPage.themeLight .infiniteCanvasNodeBadges i.primaryImageBadge { border-color: rgba(13, 148, 136, 0.45); background: #d7f1e9; color: #116657; }
 .infiniteCanvasPage.themeLight .infiniteCanvasNodeBadges i.batchIndex { background: #eaf2ff; color: #245cae; }
 .infiniteCanvasPage.themeLight .infiniteCanvasNodeImage { background: #eef2f6; }
 .infiniteCanvasPage.themeLight .infiniteCanvasNodeImage span { background: rgba(255, 255, 255, 0.88); color: #40566e; box-shadow: 0 2px 8px rgba(55, 78, 103, 0.14); }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceHandle { border-color: rgba(37, 99, 235, 0.34); background: rgba(255, 255, 255, 0.92); color: #285eaa; box-shadow: 0 7px 18px rgba(55, 78, 103, 0.16); }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceQuick,
+.infiniteCanvasPage.themeLight .infiniteCanvasReferencePickState { border-color: rgba(37, 99, 235, 0.28); background: rgba(255, 255, 255, 0.94); color: #285eaa; box-shadow: 0 4px 14px rgba(55, 78, 103, 0.14); }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceQuick:hover,
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceQuick.active,
+.infiniteCanvasPage.themeLight .infiniteCanvasNode.referencePickLinked .infiniteCanvasReferencePickState { border-color: rgba(13, 148, 136, 0.46); background: #dff2ec; color: #116657; }
+.infiniteCanvasPage.themeLight .infiniteCanvasNode.referencePickCandidate:hover,
+.infiniteCanvasPage.themeLight .infiniteCanvasNode.referenceConnectTarget { border-color: rgba(37, 99, 235, 0.72); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13), 0 20px 44px rgba(55, 78, 103, 0.2); }
+.infiniteCanvasPage.themeLight .infiniteCanvasNode.referencePickLinked { border-color: rgba(13, 148, 136, 0.7); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.13), 0 20px 44px rgba(55, 78, 103, 0.2); }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceDragHint { background: rgba(239, 246, 255, 0.92); color: #285eaa; }
 .infiniteCanvasPage.themeLight .infiniteCanvasIdeaBody { background: radial-gradient(circle at 50% 40%, rgba(13, 148, 136, 0.1), transparent 60%); }
 .infiniteCanvasPage.themeLight .infiniteCanvasTaskBody { background: radial-gradient(circle at 50% 40%, rgba(37, 99, 235, 0.09), transparent 60%); }
@@ -2329,16 +2740,23 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasVersionActions a { border-color: #d5dfe8; background: #f7f9fb; color: #526980; }
 .infiniteCanvasPage.themeLight .infiniteCanvasVersionActions .active { border-color: rgba(217, 144, 0, 0.42); background: #fff6da; color: #946100; }
 .infiniteCanvasPage.themeLight .infiniteCanvasVersionActions .primary { border-color: rgba(13, 148, 136, 0.42); background: #dff2ec; color: #116657; }
+.infiniteCanvasPage.themeLight .infiniteCanvasVersionActions button:disabled { border-color: #e1e7ed; background: #f2f5f7; color: #a0acb8; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceSourceControl > button { border-color: rgba(37, 99, 235, 0.24); background: #eaf2ff; color: #285eaa; }
+.infiniteCanvasPage.themeLight .infiniteCanvasBatchReferenceToggle { border-color: rgba(37, 99, 235, 0.24); background: #eaf2ff; color: #285eaa; }
+.infiniteCanvasPage.themeLight .infiniteCanvasBatchReferenceToggle.active { border-color: rgba(13, 148, 136, 0.42); background: #dff2ec; color: #116657; }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferencePickBanner { border-color: rgba(37, 99, 235, 0.28); background: rgba(255, 255, 255, 0.95); color: #365f89; box-shadow: 0 14px 36px rgba(55, 78, 103, 0.17); }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferencePickBanner button { background: #dff2ec; color: #116657; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceSourceMenu { border-color: #d5dfe8; background: #ffffff; box-shadow: 0 18px 44px rgba(55, 78, 103, 0.18); }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceSourceMenu button { color: #40566e; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceSourceMenu button:hover { background: #edf4ff; color: #245cae; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceTray { border-color: rgba(37, 99, 235, 0.18); background: #f7fafd; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceTray.dropActive { border-color: rgba(37, 99, 235, 0.72); background: #eaf2ff; }
 .infiniteCanvasPage.themeLight .infiniteCanvasPrimaryReference { border-right-color: #dce4ec; }
-.infiniteCanvasPage.themeLight .infiniteCanvasPrimaryReference article > button,
+.infiniteCanvasPage.themeLight .infiniteCanvasPrimaryReference article > button:first-child,
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceThumb { background: #e7edf3; }
 .infiniteCanvasPage.themeLight .infiniteCanvasPrimaryReference article input { border-color: rgba(13, 148, 136, 0.24); background: #ffffff; color: #25364a; }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceDetailsToggle { background: #eaf2ff; color: #285eaa; }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceDetailsToggle:hover { background: #dceaff; color: #1e4f91; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSupportingReferences > header span { color: #365f89; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSupportingReferences > header b { color: #2563a9; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSupportingReferences > header small { color: #718399; }
@@ -2351,6 +2769,10 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasPresets button:hover { border-color: rgba(217, 144, 0, 0.45); color: #8e5d00; background: #fff9e8; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferencePromptHint { color: #65798f; }
 .infiniteCanvasPage.themeLight .infiniteCanvasComposer textarea { border-color: #d3dee8; background: #ffffff; color: #25364a; }
+.infiniteCanvasPage.themeLight .infiniteCanvasCreationMode { border-color: #d6e1e9; background: #edf3f6; }
+.infiniteCanvasPage.themeLight .infiniteCanvasCreationMode button { color: #60758c; }
+.infiniteCanvasPage.themeLight .infiniteCanvasCreationMode button.active { background: #d9f1ea; color: #17685a; }
+.infiniteCanvasPage.themeLight .infiniteCanvasReadOnlyValue { color: #25364a; }
 .infiniteCanvasPage.themeLight .infiniteCanvasComposer textarea:focus { border-color: rgba(13, 148, 136, 0.54); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08); }
 .infiniteCanvasPage.themeLight .infiniteCanvasComposerFooter label,
 .infiniteCanvasPage.themeLight .infiniteCanvasSizeField { color: #65798f; }
@@ -2450,41 +2872,82 @@
 }
 
 @media (max-width: 980px) {
-  .infiniteCanvasLayout { grid-template-columns: 1fr; }
+  .infiniteCanvasLayout { --canvas-top-menu-height: 128px; grid-template-columns: 1fr; }
+  .infiniteCanvasLayout.sidebarCollapsed { grid-template-columns: 1fr; }
   .infiniteCanvasSidebar {
     position: absolute;
     z-index: 20;
-    inset: 0 auto 0 0;
+    inset: var(--canvas-top-menu-height) auto 0 0;
     width: min(290px, 86vw);
+    height: auto;
+    margin-top: 0;
+    padding: 12px;
     border-right: 1px solid rgba(137, 165, 204, 0.2);
     border-bottom: 0;
   }
+  .infiniteCanvasSidebarCollapsed {
+    position: absolute;
+    z-index: 21;
+    top: calc(var(--canvas-top-menu-height) + 12px);
+    left: 8px;
+    width: 44px;
+    height: auto;
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .infiniteCanvasSidebarCollapsed > button { height: 200px; }
   .infiniteCanvasHistoryList { max-height: calc(100vh - 160px); }
   .infiniteCanvasComposerFooter { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .infiniteCanvasProjectDock { max-width: calc(100% - 390px); }
+  .infiniteCanvasComposerFooter.videoMode { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .infiniteCanvasProjectDock,
+  .infiniteCanvasLayout.sidebarCollapsed .infiniteCanvasProjectDock {
+    right: auto;
+    left: 8px;
+    max-width: calc(76.923vw - 12px);
+  }
+  .infiniteCanvasTools {
+    top: 62px;
+    right: auto;
+    left: 8px;
+    max-width: calc(76.923vw - 12px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    transform-origin: left top;
+  }
+  .infiniteCanvasSearchPanel { top: 128px; }
+  .infiniteCanvasReferencePickBanner { top: 132px; }
 }
 
 @media (max-width: 640px) {
   .infiniteCanvasPage { width: 100%; height: 100dvh; margin: 0; }
   .infiniteCanvasLayout { min-height: 0; border-radius: 0; }
   .infiniteCanvasStage { min-height: 0; }
-  .infiniteCanvasProjectDock { right: 8px; left: 8px; max-width: none; }
+  .infiniteCanvasProjectDock { right: auto; left: 8px; max-width: calc(76.923vw - 12px); }
   .infiniteCanvasProjectDock .infiniteCanvasExit span,
   .infiniteCanvasProjectDock .infiniteCanvasHome span,
   .infiniteCanvasProjectDock .infiniteCanvasSaveState span { display: none; }
   .infiniteCanvasProjectDock input { width: 120px; }
   .infiniteCanvasProjectDock select { width: 112px; }
-  .infiniteCanvasTools { right: 8px; left: 8px; top: 72px; flex-wrap: wrap; justify-content: center; }
-  .infiniteCanvasSearchPanel { right: 8px; top: 158px; width: calc(100% - 16px); }
+  .infiniteCanvasTools { right: auto; left: 8px; top: 62px; max-width: calc(76.923vw - 12px); flex-wrap: nowrap; justify-content: flex-start; }
+  .infiniteCanvasSearchPanel { right: 8px; top: 128px; width: calc(100% - 16px); }
   .infiniteCanvasMinimap { width: 154px; height: 118px; }
-  .infiniteCanvasComposer { right: 8px; bottom: 8px; left: 8px; max-height: 46vh; border-radius: 13px; }
+  .infiniteCanvasComposer { right: 8px; bottom: 8px; left: 8px; max-height: 54vh; border-radius: 13px; padding-left: 66px; }
   .infiniteCanvasComposerTop,
   .infiniteCanvasPromptRow,
   .infiniteCanvasReferenceTray { grid-template-columns: 1fr; }
+  .infiniteCanvasReferenceTray.hasSupportingReferences { grid-template-columns: 1fr; }
+  .infiniteCanvasReferencePickBanner { top: 132px; max-width: calc(100% - 20px); border-radius: 12px; }
+  .infiniteCanvasReferencePickBanner span { white-space: normal; }
   .infiniteCanvasComposer.collapsed .infiniteCanvasComposerTop { grid-template-columns: auto minmax(0, 1fr); }
   .infiniteCanvasComposerFooter { grid-template-columns: 1fr 1fr; }
+  .infiniteCanvasComposerFooter.videoMode { grid-template-columns: 1fr 1fr; }
   .infiniteCanvasComposerFooter label:first-child { grid-column: 1 / -1; }
-  .infiniteCanvasGenerate { width: 100%; }
+  .infiniteCanvasGenerate { grid-column: 1 / -1; width: 100%; }
   .infiniteCanvasVersionActions { width: 100%; margin-left: 0; }
   .infiniteCanvasComposerContext { flex-wrap: wrap; }
   .infiniteCanvasCompareSlider { height: min(52vh, 520px); }

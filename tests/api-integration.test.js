@@ -30,7 +30,8 @@ const [
   freeWorker,
   ecommerceWorker,
   mediaWorker,
-  storageBillingWorker
+  storageBillingWorker,
+  videoWorker
 ] = await Promise.all([
   import('../api/_lib/local-db.js'),
   import('../api/billing/webhook.js'),
@@ -40,7 +41,8 @@ const [
   import('../server/free-generation-worker.js'),
   import('../server/ecommerce-generation-worker.js'),
   import('../server/media-processing-worker.js'),
-  import('../server/storage-billing-worker.js')
+  import('../server/storage-billing-worker.js'),
+  import('../server/video-generation-worker.js')
 ]);
 
 after(async () => {
@@ -48,7 +50,8 @@ after(async () => {
     freeWorker.stopFreeGenerationWorker(),
     ecommerceWorker.stopEcommerceGenerationWorker(),
     mediaWorker.stopMediaProcessingWorker(),
-    storageBillingWorker.stopStorageBillingWorker()
+    storageBillingWorker.stopStorageBillingWorker(),
+    videoWorker.stopVideoGenerationWorker()
   ]);
   db.getDb().close();
   fs.rmSync(tempDirectory, { recursive: true, force: true });
@@ -152,6 +155,7 @@ test('health route verifies SQLite, storage, providers, and all durable workers'
   assert.equal(result.payload.checks.workers.ecommerce.running, true);
   assert.equal(result.payload.checks.workers.media.running, true);
   assert.equal(result.payload.checks.workers.storageBilling.running, true);
+  assert.equal(result.payload.checks.workers.video.running, true);
 });
 
 test('protected asset routes reject anonymous access', async () => {

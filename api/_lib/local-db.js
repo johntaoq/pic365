@@ -242,12 +242,13 @@ function migrateUnifiedMediaAssets(db) {
 }
 
 export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_RESTARTED') {
-  if (!db) return { releasedReservations: 0, interruptedGenerations: 0, interruptedTasks: 0, interruptedFreeTasks: 0 };
+  if (!db) return { releasedReservations: 0, interruptedGenerations: 0, interruptedTasks: 0, interruptedFreeTasks: 0, interruptedVideoTasks: 0 };
   const completedAt = now();
   let releasedReservations = 0;
   let interruptedGenerations = 0;
   let interruptedTasks = 0;
   let interruptedFreeTasks = 0;
+  let interruptedVideoTasks = 0;
 
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -272,11 +273,27 @@ export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_REST
     `).run(errorCode, completedAt, completedAt);
     interruptedFreeTasks = Number(freeTaskResult.changes || 0);
 
+    const videoTaskResult = db.prepare(`
+      UPDATE video_generation_tasks
+      SET status = 'interrupted', error_code = ?, updated_at = ?
+      WHERE status IN ('running', 'cancelling')
+    `).run(errorCode, completedAt);
+    interruptedVideoTasks = Number(videoTaskResult.changes || 0);
+
     const reservations = db.prepare(`
       SELECT r.id, r.user_id, r.amount, r.amount_centi, r.billing_scope, r.group_id, r.charged_user_id, u.role
       FROM credit_reservations r
       JOIN users u ON u.id = r.user_id
       WHERE r.status = 'reserved'
+        AND NOT (
+          r.billing_source = 'video_generation'
+          AND EXISTS (
+            SELECT 1 FROM video_generation_tasks video_task
+            WHERE video_task.reservation_id = r.id
+              AND video_task.status IN ('queued', 'interrupted')
+              AND video_task.deleted_at IS NULL
+          )
+        )
     `).all();
     const refundUser = db.prepare(`
       UPDATE users SET credit_balance = credit_balance + ?, updated_at = ? WHERE id = ?
@@ -320,7 +337,7 @@ export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_REST
     }
 
     db.exec('COMMIT');
-    return { releasedReservations, interruptedGenerations, interruptedTasks, interruptedFreeTasks };
+    return { releasedReservations, interruptedGenerations, interruptedTasks, interruptedFreeTasks, interruptedVideoTasks };
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
@@ -819,6 +836,75 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       deleted_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS video_provider_configs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      provider_type TEXT NOT NULL DEFAULT 'openai-video-compatible',
+      base_url TEXT NOT NULL DEFAULT '',
+      api_key_encrypted TEXT NOT NULL DEFAULT '',
+      credential_source TEXT NOT NULL DEFAULT 'image-provider',
+      image_provider_id TEXT,
+      model TEXT NOT NULL DEFAULT 'sora-2',
+      pricing_mode TEXT NOT NULL DEFAULT 'per-second',
+      pricing_config TEXT NOT NULL DEFAULT '{}',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS video_generation_tasks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES infinite_canvas_projects(id) ON DELETE SET NULL,
+      canvas_parent_node_id TEXT NOT NULL DEFAULT '',
+      canvas_task_node_id TEXT NOT NULL DEFAULT '',
+      provider_id TEXT NOT NULL DEFAULT '',
+      provider_task_id TEXT NOT NULL DEFAULT '',
+      reservation_id TEXT REFERENCES credit_reservations(id),
+      status TEXT NOT NULL DEFAULT 'queued',
+      phase TEXT NOT NULL DEFAULT 'queued',
+      progress INTEGER NOT NULL DEFAULT 0,
+      prompt TEXT NOT NULL DEFAULT '',
+      seconds INTEGER NOT NULL DEFAULT 4,
+      size TEXT NOT NULL DEFAULT '1280x720',
+      source_asset_id TEXT NOT NULL DEFAULT '',
+      source_generation_id TEXT NOT NULL DEFAULT '',
+      quoted_credits_centi INTEGER NOT NULL DEFAULT 0,
+      settled_credits_centi INTEGER NOT NULL DEFAULT 0,
+      request_json TEXT NOT NULL DEFAULT '{}',
+      result_json TEXT NOT NULL DEFAULT '{}',
+      error_code TEXT,
+      cancel_requested INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      deleted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS video_generations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES infinite_canvas_projects(id) ON DELETE SET NULL,
+      task_id TEXT NOT NULL UNIQUE REFERENCES video_generation_tasks(id) ON DELETE CASCADE,
+      asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      source_asset_id TEXT NOT NULL DEFAULT '',
+      source_generation_id TEXT NOT NULL DEFAULT '',
+      prompt TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      size TEXT NOT NULL DEFAULT '',
+      seconds INTEGER NOT NULL DEFAULT 0,
+      provider TEXT NOT NULL DEFAULT '',
+      provider_request_id TEXT NOT NULL DEFAULT '',
+      has_audio INTEGER NOT NULL DEFAULT 0,
+      credits_centi INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'processing',
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS infinite_canvas_projects (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -836,7 +922,7 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES infinite_canvas_projects(id) ON DELETE CASCADE,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      node_type TEXT NOT NULL CHECK (node_type IN ('idea', 'image', 'task', 'group')),
+      node_type TEXT NOT NULL CHECK (node_type IN ('idea', 'image', 'video', 'task', 'group')),
       parent_node_id TEXT,
       x REAL NOT NULL DEFAULT 0,
       y REAL NOT NULL DEFAULT 0,
@@ -1285,6 +1371,10 @@ function migrate(db, { recoverInterrupted = true } = {}) {
     CREATE INDEX IF NOT EXISTS ecommerce_tasks_user_status_idx ON ecommerce_generation_tasks(user_id, status);
     CREATE INDEX IF NOT EXISTS free_tasks_user_created_idx ON free_generation_tasks(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS free_tasks_status_created_idx ON free_generation_tasks(status, created_at ASC);
+    CREATE INDEX IF NOT EXISTS video_provider_default_idx ON video_provider_configs(enabled, is_default, created_at);
+    CREATE INDEX IF NOT EXISTS video_tasks_user_created_idx ON video_generation_tasks(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS video_tasks_status_created_idx ON video_generation_tasks(status, created_at ASC);
+    CREATE INDEX IF NOT EXISTS video_generations_user_created_idx ON video_generations(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS infinite_canvas_projects_user_updated_idx ON infinite_canvas_projects(user_id, status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS infinite_canvas_nodes_project_idx ON infinite_canvas_nodes(project_id, deleted_at, created_at ASC);
     CREATE INDEX IF NOT EXISTS infinite_canvas_nodes_task_idx ON infinite_canvas_nodes(user_id, task_id);
@@ -1311,6 +1401,45 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       ON audit_events(request_id)
       WHERE action = 'credit_adjustment' AND result = 'success' AND request_id != '';
   `);
+
+  const canvasNodeSchema = String(db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'infinite_canvas_nodes'").get()?.sql || '');
+  if (canvasNodeSchema && !canvasNodeSchema.includes("'video'")) {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN IMMEDIATE;
+      CREATE TABLE infinite_canvas_nodes_video_migration (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES infinite_canvas_projects(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        node_type TEXT NOT NULL CHECK (node_type IN ('idea', 'image', 'video', 'task', 'group')),
+        parent_node_id TEXT,
+        x REAL NOT NULL DEFAULT 0,
+        y REAL NOT NULL DEFAULT 0,
+        width REAL NOT NULL DEFAULT 292,
+        height REAL NOT NULL DEFAULT 270,
+        z_index INTEGER NOT NULL DEFAULT 0,
+        title TEXT NOT NULL DEFAULT '',
+        prompt TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        asset_id TEXT,
+        generation_id TEXT,
+        task_id TEXT,
+        locked INTEGER NOT NULL DEFAULT 0,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
+      );
+      INSERT INTO infinite_canvas_nodes_video_migration SELECT * FROM infinite_canvas_nodes;
+      DROP TABLE infinite_canvas_nodes;
+      ALTER TABLE infinite_canvas_nodes_video_migration RENAME TO infinite_canvas_nodes;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+      CREATE INDEX IF NOT EXISTS infinite_canvas_nodes_project_idx ON infinite_canvas_nodes(project_id, deleted_at, created_at ASC);
+      CREATE INDEX IF NOT EXISTS infinite_canvas_nodes_task_idx ON infinite_canvas_nodes(user_id, task_id);
+    `);
+  }
 
   ensureColumn(db, 'generations', 'project_id', 'TEXT');
   ensureColumn(db, 'credit_reservations', 'amount_centi', 'INTEGER NOT NULL DEFAULT 0');

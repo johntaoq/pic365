@@ -162,7 +162,8 @@ test('startup recovery atomically fails processing work and releases reserved cr
     releasedReservations: 1,
     interruptedGenerations: 1,
     interruptedTasks: 1,
-    interruptedFreeTasks: 0
+    interruptedFreeTasks: 0,
+    interruptedVideoTasks: 0
   });
   assert.equal(localDb.getUserProfile(user.id).creditBalance, 100);
   assert.equal(db.prepare('SELECT status, error_code FROM credit_reservations WHERE id = ?').get(reservation.reservationId).status, 'released');
@@ -178,7 +179,8 @@ test('startup recovery atomically fails processing work and releases reserved cr
     releasedReservations: 0,
     interruptedGenerations: 0,
     interruptedTasks: 0,
-    interruptedFreeTasks: 0
+    interruptedFreeTasks: 0,
+    interruptedVideoTasks: 0
   });
   assert.equal(localDb.getUserProfile(user.id).creditBalance, 100);
   assert.equal(db.prepare(`

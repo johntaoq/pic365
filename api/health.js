@@ -4,6 +4,8 @@ import { getFreeGenerationWorkerStatus, startFreeGenerationWorker } from '../ser
 import { getEcommerceGenerationWorkerStatus, startEcommerceGenerationWorker } from '../server/ecommerce-generation-worker.js';
 import { getMediaProcessingWorkerStatus, startMediaProcessingWorker } from '../server/media-processing-worker.js';
 import { getStorageBillingWorkerStatus, startStorageBillingWorker } from '../server/storage-billing-worker.js';
+import { getVideoGenerationWorkerStatus, startVideoGenerationWorker } from '../server/video-generation-worker.js';
+import { getVideoProviderConfig, listVideoProviderConfigs } from './_lib/video-provider-config.js';
 
 const DEEP_TIMEOUT_MS = 5000;
 
@@ -43,7 +45,7 @@ export default async function handler(req, res) {
   }
   const deep = ['1', 'true', 'yes'].includes(String(req.query?.deep || '').toLowerCase());
   const startedAt = Date.now();
-  const checks = { database: { ok: false }, storage: { ok: false }, providers: [] };
+  const checks = { database: { ok: false }, storage: { ok: false }, providers: [], videoProviders: [] };
   try {
     const db = getDb();
     const quickCheck = db.prepare('PRAGMA quick_check').get()?.quick_check || '';
@@ -66,20 +68,33 @@ export default async function handler(req, res) {
         checks.providers.push({ configured: false, reachable: false, error: 'SECRET_DECRYPTION_FAILED' });
       }
     }
+    const videoProviders = listVideoProviderConfigs({ admin: true }).filter((provider) => provider.enabled);
+    for (const { id } of videoProviders) {
+      try {
+        const provider = getVideoProviderConfig(id);
+        checks.videoProviders.push(await checkProvider(provider, deep));
+      } catch {
+        checks.videoProviders.push({ configured: false, reachable: false, error: 'SECRET_DECRYPTION_FAILED' });
+      }
+    }
     startFreeGenerationWorker();
     startEcommerceGenerationWorker();
     startMediaProcessingWorker();
     startStorageBillingWorker();
+    startVideoGenerationWorker();
     checks.workers = {
       free: getFreeGenerationWorkerStatus(),
       ecommerce: getEcommerceGenerationWorkerStatus(),
       media: getMediaProcessingWorkerStatus(),
-      storageBilling: getStorageBillingWorkerStatus()
+      storageBilling: getStorageBillingWorkerStatus(),
+      video: getVideoGenerationWorkerStatus()
     };
     const providerOk = checks.providers.length > 0
       && checks.providers.every((provider) => provider.configured && (!deep || provider.reachable));
-    const ok = checks.database.ok && checks.storage.ok && providerOk
-      && checks.workers.free.running && checks.workers.ecommerce.running && checks.workers.media.running;
+    const videoProviderOk = checks.videoProviders.length === 0
+      || checks.videoProviders.every((provider) => provider.configured && (!deep || provider.reachable));
+    const ok = checks.database.ok && checks.storage.ok && providerOk && videoProviderOk
+      && checks.workers.free.running && checks.workers.ecommerce.running && checks.workers.media.running && checks.workers.video.running;
     const workerOk = ok && checks.workers.storageBilling.running;
     return res.status(workerOk ? 200 : 503).json({
       ok: workerOk,

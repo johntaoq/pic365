@@ -221,34 +221,43 @@ export function billUserStorageForDate({
       if (charge) {
         balanceBefore = charge.balanceBefore;
         balanceAfter = charge.balanceAfter;
-      db.prepare(`
-        INSERT INTO storage_billing_charges
-          (id, user_id, billing_month, usage_date, previous_billed_bytes, billed_peak_bytes,
-           incremental_bytes, unit_price_cents_per_gb, credits, ledger_id, balance_before,
-           balance_after, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        chargeId,
-        userId,
-        billingMonth,
-        usageDate,
-        previousBilledBytes,
-        candidatePeak,
-        Math.max(0, candidatePeak - previousBilledBytes),
-        Number(monthState.unit_price_cents_per_gb),
-        incrementalCredits,
-        charge.ledgerId,
-        balanceBefore,
-        balanceAfter,
-        measuredAt
-      );
-      db.prepare(`
-        UPDATE storage_billing_months
-        SET billed_peak_bytes = ?, charged_credits = charged_credits + ?, last_run_date = ?,
-            last_charged_at = ?, updated_at = ?
-        WHERE user_id = ? AND billing_month = ?
-      `).run(candidatePeak, incrementalCredits, usageDate, measuredAt, measuredAt, userId, billingMonth);
-      resultStatus = 'charged';
+        if (charge.billingScope === 'super_admin') {
+          chargeId = null;
+          resultStatus = 'exempt';
+          db.prepare(`
+            UPDATE storage_billing_months SET last_run_date = ?, updated_at = ?
+            WHERE user_id = ? AND billing_month = ?
+          `).run(usageDate, measuredAt, userId, billingMonth);
+        } else {
+          db.prepare(`
+            INSERT INTO storage_billing_charges
+              (id, user_id, billing_month, usage_date, previous_billed_bytes, billed_peak_bytes,
+               incremental_bytes, unit_price_cents_per_gb, credits, ledger_id, balance_before,
+               balance_after, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            chargeId,
+            userId,
+            billingMonth,
+            usageDate,
+            previousBilledBytes,
+            candidatePeak,
+            Math.max(0, candidatePeak - previousBilledBytes),
+            Number(monthState.unit_price_cents_per_gb),
+            incrementalCredits,
+            charge.ledgerId,
+            balanceBefore,
+            balanceAfter,
+            measuredAt
+          );
+          db.prepare(`
+            UPDATE storage_billing_months
+            SET billed_peak_bytes = ?, charged_credits = charged_credits + ?, last_run_date = ?,
+                last_charged_at = ?, updated_at = ?
+            WHERE user_id = ? AND billing_month = ?
+          `).run(candidatePeak, incrementalCredits, usageDate, measuredAt, measuredAt, userId, billingMonth);
+          resultStatus = 'charged';
+        }
       }
     } else {
       db.prepare(`

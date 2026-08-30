@@ -7,6 +7,9 @@ import {
   canvasBatchResultPlacements,
   canvasReferenceConnectorPath,
   canvasReferenceEdges,
+  canvasReferenceRemovalImpact,
+  canvasImageDownloadFilename,
+  inferCanvasReferenceRole,
   canvasReferencePrompt,
   canvasNodeBounds,
   canvasConnectorPath,
@@ -20,6 +23,14 @@ import {
   viewportRightMiddlePosition,
   viewportForCanvasNodes
 } from '../shared/infinite-canvas.js';
+
+test('reference roles are inferred from useful visual intent while keeping a safe general fallback', () => {
+  assert.equal(inferCanvasReferenceRole({ prompt: '沿用这张图的配色和色板' }), 'color');
+  assert.equal(inferCanvasReferenceRole({ name: '俯拍构图参考' }), 'composition');
+  assert.equal(inferCanvasReferenceRole({ prompt: '柔和摄影光影与高级材质' }), 'style');
+  assert.equal(inferCanvasReferenceRole({ name: '产品主体正面图' }), 'subject');
+  assert.equal(inferCanvasReferenceRole({ name: 'reference-01.png' }), 'general');
+});
 
 test('canvas gestures start only from the blank canvas surface', () => {
   const control = { closest: (selector) => selector.includes('button') ? {} : null };
@@ -92,6 +103,15 @@ test('automatic canvas layout places child generations to the right', () => {
   assert.ok(branch.y > child.y);
   assert.match(canvasConnectorPath(root, child), /^M /);
   assert.equal(clampCanvasZoom(0), 1);
+});
+
+test('automatic canvas layout preserves locked entity positions', () => {
+  const arranged = arrangeCanvasNodes([
+    { id: 'locked', type: 'image', x: 777, y: 333, locked: true, createdAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'free', type: 'image', x: 999, y: 999, createdAt: '2026-01-01T00:00:01.000Z' }
+  ]);
+  assert.deepEqual({ x: arranged[0].x, y: arranged[0].y }, { x: 777, y: 333 });
+  assert.notDeepEqual({ x: arranged[1].x, y: arranged[1].y }, { x: 999, y: 999 });
 });
 
 test('canvas state keeps persisted task metadata for reload recovery', () => {
@@ -173,6 +193,22 @@ test('reference edges are direct one-hop links and never recurse through another
   const edges = canvasReferenceEdges(nodes);
   assert.deepEqual(edges.map((edge) => `${edge.source.id}->${edge.target.id}`).sort(), ['color->style', 'style->primary']);
   assert.match(canvasReferenceConnectorPath(edges[0].source, edges[0].target), /^M /);
+});
+
+test('reference removal impact distinguishes internal and external relationships', () => {
+  const nodes = [
+    { id: 'master', type: 'image', referenceLinks: [{ nodeId: 'style', role: 'style', order: 1 }] },
+    { id: 'style', type: 'image', referenceLinks: [{ nodeId: 'color', role: 'color', order: 1 }] },
+    { id: 'color', type: 'image' }
+  ];
+  assert.deepEqual(canvasReferenceRemovalImpact(nodes, ['style']), { total: 2, internal: 0, external: 2 });
+  assert.deepEqual(canvasReferenceRemovalImpact(nodes, ['master', 'style']), { total: 2, internal: 1, external: 1 });
+  assert.deepEqual(canvasReferenceRemovalImpact(nodes, ['color']), { total: 1, internal: 0, external: 1 });
+});
+
+test('canvas image downloads use the entity name as a safe filename prefix', () => {
+  assert.equal(canvasImageDownloadFilename({ name: 'B1-主视觉', mimeType: 'image/webp' }, 'zh'), 'B1-主视觉-原图.webp');
+  assert.equal(canvasImageDownloadFilename({ autoName: 'A/2:*', imageUrl: '/asset/output.jpeg?token=masked' }, 'en'), 'A-2-original.jpg');
 });
 
 test('retry replaces the failed task data without creating another canvas node', () => {
