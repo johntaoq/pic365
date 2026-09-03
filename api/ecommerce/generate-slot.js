@@ -36,7 +36,7 @@ import { classifyImageProviderError, editImage } from '../_lib/provider.js';
 import { readJsonBody } from '../_lib/request.js';
 import { deleteStoredFile, persistImage, readStoredImage } from '../_lib/storage.js';
 import { getEcommercePlatform } from '../../shared/ecommerce-catalog.js';
-import { validateImageReferenceInputsForModel } from '../../shared/image-generation.js';
+import { IMAGE_REFERENCE_MAX_BYTES, validateImageReferenceInputsForModel } from '../../shared/image-generation.js';
 import {
   applyImagePromotion,
   getImageGenerationPricing,
@@ -174,7 +174,7 @@ export default async function handler(req, res) {
       failTask('MASTER_ASSET_REQUIRED');
       return json(res, 400, { ok: false, error: 'MASTER_ASSET_REQUIRED', taskId });
     }
-    const providerConfig = getImageProviderConfig(project.imageProviderId);
+    const providerConfig = getImageProviderConfig(project.imageProviderId, { userId: auth.user.id });
     if (!providerConfig) {
       failTask('AI_PROVIDER_NOT_CONFIGURED');
       return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED', taskId });
@@ -220,11 +220,21 @@ export default async function handler(req, res) {
           return json(res, 400, { ok: false, error: 'INVALID_BASE_VERSION', taskId });
         }
         const storedBase = await readStoredImage(baseGeneration.storage_path);
+        if (!storedBase.bytes?.length || storedBase.bytes.length > IMAGE_REFERENCE_MAX_BYTES) {
+          const error = new Error('REFERENCE_IMAGE_TOO_LARGE');
+          error.code = 'REFERENCE_IMAGE_TOO_LARGE';
+          throw error;
+        }
         images.push(`data:${storedBase.contentType};base64,${storedBase.bytes.toString('base64')}`);
       }
       for (const asset of assets) {
         throwIfGenerationCancelled(taskController.signal);
         const stored = await readStoredImage(asset.storagePath);
+        if (!stored.bytes?.length || stored.bytes.length > IMAGE_REFERENCE_MAX_BYTES) {
+          const error = new Error('REFERENCE_IMAGE_TOO_LARGE');
+          error.code = 'REFERENCE_IMAGE_TOO_LARGE';
+          throw error;
+        }
         images.push(`data:${stored.contentType};base64,${stored.bytes.toString('base64')}`);
       }
     } catch (error) {
@@ -232,8 +242,9 @@ export default async function handler(req, res) {
         failTask('GENERATION_CANCELLED', 'cancelled');
         return json(res, 409, { ok: false, error: 'GENERATION_CANCELLED', taskId, user: getUserProfile(auth.user.id) });
       }
-      failTask('PROJECT_ASSET_UNAVAILABLE');
-      return json(res, 400, { ok: false, error: 'PROJECT_ASSET_UNAVAILABLE', taskId });
+      const errorCode = error?.code === 'REFERENCE_IMAGE_TOO_LARGE' ? error.code : 'PROJECT_ASSET_UNAVAILABLE';
+      failTask(errorCode);
+      return json(res, 400, { ok: false, error: errorCode, taskId });
     }
     if (!images.length) {
       failTask('MASTER_ASSET_REQUIRED');
@@ -269,7 +280,7 @@ export default async function handler(req, res) {
       ? resolveEcommerceRefinementSize(baseGeneration, slot)
       : resolveEcommerceSlotGenerationSize(slot);
     const pricing = applyImagePromotion(
-      getImageGenerationPricing({ size, quality, model: providerConfig.model }, providerConfig.pricingConfig),
+      getImageGenerationPricing({ size, quality, model: providerConfig.model, referenceCount: images.length }, providerConfig.pricingConfig),
       getImagePromotionConfig()
     );
 
@@ -294,6 +305,11 @@ export default async function handler(req, res) {
           estimatedCostRmb: pricing.estimatedCostRmb,
           estimatedListCostRmb: pricing.estimatedListCostRmb,
           retailRmb: pricing.retailRmb,
+          baseCredits: pricing.baseCredits,
+          referenceCount: pricing.referenceCount,
+          referenceImagePriceRmb: pricing.referenceImagePriceRmb,
+          referenceUnitCredits: pricing.referenceUnitCredits,
+          referenceCredits: pricing.referenceCredits,
           originalCredits: pricing.originalCredits,
           chargedCredits: pricing.credits,
           promotionName: pricing.promotion?.active ? pricing.promotion.name : '',
@@ -386,6 +402,12 @@ export default async function handler(req, res) {
           model: providerConfig.model,
           billedQuality: pricing.billedQuality,
           retailRmb: pricing.retailRmb,
+          baseCredits: pricing.baseCredits,
+          baseRetailRmb: pricing.baseRetailRmb,
+          referenceCount: pricing.referenceCount,
+          referenceImagePriceRmb: pricing.referenceImagePriceRmb,
+          referenceUnitCredits: pricing.referenceUnitCredits,
+          referenceCredits: pricing.referenceCredits,
           estimatedActualCostRmb: pricing.estimatedActualCostRmb,
           estimatedListCostRmb: pricing.estimatedListCostRmb,
           originalCredits: pricing.originalCredits,

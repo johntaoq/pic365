@@ -6,8 +6,10 @@ import {
   USER_ROLES
 } from '../../shared/admin-permissions.js';
 import {
+  DEFAULT_SYSTEM_USER_GROUP_ID,
   getDb,
   getRechargeConfig,
+  getSystemUserGroup,
   getUserById,
   getUserProfile,
   hashPassword
@@ -266,7 +268,7 @@ function countActiveSuperAdmins(db) {
   return Number(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'super_admin' AND status = 'active'").get()?.count || 0);
 }
 
-export function editManagedUser({ actorUserId, targetUserId, adminNote, password, role, auditMeta = {} }) {
+export function editManagedUser({ actorUserId, targetUserId, adminNote, password, role, systemGroupId, auditMeta = {} }) {
   const actor = getUserById(actorUserId);
   requirePermission(actor, ADMIN_PERMISSIONS.VIEW_USERS);
   const db = getDb();
@@ -276,13 +278,18 @@ export function editManagedUser({ actorUserId, targetUserId, adminNote, password
   const nextNote = adminNote == null ? String(targetRow.admin_note || '') : cleanText(adminNote, 160);
   const nextPassword = typeof password === 'string' ? password : '';
   const requestedRole = role == null ? target.role : normalizeUserRole(role);
+  const requestedSystemGroupId = requestedRole === USER_ROLES.USER
+    ? cleanText(systemGroupId == null ? target.systemGroupId || DEFAULT_SYSTEM_USER_GROUP_ID : systemGroupId, 80)
+    : target.systemGroupId || '';
   const noteChanged = nextNote !== String(targetRow.admin_note || '');
   const passwordChanged = Boolean(nextPassword);
   const roleChanged = requestedRole !== target.role;
+  const systemGroupChanged = requestedSystemGroupId !== (target.systemGroupId || '');
 
   if (noteChanged) requirePermission(actor, ADMIN_PERMISSIONS.EDIT_USER_NOTE);
   if (passwordChanged) requirePermission(actor, ADMIN_PERMISSIONS.RESET_USER_PASSWORD);
   if (roleChanged) requirePermission(actor, ADMIN_PERMISSIONS.MANAGE_USER_ROLES);
+  if (systemGroupChanged) requirePermission(actor, ADMIN_PERMISSIONS.MANAGE_SYSTEM_GROUPS);
   if (actor.role === USER_ROLES.ACCOUNTANT && target.role !== USER_ROLES.USER) {
     throw Object.assign(new Error('FORBIDDEN'), { code: 'FORBIDDEN' });
   }
@@ -295,7 +302,13 @@ export function editManagedUser({ actorUserId, targetUserId, adminNote, password
   if (roleChanged && target.role === USER_ROLES.SUPER_ADMIN && requestedRole !== USER_ROLES.SUPER_ADMIN && countActiveSuperAdmins(db) <= 1) {
     throw Object.assign(new Error('LAST_SUPER_ADMIN_REQUIRED'), { code: 'LAST_SUPER_ADMIN_REQUIRED' });
   }
-  if (!noteChanged && !passwordChanged && !roleChanged) return { user: { ...target, adminNote: nextNote }, changed: false };
+  if (requestedRole === USER_ROLES.USER && !getSystemUserGroup(requestedSystemGroupId)) {
+    throw Object.assign(new Error('SYSTEM_GROUP_NOT_FOUND'), { code: 'SYSTEM_GROUP_NOT_FOUND' });
+  }
+  const systemGroupName = requestedSystemGroupId ? getSystemUserGroup(requestedSystemGroupId)?.name || '' : '';
+  if (!noteChanged && !passwordChanged && !roleChanged && !systemGroupChanged) {
+    return { user: { ...target, adminNote: nextNote, systemGroupName }, changed: false };
+  }
 
   const updatedAt = now();
   const actorData = actorSnapshot(actor);
@@ -303,17 +316,17 @@ export function editManagedUser({ actorUserId, targetUserId, adminNote, password
   try {
     db.prepare(`
       UPDATE users SET admin_note = ?, password_hash = CASE WHEN ? != '' THEN ? ELSE password_hash END,
-        role = ?, updated_at = ? WHERE id = ?
-    `).run(nextNote, nextPassword, passwordChanged ? hashPassword(nextPassword) : '', requestedRole, updatedAt, target.id);
+        role = ?, system_group_id = ?, updated_at = ? WHERE id = ?
+    `).run(nextNote, nextPassword, passwordChanged ? hashPassword(nextPassword) : '', requestedRole, requestedSystemGroupId || null, updatedAt, target.id);
     if (passwordChanged) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(target.id);
     insertAuditEvent({
       category: roleChanged ? 'roles' : 'users',
-      action: roleChanged ? 'user_role_updated' : passwordChanged ? 'user_password_reset' : 'user_note_updated',
+      action: roleChanged ? 'user_role_updated' : systemGroupChanged ? 'user_system_group_updated' : passwordChanged ? 'user_password_reset' : 'user_note_updated',
       ...actorData,
       targetUserId: target.id,
       entityType: 'user', entityId: target.id,
-      before: { adminNote: targetRow.admin_note || '', role: target.role },
-      after: { adminNote: nextNote, role: requestedRole, passwordReset: passwordChanged },
+      before: { adminNote: targetRow.admin_note || '', role: target.role, systemGroupId: target.systemGroupId || '' },
+      after: { adminNote: nextNote, role: requestedRole, systemGroupId: requestedSystemGroupId, passwordReset: passwordChanged },
       ...auditMeta
     }, db);
     db.exec('COMMIT');
@@ -322,7 +335,7 @@ export function editManagedUser({ actorUserId, targetUserId, adminNote, password
     throw error;
   }
   const updated = getUserById(target.id);
-  return { user: { ...updated, adminNote: nextNote }, changed: true };
+  return { user: { ...updated, adminNote: nextNote, systemGroupName }, changed: true };
 }
 
 export function adjustManagedUserCredits({ actorUserId, targetUserId, amount, reasonCode, details, requestId, auditMeta = {} }) {

@@ -255,7 +255,7 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req, { maxBytes: 24 * 1024 * 1024 });
+    body = await readJsonBody(req, { maxBytes: 96 * 1024 * 1024 });
   } catch (error) {
     return json(res, error?.status || 400, { ok: false, error: error?.code || 'INVALID_PROMPT' });
   }
@@ -335,7 +335,7 @@ export default async function handler(req, res) {
 
   if (!hasFullWorkspaceAccess(auth.profile)) return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
 
-  const providerConfig = getImageProviderConfig(String(body.providerId || '').trim());
+  const providerConfig = getImageProviderConfig(String(body.providerId || '').trim(), { userId: auth.user.id });
   if (!providerConfig || !isProviderConfigured(providerConfig)) {
     return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
   }
@@ -354,10 +354,6 @@ export default async function handler(req, res) {
     res.once?.('finish', unregisterTask);
     res.once?.('close', unregisterTask);
   }
-  const pricing = applyImagePromotion(
-    getImageGenerationPricing({ size, quality: requestedQuality, model: providerConfig.model }, providerConfig.pricingConfig),
-    getImagePromotionConfig()
-  );
   let references;
   try {
     references = normalizeReferenceRequests(body.references);
@@ -374,10 +370,20 @@ export default async function handler(req, res) {
       error: error?.code || 'INVALID_REFERENCE_IMAGES'
     });
   }
+  const pricing = applyImagePromotion(
+    getImageGenerationPricing({
+      size,
+      quality: requestedQuality,
+      model: providerConfig.model,
+      referenceCount: references.length
+    }, providerConfig.pricingConfig),
+    getImagePromotionConfig()
+  );
   const taskMode = body.taskMode === 'batch-repair' ? 'batch-repair' : 'single';
   const providerPrompt = buildReferencePrompt(
     taskMode === 'batch-repair' ? batchRepairProviderPrompt(prompt) : prompt,
-    references
+    references,
+    { includeNumberedMap: taskMode !== 'batch-repair' && !String(body.canvasProjectId || '').trim() }
   );
   const parsedCaseId = Number(body.caseId);
   const caseId = Number.isFinite(parsedCaseId) ? parsedCaseId : null;
@@ -404,6 +410,11 @@ export default async function handler(req, res) {
           estimatedCostRmb: pricing.estimatedCostRmb,
           estimatedListCostRmb: pricing.estimatedListCostRmb,
           retailRmb: pricing.retailRmb,
+          baseCredits: pricing.baseCredits,
+          referenceCount: pricing.referenceCount,
+          referenceImagePriceRmb: pricing.referenceImagePriceRmb,
+          referenceUnitCredits: pricing.referenceUnitCredits,
+          referenceCredits: pricing.referenceCredits,
           originalCredits: pricing.originalCredits,
           chargedCredits: pricing.credits,
           promotionName: pricing.promotion?.active ? pricing.promotion.name : '',
@@ -533,6 +544,12 @@ export default async function handler(req, res) {
       model: providerConfig.model,
       billedQuality: pricing.billedQuality,
       retailRmb: pricing.retailRmb,
+      baseCredits: pricing.baseCredits,
+      baseRetailRmb: pricing.baseRetailRmb,
+      referenceCount: pricing.referenceCount,
+      referenceImagePriceRmb: pricing.referenceImagePriceRmb,
+      referenceUnitCredits: pricing.referenceUnitCredits,
+      referenceCredits: pricing.referenceCredits,
       estimatedActualCostRmb: pricing.estimatedActualCostRmb,
       estimatedListCostRmb: pricing.estimatedListCostRmb,
       originalCredits: pricing.originalCredits,

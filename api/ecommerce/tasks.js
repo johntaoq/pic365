@@ -9,6 +9,7 @@ import { authenticateRequest } from '../_lib/local-auth.js';
 import {
   createEcommerceGenerationTasks,
   getActiveEcommerceGenerationTask,
+  getEcommerceGenerationTask,
   getEcommerceProjectOutput,
   listEcommerceGenerationTasks,
   retryEcommerceGenerationTask
@@ -59,7 +60,14 @@ export default async function handler(req, res) {
   }
 
   if (body.action === 'retry') {
-    const task = retryEcommerceGenerationTask(auth.user.id, cleanText(body.taskId, 120));
+    const taskId = cleanText(body.taskId, 120);
+    const existingTask = getEcommerceGenerationTask(auth.user.id, taskId);
+    const retryProject = existingTask ? getEcommerceProject(auth.user.id, existingTask.projectId) : null;
+    const retryProvider = retryProject
+      ? getImageProviderConfig(retryProject.imageProviderId, { includeSecret: false, userId: auth.user.id })
+      : null;
+    if (existingTask && !retryProvider) return json(res, 403, { ok: false, error: 'AI_PROVIDER_NOT_AVAILABLE' });
+    const task = retryEcommerceGenerationTask(auth.user.id, taskId);
     if (!task) return json(res, 409, { ok: false, error: 'TASK_NOT_RETRYABLE' });
     return json(res, 200, { ok: true, task });
   }
@@ -68,7 +76,7 @@ export default async function handler(req, res) {
   let project = getEcommerceProject(auth.user.id, projectId);
   if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
   const requestedProviderId = cleanText(body.providerId, 80);
-  const providerConfig = getImageProviderConfig(requestedProviderId || project.imageProviderId, { includeSecret: false });
+  const providerConfig = getImageProviderConfig(requestedProviderId || project.imageProviderId, { includeSecret: false, userId: auth.user.id });
   if (!providerConfig) return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
   const requests = Array.isArray(body.requests)
     ? body.requests

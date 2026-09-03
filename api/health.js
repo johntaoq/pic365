@@ -6,6 +6,7 @@ import { getMediaProcessingWorkerStatus, startMediaProcessingWorker } from '../s
 import { getStorageBillingWorkerStatus, startStorageBillingWorker } from '../server/storage-billing-worker.js';
 import { getVideoGenerationWorkerStatus, startVideoGenerationWorker } from '../server/video-generation-worker.js';
 import { getVideoProviderConfig, listVideoProviderConfigs } from './_lib/video-provider-config.js';
+import { checkVideoProvider } from './_lib/video-provider.js';
 
 const DEEP_TIMEOUT_MS = 5000;
 
@@ -36,6 +37,24 @@ async function checkProvider(provider, deep) {
     clearTimeout(timer);
   }
   return result;
+}
+
+export async function checkConfiguredVideoProvider(provider, deep) {
+  const result = {
+    configured: Boolean(provider.apiKey && provider.baseUrl && provider.model),
+    reachable: null
+  };
+  if (!result.configured || !deep) return result;
+  if (String(provider.providerType || '').toLowerCase() !== 'baidu-kling-video') {
+    return checkProvider(provider, deep);
+  }
+  const check = await checkVideoProvider(provider);
+  return {
+    ...result,
+    reachable: Boolean(check.ok),
+    ...(check.error ? { error: check.error } : {}),
+    ...(typeof check.modelVisible === 'boolean' ? { modelVisible: check.modelVisible } : {})
+  };
 }
 
 export default async function handler(req, res) {
@@ -72,7 +91,7 @@ export default async function handler(req, res) {
     for (const { id } of videoProviders) {
       try {
         const provider = getVideoProviderConfig(id);
-        checks.videoProviders.push(await checkProvider(provider, deep));
+        checks.videoProviders.push(await checkConfiguredVideoProvider(provider, deep));
       } catch {
         checks.videoProviders.push({ configured: false, reachable: false, error: 'SECRET_DECRYPTION_FAILED' });
       }

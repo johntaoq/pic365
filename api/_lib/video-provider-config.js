@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import { defaultVideoPricingConfig, normalizeVideoPricingConfig } from '../../shared/video-pricing.js';
+import { VIDEO_SIZES, videoProviderDurations } from '../../shared/video-generation.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
-import { getDb, getImageProviderConfig } from './local-db.js';
+import { bindDefaultSystemGroupChannel, filterProvidersForUser, getDb, getImageProviderConfig, userCanAccessProvider } from './local-db.js';
 
 function now() {
   return new Date().toISOString();
@@ -21,6 +22,19 @@ function parseJson(value, fallback = {}) {
   }
 }
 
+export function videoProviderCapabilities(provider = {}) {
+  const providerType = String(provider.providerType || provider.provider_type || '').toLowerCase();
+  const isBaiduKling = providerType === 'baidu-kling-video';
+  return {
+    durations: videoProviderDurations(provider),
+    sizes: isBaiduKling ? [...VIDEO_SIZES] : VIDEO_SIZES.slice(0, 2),
+    supportsImageReference: true,
+    supportsNativeAudio: false,
+    supportsCancellation: !isBaiduKling,
+    modes: isBaiduKling ? ['std', 'pro', '4k'] : []
+  };
+}
+
 export function ensureDefaultVideoProviderConfig() {
   const db = getDb();
   if (db.prepare('SELECT 1 FROM video_provider_configs LIMIT 1').get()) return;
@@ -28,13 +42,14 @@ export function ensureDefaultVideoProviderConfig() {
   if (!imageProvider) return;
   const createdAt = now();
   const pricing = defaultVideoPricingConfig();
+  const providerId = randomUUID();
   db.prepare(`
     INSERT INTO video_provider_configs
       (id, name, provider_type, base_url, credential_source, image_provider_id, model,
        pricing_mode, pricing_config, enabled, is_default, created_at, updated_at)
     VALUES (?, 'Sora 2', 'openai-video-compatible', ?, 'image-provider', ?, 'sora-2', ?, ?, 1, 1, ?, ?)
   `).run(
-    randomUUID(),
+    providerId,
     imageProvider.baseUrl || '',
     imageProvider.id,
     pricing.mode,
@@ -42,6 +57,7 @@ export function ensureDefaultVideoProviderConfig() {
     createdAt,
     createdAt
   );
+  bindDefaultSystemGroupChannel('video', providerId);
 }
 
 function normalizeProviderRow(row, { includeSecret = false } = {}) {
@@ -79,19 +95,21 @@ function normalizeProviderRow(row, { includeSecret = false } = {}) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+  result.capabilities = videoProviderCapabilities(result);
   if (includeSecret) result.apiKey = resolvedApiKey;
   return result;
 }
 
-export function listVideoProviderConfigs({ admin = false } = {}) {
+export function listVideoProviderConfigs({ admin = false, userId = '' } = {}) {
   ensureDefaultVideoProviderConfig();
   const rows = getDb().prepare(`
     SELECT * FROM video_provider_configs
     ${admin ? '' : 'WHERE enabled = 1'}
     ORDER BY is_default DESC, created_at ASC
   `).all();
-  return rows.map((row) => {
+  const providers = rows.map((row) => {
     const provider = normalizeProviderRow(row, { includeSecret: false });
+    const capabilities = videoProviderCapabilities(provider);
     return admin ? provider : {
       id: provider.id,
       name: provider.name,
@@ -99,20 +117,19 @@ export function listVideoProviderConfigs({ admin = false } = {}) {
       model: provider.model,
       pricingMode: provider.pricingMode,
       isDefault: provider.isDefault,
-      durations: [4, 8, 12],
-      sizes: ['1280x720', '720x1280'],
-      supportsImageReference: true,
-      supportsNativeAudio: true
+      ...capabilities
     };
   });
+  return admin ? providers : filterProvidersForUser(providers, userId, 'video');
 }
 
-export function getVideoProviderConfig(providerId = '', { includeSecret = true } = {}) {
+export function getVideoProviderConfig(providerId = '', { includeSecret = true, userId = '' } = {}) {
   ensureDefaultVideoProviderConfig();
   const db = getDb();
-  const row = providerId
-    ? db.prepare('SELECT * FROM video_provider_configs WHERE id = ? AND enabled = 1').get(providerId)
-    : db.prepare('SELECT * FROM video_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC LIMIT 1').get();
+  const rows = providerId
+    ? [db.prepare('SELECT * FROM video_provider_configs WHERE id = ? AND enabled = 1').get(providerId)].filter(Boolean)
+    : db.prepare('SELECT * FROM video_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC').all();
+  const row = userId ? rows.find((item) => userCanAccessProvider(userId, 'video', item.id)) : rows[0];
   return normalizeProviderRow(row, { includeSecret });
 }
 
@@ -159,7 +176,7 @@ export function saveVideoProviderConfig(values = {}) {
         updated_at = excluded.updated_at
     `).run(
       id,
-      clean(values.name, 80) || 'Sora 2',
+      clean(values.name, 80) || (clean(values.providerType, 80) === 'baidu-kling-video' ? '可灵 V3' : 'Sora 2'),
       clean(values.providerType, 80) || 'openai-video-compatible',
       credentialSource === 'image-provider' ? imageProvider.baseUrl || '' : clean(values.baseUrl, 500).replace(/\/+$/, ''),
       credentialSource === 'manual' ? apiKeyEncrypted : '',
@@ -202,6 +219,7 @@ export function deleteVideoProviderConfig(providerId) {
   if (used) throw Object.assign(new Error('PROVIDER_IN_USE'), { code: 'PROVIDER_IN_USE' });
   const enabledCount = Number(db.prepare('SELECT COUNT(*) AS count FROM video_provider_configs WHERE enabled = 1').get()?.count || 0);
   if (row.enabled && enabledCount <= 1) throw Object.assign(new Error('LAST_PROVIDER_REQUIRED'), { code: 'LAST_PROVIDER_REQUIRED' });
+  db.prepare("DELETE FROM system_user_group_channels WHERE channel_type = 'video' AND channel_id = ?").run(providerId);
   db.prepare('DELETE FROM video_provider_configs WHERE id = ?').run(providerId);
   if (row.is_default) db.prepare('UPDATE video_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM video_provider_configs WHERE enabled = 1 ORDER BY created_at ASC LIMIT 1)').run();
   return normalizeProviderRow(row, { includeSecret: false });

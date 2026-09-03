@@ -57,6 +57,7 @@ function normalizePricingRequest(options = {}) {
     size: String(options.size || '1024x1024').trim().toLowerCase(),
     quality: String(options.quality || 'low').trim().toLowerCase(),
     count: Math.max(1, Math.min(50, Math.round(Number(options.count) || 1))),
+    referenceCount: Math.max(0, Math.min(9, Math.round(Number(options.referenceCount) || 0))),
     providerId: String(options.providerId || '').trim()
   };
 }
@@ -74,6 +75,7 @@ export async function requestImagePricing(options = {}, { signal } = {}) {
     size: request.size,
     quality: request.quality,
     count: String(request.count),
+    referenceCount: String(request.referenceCount),
     providerId: request.providerId
   });
   const response = await fetch(`/api/image-pricing?${params}`, { cache: 'no-store', signal });
@@ -105,7 +107,7 @@ export async function requestImagePricingBatch(items = [], { signal } = {}) {
 
 export function useServerImagePricing(options = {}, { enabled = true, debounceMs = 100 } = {}) {
   const normalized = normalizePricingRequest(options);
-  const requestKey = `${normalized.providerId}|${normalized.size}|${normalized.quality}|${normalized.count}`;
+  const requestKey = `${normalized.providerId}|${normalized.size}|${normalized.quality}|${normalized.count}|${normalized.referenceCount}`;
   const [state, setState] = useState({ pricing: null, loading: Boolean(enabled), error: '' });
 
   useEffect(() => {
@@ -114,7 +116,7 @@ export function useServerImagePricing(options = {}, { enabled = true, debounceMs
       return undefined;
     }
     const controller = new AbortController();
-    setState((current) => ({ pricing: current.pricing?.providerId === normalized.providerId && current.pricing?.size === normalized.size && current.pricing?.quality === normalized.quality ? current.pricing : null, loading: true, error: '' }));
+    setState((current) => ({ pricing: current.pricing?.providerId === normalized.providerId && current.pricing?.size === normalized.size && current.pricing?.quality === normalized.quality && current.pricing?.referenceCount === normalized.referenceCount ? current.pricing : null, loading: true, error: '' }));
     const timer = globalThis.setTimeout?.(() => {
       requestImagePricing(normalized, { signal: controller.signal })
         .then((pricing) => setState({ pricing, loading: false, error: '' }))

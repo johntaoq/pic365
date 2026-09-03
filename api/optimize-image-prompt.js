@@ -68,7 +68,7 @@ export default async function handler(req, res) {
   const language = body.language === 'zh' ? 'zh' : 'en';
   const referenceCount = Math.max(0, Math.min(9, Number(body.referenceCount) || 0));
   const hasAnnotations = Boolean(body.hasAnnotations);
-  const provider = getChatProviderConfig('', { includeSecret: true });
+  const provider = getChatProviderConfig('', { includeSecret: true, userId: auth.user.id });
   if (!provider?.apiKey) {
     return json(res, 503, { ok: false, error: 'PROMPT_OPTIMIZER_UNAVAILABLE' });
   }

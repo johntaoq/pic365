@@ -175,7 +175,7 @@ function normalizedTaskRequest(request = {}) {
       preserveSourceSize
     } : {})
   });
-  if (Buffer.byteLength(serialized, 'utf8') > 24 * 1024 * 1024) {
+  if (Buffer.byteLength(serialized, 'utf8') > 96 * 1024 * 1024) {
     const error = new Error('REQUEST_BODY_TOO_LARGE');
     error.code = 'REQUEST_BODY_TOO_LARGE';
     throw error;

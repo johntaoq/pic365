@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getVideoGenerationPricing } from '../../shared/video-pricing.js';
-import { normalizeVideoDuration, normalizeVideoSize } from '../../shared/video-generation.js';
+import { normalizeVideoDurationForProvider, normalizeVideoSize, videoProviderDurations } from '../../shared/video-generation.js';
 import {
   getDb,
   releaseCreditReservation,
@@ -85,6 +85,7 @@ export function normalizeVideoTask(row, { includeRequest = false } = {}) {
     prompt: row.prompt || '',
     displayPrompt: clean(request.displayPrompt || row.prompt, 6000),
     seconds: Number(row.seconds || 4),
+    mode: String(request.mode || 'std'),
     size: row.size || '1280x720',
     sourceAssetId: row.source_asset_id || '',
     sourceGenerationId: row.source_generation_id || '',
@@ -121,14 +122,16 @@ export function getVideoTask(userId, taskId, options = {}) {
   `).get(taskId, userId), options);
 }
 
-export function quoteVideoTask({ providerId = '', seconds = 4 } = {}) {
-  const provider = getVideoProviderConfig(providerId, { includeSecret: false });
+export function quoteVideoTask({ providerId = '', seconds = 4, mode = 'std', userId = '' } = {}) {
+  const provider = getVideoProviderConfig(providerId, { includeSecret: false, userId });
   if (!provider) throw Object.assign(new Error('VIDEO_PROVIDER_NOT_CONFIGURED'), { code: 'VIDEO_PROVIDER_NOT_CONFIGURED' });
+  const normalizedSeconds = normalizeVideoDurationForProvider(seconds, provider);
   return {
-    ...getVideoGenerationPricing({ seconds }, provider.pricingConfig),
+    ...getVideoGenerationPricing({ seconds: normalizedSeconds, mode }, provider.pricingConfig),
     providerId: provider.id,
     providerName: provider.name,
     model: provider.model,
+    durations: videoProviderDurations(provider),
     source: 'server'
   };
 }
@@ -151,7 +154,8 @@ function normalizedRequest(request = {}) {
     canvasParentNodeId,
     canvasTaskNodeId,
     providerId,
-    seconds: normalizeVideoDuration(request.seconds),
+    seconds: Math.round(Number(request.seconds) || 0),
+    mode: ['std', 'pro', '4k'].includes(String(request.mode || '').toLowerCase()) ? String(request.mode).toLowerCase() : 'std',
     size: normalizeVideoSize(request.size),
     sourceAssetId,
     sourceGenerationId,
@@ -169,10 +173,13 @@ export function createVideoTask(userId, request = {}) {
   const project = db.prepare(`SELECT id FROM infinite_canvas_projects WHERE id = ? AND user_id = ? AND status != 'deleted'`).get(input.projectId, userId);
   if (!project) throw Object.assign(new Error('CANVAS_PROJECT_NOT_FOUND'), { code: 'CANVAS_PROJECT_NOT_FOUND' });
   ensureOwnedSource(userId, input);
-  const provider = getVideoProviderConfig(input.providerId, { includeSecret: false });
+  const provider = getVideoProviderConfig(input.providerId, { includeSecret: false, userId });
   if (!provider?.enabled && provider?.enabled !== undefined) throw Object.assign(new Error('VIDEO_PROVIDER_NOT_CONFIGURED'), { code: 'VIDEO_PROVIDER_NOT_CONFIGURED' });
   if (!provider) throw Object.assign(new Error('VIDEO_PROVIDER_NOT_CONFIGURED'), { code: 'VIDEO_PROVIDER_NOT_CONFIGURED' });
-  const quote = getVideoGenerationPricing({ seconds: input.seconds }, provider.pricingConfig);
+  input.seconds = normalizeVideoDurationForProvider(input.seconds, provider);
+  const supportedModes = Array.isArray(provider.capabilities?.modes) ? provider.capabilities.modes : [];
+  if (supportedModes.length && !supportedModes.includes(input.mode)) input.mode = supportedModes[0];
+  const quote = getVideoGenerationPricing({ seconds: input.seconds, mode: input.mode }, provider.pricingConfig);
   const counts = db.prepare(`
     SELECT COUNT(*) AS count,
       SUM(CASE WHEN status IN ('queued', 'running', 'cancelling', 'interrupted') THEN 1 ELSE 0 END) AS active_count
@@ -199,6 +206,7 @@ export function createVideoTask(userId, request = {}) {
       providerName: provider.name,
       model: provider.model,
       seconds: input.seconds,
+      mode: input.mode,
       size: input.size,
       projectId: input.projectId
     }
@@ -206,6 +214,7 @@ export function createVideoTask(userId, request = {}) {
   const createdAt = now();
   const serialized = JSON.stringify({
     displayPrompt: input.displayPrompt,
+    mode: input.mode,
     sourceWidth: input.sourceWidth,
     sourceHeight: input.sourceHeight,
     pricing: quote
@@ -261,6 +270,7 @@ export function buildVideoRedoRequest(userId, taskId, overrides = {}) {
     canvasTaskNodeId: clean(overrides.canvasTaskNodeId, 160) || task.canvasTaskNodeId,
     providerId: task.providerId,
     seconds: task.seconds,
+    mode: task.mode,
     size: task.size,
     sourceAssetId: task.sourceAssetId,
     sourceGenerationId: task.sourceGenerationId,
@@ -369,6 +379,7 @@ export function completeVideoTask(userId, taskId, result = {}) {
       posterUrl: result.posterUrl,
       mimeType: result.mimeType || 'video/mp4',
       seconds: task.seconds,
+      mode: task.mode,
       size: task.size,
       hasAudio: result.hasAudio ?? null,
       creditsCharged: settledCenti / 100

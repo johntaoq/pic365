@@ -61,6 +61,9 @@ async function invoke(handler, req = {}) {
 test('video pricing supports per-second and per-generation billing to 0.01 credits', () => {
   assert.equal(pricing.getVideoGenerationPricing({ seconds: 4 }).credits, 280);
   assert.equal(pricing.getVideoGenerationPricing({ seconds: 8 }).credits, 560);
+  assert.equal(pricing.getVideoGenerationPricing({ seconds: 5, mode: 'std' }, { modeRatesRmb: { std: 0.6, pro: 0.8, '4k': 3 } }).credits, 300);
+  assert.equal(pricing.getVideoGenerationPricing({ seconds: 5, mode: 'pro' }, { modeRatesRmb: { std: 0.6, pro: 0.8, '4k': 3 } }).credits, 400);
+  assert.equal(pricing.getVideoGenerationPricing({ seconds: 5, mode: '4k' }, { modeRatesRmb: { std: 0.6, pro: 0.8, '4k': 3 } }).credits, 1500);
   assert.equal(pricing.getVideoGenerationPricing({ seconds: 12 }, {
     mode: 'per-generation',
     pricePerGenerationRmb: 1.2345
@@ -70,6 +73,65 @@ test('video pricing supports per-second and per-generation billing to 0.01 credi
 test('video provider classifies uploaded-person moderation blocks clearly', () => {
   const error = Object.assign(new Error('The request is blocked by our moderation system when checking inputs. Possible reasons: people-in-user-uploads.'), { status: 400 });
   assert.equal(videoProvider.classifyVideoProviderError(error), 'CONTENT_MODERATION_BLOCKED');
+});
+
+test('BK Kling provider submits JSON, polls v3 task status, and downloads the result without creating a paid test task', async () => {
+  const calls = [];
+  let taskQueryCount = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const request = { url: String(url), method: options.method || 'GET', authorization: options.headers?.Authorization || '' };
+    if (options.body) request.body = JSON.parse(String(options.body));
+    calls.push(request);
+    if (request.url.endsWith('/v3/aigc/kl/videos/image2video')) {
+      return new Response(JSON.stringify({ code: 'SUCCESS', taskId: 'bk-task-1', requestId: 'request-1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.url.endsWith('/v3/tasks/bk-task-1')) {
+      taskQueryCount += 1;
+      return new Response(JSON.stringify({
+        taskId: 'bk-task-1',
+        code: 'SUCCESS',
+        status: 'SUCCESS',
+        videoGenerateTaskInfo: taskQueryCount === 1
+          ? { status: 'processing' }
+          : { status: 'success', videoGenerateTaskOutput: { videoUrl: 'https://media.example/bk-task-1.mp4' } }
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (request.url === 'https://media.example/bk-task-1.mp4') {
+      return new Response(Buffer.concat([Buffer.alloc(4), Buffer.from('ftyp'), Buffer.alloc(40)]), { status: 200, headers: { 'Content-Type': 'video/mp4' } });
+    }
+    throw new Error(`Unexpected fetch: ${request.url}`);
+  };
+  const provider = {
+    providerType: 'baidu-kling-video',
+    baseUrl: 'https://vod.bj.baidubce.com/v3/aigc/kl',
+    apiKey: 'test-bk-key',
+    model: 'kling-v3'
+  };
+  const created = await videoProvider.createVideoProviderTask({
+    provider,
+    prompt: '让商品自然转动',
+    seconds: 5,
+    size: '1920x1080',
+    mode: 'pro',
+    reference: { bytes: Buffer.from('reference-image'), mimeType: 'image/png', fileName: 'reference.png' }
+  });
+  assert.equal(created.id, 'bk-task-1');
+  assert.equal(calls[0].url, 'https://vod.bj.baidubce.com/v3/aigc/kl/videos/image2video');
+  assert.equal(calls[0].authorization, 'Bearer test-bk-key');
+  assert.equal(calls[0].body.model_name, 'kling-v3');
+  assert.equal(calls[0].body.mode, 'pro');
+  assert.equal(calls[0].body.duration, '5');
+  assert.equal(calls[0].body.sound, 'off');
+  assert.equal(calls[0].body.image, Buffer.from('reference-image').toString('base64'));
+  assert.equal(String(calls[0].body.image).startsWith('data:'), false);
+
+  const state = await videoProvider.retrieveVideoProviderTask({ provider, providerTaskId: created.id });
+  assert.equal(state.status, 'processing');
+  assert.equal(state.resultUrl, '');
+  const downloaded = await videoProvider.downloadVideoProviderResult({ provider, providerTaskId: created.id });
+  assert.equal(downloaded.contentType, 'video/mp4');
+  assert.equal(downloaded.bytes.subarray(4, 8).toString('ascii'), 'ftyp');
+  assert.equal(calls.filter((call) => call.url.endsWith('/v3/tasks/bk-task-1')).length, 2);
 });
 
 test('default Sora provider inherits the encrypted image provider credential', () => {
@@ -82,6 +144,27 @@ test('default Sora provider inherits the encrypted image provider credential', (
   assert.equal(secretProvider.baseUrl, imageProvider.baseUrl);
   assert.equal(secretProvider.apiKey, 'shared-image-video-key');
   assert.equal(publicProvider.apiKeyMasked.includes('shared-image-video-key'), false);
+});
+
+test('BK Kling provider stores its own encrypted key and exposes provider-specific capabilities', () => {
+  const saved = providers.saveVideoProviderConfig({
+    name: 'BK Kling V3',
+    providerType: 'baidu-kling-video',
+    credentialSource: 'manual',
+    baseUrl: 'https://vod.bj.baidubce.com/v3/aigc/kl',
+    apiKey: 'bk-secret-test-key',
+    model: 'kling-v3',
+    pricingConfig: { mode: 'per-second', modeRatesRmb: { std: 0.6, pro: 0.8, '4k': 3 } },
+    enabled: true
+  });
+  const secret = providers.getVideoProviderConfig(saved.id);
+  const publicProvider = providers.listVideoProviderConfigs().find((provider) => provider.id === saved.id);
+  assert.equal(secret.apiKey, 'bk-secret-test-key');
+  assert.equal(saved.apiKeyMasked.includes('bk-secret-test-key'), false);
+  assert.deepEqual(publicProvider.durations, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.deepEqual(publicProvider.modes, ['std', 'pro', '4k']);
+  assert.equal(publicProvider.supportsNativeAudio, false);
+  assert.equal(publicProvider.supportsCancellation, false);
 });
 
 test('public video provider and pricing APIs expose capabilities without credentials', async () => {

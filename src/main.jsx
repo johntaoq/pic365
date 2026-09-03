@@ -64,8 +64,10 @@ import { fetchImageGeneration } from './image-generation-client.js';
 import { SITE_NOTICE_EXAMPLES } from '../shared/site-notice.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import AdminChatProvider from './admin-chat-provider.jsx';
+import AdminSystemGroups from './admin-system-groups.jsx';
 import AdminVideoProvider from './admin-video-provider.jsx';
 import ChatCompanion from './chat-companion.jsx';
+import Homepage from './homepage.jsx';
 import GroupAccountPanel from './group-account-panel.jsx';
 import {
   AuditEventsPanel,
@@ -94,6 +96,7 @@ const copy = {
     navCases: 'Examples',
     navAssets: 'Assets',
     navCooperation: 'Cooperation',
+    navHome: 'Home',
     ecommerceMode: 'Product image sets',
     freeMode: 'Image Studio',
     canvasMode: 'Infinite Canvas',
@@ -369,6 +372,7 @@ const copy = {
     navCases: '范例',
     navAssets: '资产库',
     navCooperation: '合作',
+    navHome: '主页',
     ecommerceMode: '电商套图',
     freeMode: '灵感生图',
     canvasMode: '无限画布',
@@ -728,6 +732,7 @@ let bodyScrollLockCount = 0;
 let bodyScrollLockState = null;
 
 const PAGE_HASHES = {
+  home: 'home',
   cases: 'gallery',
   templates: 'templates',
   create: 'create',
@@ -736,6 +741,7 @@ const PAGE_HASHES = {
   cooperation: 'cooperation',
   admin: 'admin'
 };
+const PUBLIC_PAGES = new Set(['home', 'cases', 'templates', 'cooperation']);
 
 const SITE_THEME_STORAGE_KEY = 'pic365.site-theme.v1';
 
@@ -749,6 +755,7 @@ function loadSiteTheme() {
 
 function pageFromHash(hash = '') {
   const value = String(hash || '').replace(/^#/, '');
+  if (!value || value === PAGE_HASHES.home) return 'home';
   if (value === PAGE_HASHES.templates) return 'templates';
   if (value === PAGE_HASHES.cases) return 'cases';
   if (value === PAGE_HASHES.canvas) return 'canvas';
@@ -759,7 +766,7 @@ function pageFromHash(hash = '') {
 }
 
 function hashForPage(page) {
-  return PAGE_HASHES[page] || PAGE_HASHES.cases;
+  return PAGE_HASHES[page] || PAGE_HASHES.home;
 }
 
 function pagePathWithHash() {
@@ -1394,7 +1401,7 @@ function useDropdownDismiss(open, setOpen) {
   return ref;
 }
 
-function LanguageSwitch({ language, setLanguage }) {
+function LanguageSwitch({ language, setLanguage, combinedLabel = false }) {
   const [open, setOpen] = useState(false);
   const ref = useDropdownDismiss(open, setOpen);
   const languageOptions = [
@@ -1413,7 +1420,7 @@ function LanguageSwitch({ language, setLanguage }) {
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span>{activeLanguage.short}</span>
+      <span>{combinedLabel ? '中文 / En' : activeLanguage.short}</span>
         <ChevronDown size={15} />
       </button>
       {open ? (
@@ -2344,7 +2351,7 @@ function AdminRankList({ rows, type, language }) {
   );
 }
 
-function NotificationBell({ language, session, profile, onProfileChange }) {
+function NotificationBell({ language, session, profile, onProfileChange, onSignIn }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -2403,7 +2410,7 @@ function NotificationBell({ language, session, profile, onProfileChange }) {
     } finally { setBusyId(''); }
   }
 
-  if (!signedIn) return null;
+  if (!signedIn) return <button className="notificationTrigger" type="button" aria-label={language === 'zh' ? '通知，登录后查看' : 'Notifications, sign in to view'} title={language === 'zh' ? '登录后查看通知' : 'Sign in to view notifications'} onClick={onSignIn}><Bell size={20} /></button>;
   return (
     <div className="dropdownControl notificationMenu" ref={ref}>
       <button className={cx('notificationTrigger', open && 'open', unreadCount > 0 && 'hasUnread')} type="button" aria-label={language === 'zh' ? `通知${unreadCount ? `，${unreadCount} 条未读` : ''}` : `Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
@@ -2582,6 +2589,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
     return profile?.role === 'operations' ? 'channels' : profile?.role === 'accountant' ? 'credits' : 'pricing';
   });
   const [users, setUsers] = useState([]);
+  const [systemGroups, setSystemGroups] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [range, setRange] = useState('7d');
   const [customStart, setCustomStart] = useState(() => dateInputValue(29));
@@ -2605,6 +2613,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
   const [storageBillingMessage, setStorageBillingMessage] = useState('');
   const [providers, setProviders] = useState([]);
   const [providerDraft, setProviderDraft] = useState(() => createProviderDraft());
+  const [providerPricingReferenceCount, setProviderPricingReferenceCount] = useState(0);
   const [providerEditorMode, setProviderEditorMode] = useState('auto');
   const [providerMessage, setProviderMessage] = useState('');
   const [promptLogging, setPromptLogging] = useState({ enabled: false, updatedAt: null });
@@ -2888,6 +2897,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
 
   function editProvider(provider) {
     setProviderEditorMode('edit');
+    setProviderPricingReferenceCount(0);
     setProviderDraft({
       ...provider,
       apiKey: '',
@@ -2902,6 +2912,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
 
   function resetProviderDraft() {
     setProviderEditorMode('new');
+    setProviderPricingReferenceCount(0);
     setProviderDraft(createProviderDraft());
   }
 
@@ -3192,9 +3203,9 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
     ['2880×2880', '2880x2880']
   ]).map(([label, size]) => ({
     label,
-    low: getImageGenerationPricing({ size, quality: 'low', model: providerDraft.model }, providerDraft.pricingConfig),
-    medium: getImageGenerationPricing({ size, quality: 'medium', model: providerDraft.model }, providerDraft.pricingConfig),
-    high: getImageGenerationPricing({ size, quality: 'high', model: providerDraft.model }, providerDraft.pricingConfig)
+    low: getImageGenerationPricing({ size, quality: 'low', model: providerDraft.model, referenceCount: providerPricingReferenceCount }, providerDraft.pricingConfig),
+    medium: getImageGenerationPricing({ size, quality: 'medium', model: providerDraft.model, referenceCount: providerPricingReferenceCount }, providerDraft.pricingConfig),
+    high: getImageGenerationPricing({ size, quality: 'high', model: providerDraft.model, referenceCount: providerPricingReferenceCount }, providerDraft.pricingConfig)
   }));
   const promotionStateLabel = promotion?.active
     ? t.promotionActive
@@ -3255,7 +3266,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
       <header>
         <div>
           <strong>{language === 'zh' ? '独立计费规则' : 'Independent pricing rule'}</strong>
-          <span>{language === 'zh' ? '报价与实际扣费共用本规则，促销在原价之后计算' : 'Quotes and final charges use this rule; promotions apply after list price.'}</span>
+          <span>{language === 'zh' ? '单张原价＝基础生图费＋参考图数量×单价；促销在合计原价之后计算' : 'List price per output = base generation fee + reference count × unit price; promotions apply afterward.'}</span>
         </div>
         <button type="button" onClick={resetProviderPricingForModel}><RefreshCw size={14} />{language === 'zh' ? '应用模型预设' : 'Apply model preset'}</button>
       </header>
@@ -3271,6 +3282,8 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最高收费（元）' : 'Maximum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.maximumChargeRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ maximumChargeRmb: value })} /></label>
         <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? 'Auto 计费像素' : 'Auto billed pixels'}</span><PricingNumberInput value={providerDraft.pricingConfig.autoSizePixels} min={655360} max={providerPricingMaximumPixels} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ autoSizePixels: value })} /></label>
         <label className="isPricingDisabled"><span>{language === 'zh' ? 'Auto 计费质量' : 'Auto billed quality'}</span><select value="medium" disabled><option value="medium">Medium</option></select></label>
+        <label><span>{language === 'zh' ? '参考图单价（元/张）' : 'Reference price (RMB/image)'}</span><PricingNumberInput value={providerDraft.pricingConfig.referenceImagePriceRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ referenceImagePriceRmb: value })} /></label>
+        <label><span>{language === 'zh' ? '参考图数量（报价预览）' : 'Reference count (preview)'}</span><PricingNumberInput value={providerPricingReferenceCount} min={0} max={9} step={1} precision={0} onCommit={(value) => setProviderPricingReferenceCount(Math.max(0, Math.min(9, Math.round(Number(value) || 0))))} /></label>
         <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.pricingConfig.promotionEligible !== false} onChange={(event) => updateProviderPricingConfig({ promotionEligible: event.target.checked })} /><span>{language === 'zh' ? '允许参与促销' : 'Promotion eligible'}</span></label>
       </div>
       {formulaPricingActive ? (
@@ -3307,7 +3320,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         </div>
       ) : null}
       <div className="adminProviderPricingPreview">
-        <strong>{language === 'zh' ? '原价预览（100积分＝1元）' : 'List-price preview (100 credits = RMB 1)'}</strong>
+        <strong>{language === 'zh' ? `原价预览（参考图 ${providerPricingReferenceCount} 张；100积分＝1元）` : `List-price preview (${providerPricingReferenceCount} references; 100 credits = RMB 1)`}</strong>
         <div><span>{language === 'zh' ? '尺寸' : 'Size'}</span><span>{providerPricingQualityLabels.low}</span><span>{providerPricingQualityLabels.medium}</span><span>{providerPricingQualityLabels.high}</span></div>
         {providerPricingPreviewRows.map((row) => <div key={row.label}><span>{row.label}</span><b>{row.low.credits}</b><b>{row.medium.credits}</b><b>{row.high.credits}</b></div>)}
       </div>
@@ -3513,12 +3526,13 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
               {selectedRangeLabel ? <p className="adminRangeSummary">{t.selectedRange}: <strong>{selectedRangeLabel}</strong></p> : null}
               <div className="adminMetricGrid"><AdminMetricCard icon={<BarChart3 size={18} />} label={t.pv} value={firstNumber(trafficTotals.pv, trafficTotals.pageViews)} /><AdminMetricCard icon={<Users size={18} />} label={t.uv} value={firstNumber(trafficTotals.uv, trafficTotals.activeUsers)} /><AdminMetricCard icon={<ReceiptText size={18} />} label={t.visits} value={firstNumber(trafficTotals.visits, trafficTotals.sessions)} /><AdminMetricCard icon={<UserPlus size={18} />} label={t.newUsers} value={trafficTotals.newUsers} /></div>
             </section> : null}
+            {can(ADMIN_PERMISSIONS.MANAGE_SYSTEM_GROUPS) ? <AdminSystemGroups language={language} session={session} onGroupsChanged={(nextGroups) => { setSystemGroups(nextGroups); void loadAdminData(range, customStart, customEnd); }} /> : null}
             <section className="adminBlock">
               <h3><Users size={18} />{t.users}</h3>
               {status === 'loading' ? <div className="adminState"><LoaderCircle className="spinIcon" size={20} />{t.loadingUsers}</div> : null}
               {status === 'error' ? <p className="authMessage error">{message || t.adminOnly}</p> : null}
               {status !== 'loading' && !users.length && status !== 'error' ? <div className="adminState"><Users size={20} />{t.noUsers}</div> : null}
-              {users.length ? <div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{language === 'zh' ? '登录邮箱 / 用户名' : 'Email / username'}</th><th>{language === 'zh' ? '管理员备注名' : 'Admin note'}</th><th>{t.role}</th><th>{language === 'zh' ? '状态' : 'Status'}</th><th>{t.creditBalance}</th><th>{language === 'zh' ? '最后登录' : 'Last login'}</th><th>{language === 'zh' ? '操作' : 'Actions'}</th></tr></thead><tbody>{users.map((user) => { const accountantTargetBlocked = profile?.role === 'accountant' && user.role !== 'user'; return <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong><span>{user.fullName || '-'}</span></div></div></td><td>{user.adminNote || '-'}</td><td><span className="roleBadge">{user.role}</span></td><td>{user.status}</td><td>{formatNumber(user.creditBalance)}</td><td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'}</td><td><div className="tableActionGroup"><button className="tableAction" type="button" onClick={() => setEditingUser(user)} disabled={accountantTargetBlocked}><Settings size={15} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="tableAction" type="button" onClick={() => setCreditUser(user)} disabled={user.id === profile?.id || accountantTargetBlocked}><Coins size={15} />{t.adminAdjust}</button></div></td></tr>; })}</tbody></table></div> : null}
+              {users.length ? <div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{language === 'zh' ? '登录邮箱 / 用户名' : 'Email / username'}</th><th>{language === 'zh' ? '管理员备注名' : 'Admin note'}</th><th>{t.role}</th><th>{language === 'zh' ? '系统分组' : 'System group'}</th><th>{language === 'zh' ? '状态' : 'Status'}</th><th>{t.creditBalance}</th><th>{language === 'zh' ? '最后登录' : 'Last login'}</th><th>{language === 'zh' ? '操作' : 'Actions'}</th></tr></thead><tbody>{users.map((user) => { const accountantTargetBlocked = profile?.role === 'accountant' && user.role !== 'user'; return <tr key={user.id}><td><div className="adminUserCell">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <UserCircle size={28} />}<div><strong>{user.email}</strong><span>{user.fullName || '-'}</span></div></div></td><td>{user.adminNote || '-'}</td><td><span className="roleBadge">{user.role}</span></td><td>{user.role === 'user' ? user.systemGroupName || '-' : (language === 'zh' ? '管理员直通' : 'Admin bypass')}</td><td>{user.status}</td><td>{formatNumber(user.creditBalance)}</td><td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '-'}</td><td><div className="tableActionGroup"><button className="tableAction" type="button" onClick={() => setEditingUser(user)} disabled={accountantTargetBlocked}><Settings size={15} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="tableAction" type="button" onClick={() => setCreditUser(user)} disabled={user.id === profile?.id || accountantTargetBlocked}><Coins size={15} />{t.adminAdjust}</button></div></td></tr>; })}</tbody></table></div> : null}
             </section>
           </div>
         ) : null}
@@ -3690,6 +3704,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         language={language}
         profile={profile}
         user={editingUser}
+        systemGroups={systemGroups}
         onClose={() => setEditingUser(null)}
         onSaved={(updatedUser) => setUsers((current) => current.map((user) => user.id === updatedUser.id ? { ...user, ...updatedUser } : user))}
       />
@@ -4608,6 +4623,59 @@ function CooperationPage({ language }) {
   );
 }
 
+function PublicNavigation({
+  language,
+  setLanguage,
+  activePage,
+  menuSettings,
+  siteTheme,
+  setSiteTheme,
+  session,
+  profile,
+  onHome,
+  onSolutions,
+  onCases,
+  onTemplates,
+  onCooperation,
+  onApi,
+  onWorkspace,
+  onSignIn,
+  onSignOut,
+  onAccount,
+  onFavorites,
+  onBilling,
+  onProfileChange
+}) {
+  const labels = language === 'zh'
+    ? { solutions: '解决方案', cases: '范例', templates: '模板', cooperation: '合作', api: 'API', workspace: '进入工作台' }
+    : { solutions: 'Solutions', cases: 'Examples', templates: 'Templates', cooperation: 'Cooperation', api: 'API', workspace: 'Open workspace' };
+  const themeLabel = siteTheme === 'light'
+    ? (language === 'zh' ? '切换深色风格' : 'Switch to dark theme')
+    : (language === 'zh' ? '切换白色风格' : 'Switch to light theme');
+
+  return <div className="homeNavShell homeWrap">
+    <nav className="homeNav" aria-label={language === 'zh' ? '首页导航' : 'Homepage navigation'}>
+      <button className="homeBrand" type="button" onClick={onHome} aria-label="Pic365">
+        <img src="/images/pic365-logo.png" alt="Pic365" />
+      </button>
+      <div className="homeNavLinks">
+        <button className={activePage === 'home' ? 'active' : ''} type="button" onClick={onSolutions}>{labels.solutions}</button>
+        <button className={activePage === 'cases' ? 'active' : ''} type="button" onClick={onCases}>{labels.cases}</button>
+        <button className={activePage === 'templates' ? 'active' : ''} type="button" onClick={onTemplates}>{labels.templates}</button>
+        <button className={activePage === 'cooperation' ? 'active' : ''} type="button" onClick={onCooperation}>{labels.cooperation}</button>
+        {menuSettings.effective.api ? <button type="button" onClick={onApi}>{labels.api}</button> : null}
+      </div>
+      <div className="homeNavActions">
+        <LanguageSwitch language={language} setLanguage={setLanguage} combinedLabel />
+        <NotificationBell language={language} session={session} profile={profile} onProfileChange={onProfileChange} onSignIn={onSignIn} />
+        <button className="siteThemeToggle" type="button" aria-pressed={siteTheme === 'light'} aria-label={themeLabel} title={themeLabel} onClick={() => setSiteTheme((current) => current === 'light' ? 'dark' : 'light')}><SunMoon size={20} /></button>
+        <UserMenu language={language} session={session} profile={profile} onSignIn={onSignIn} onSignOut={onSignOut} onAccount={onAccount} onFavorites={onFavorites} onBilling={onBilling} />
+        <button className="homePrimaryButton homeWorkspaceButton" type="button" onClick={onWorkspace}>{labels.workspace}<ArrowUpRight size={16} /></button>
+      </div>
+    </nav>
+  </div>;
+}
+
 function App() {
   useGaPageViews();
   const [siteData, setSiteData] = useState(EMPTY_SITE_DATA);
@@ -4743,6 +4811,10 @@ function App() {
       || window.location.hash === '#assets'
       || window.location.hash === '#canvas'
       || window.location.hash === '#cooperation'
+      || window.location.hash === '#gallery'
+      || window.location.hash === '#home'
+      || window.location.hash === '#templates'
+      || !window.location.hash
     ) return;
     setWorkspaceMode('single');
     setActivePage('create');
@@ -4802,17 +4874,6 @@ function App() {
     handlePageChange('create');
   }, [activePage, profile?.canAccessAdmin]);
 
-  useEffect(() => {
-    const hidden = (activePage === 'templates' && !menuSettings.effective.templates)
-      || (activePage === 'cases' && !menuSettings.effective.cases);
-    if (hidden) handlePageChange('create');
-  }, [activePage, menuSettings.effective.templates, menuSettings.effective.cases]);
-
-  useEffect(() => {
-    if (menuSettings.effective.ecommerce || workspaceMode !== 'ecommerce') return;
-    setWorkspaceMode('single');
-  }, [menuSettings.effective.ecommerce, workspaceMode]);
-
   async function loadFavorites({ silent = true } = {}) {
     if (!isAuthenticatedSession(session)) {
       setFavoriteRows([]);
@@ -4867,9 +4928,7 @@ function App() {
   }, []);
 
   function handlePageChange(nextPage) {
-    let page = PAGE_HASHES[nextPage] ? nextPage : 'create';
-    if (page === 'templates' && !menuSettings.effective.templates) page = 'create';
-    if (page === 'cases' && !menuSettings.effective.cases) page = 'create';
+    let page = Object.prototype.hasOwnProperty.call(PAGE_HASHES, nextPage) ? nextPage : 'home';
     if (page === 'admin' && !profile?.canAccessAdmin) page = 'create';
     setActivePage(page);
     const nextHash = `#${hashForPage(page)}`;
@@ -4877,6 +4936,13 @@ function App() {
       window.history.pushState({}, '', `${window.location.pathname}${window.location.search}${nextHash}`);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function openHomepageSolutions() {
+    if (activePage !== 'home') handlePageChange('home');
+    window.setTimeout(() => {
+      document.getElementById('homepage-audiences')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, activePage === 'home' ? 0 : 60);
   }
 
   function openAuth() {
@@ -5024,7 +5090,7 @@ function App() {
     setAccountOpen(false);
     setBillingOpen(false);
     setWorkspaceMode('single');
-    handlePageChange('create');
+    handlePageChange('home');
   }
 
   function handleProfileChange(nextProfile) {
@@ -5149,12 +5215,50 @@ function App() {
     setAccountInitialSection('overview');
   }
 
+  const isPublicPage = PUBLIC_PAGES.has(activePage);
+  const openWorkspace = () => {
+    setWorkspaceMode('single');
+    handlePageChange('create');
+  };
+  const publicNavigation = <PublicNavigation
+    language={language}
+    setLanguage={setLanguage}
+    activePage={activePage}
+    menuSettings={menuSettings}
+    siteTheme={siteTheme}
+    setSiteTheme={setSiteTheme}
+    session={session}
+    profile={profile}
+    onHome={() => handlePageChange('home')}
+    onSolutions={openHomepageSolutions}
+    onCases={() => handlePageChange('cases')}
+    onTemplates={() => handlePageChange('templates')}
+    onCooperation={() => handlePageChange('cooperation')}
+    onApi={() => window.open(import.meta.env.VITE_API_PORTAL_URL || 'https://www.unikeyx.com', '_blank', 'noopener,noreferrer')}
+    onWorkspace={openWorkspace}
+    onSignIn={openAuth}
+    onSignOut={handleSignOut}
+    onAccount={() => handleOpenAccount('overview')}
+    onFavorites={() => handleOpenAccount('favorites')}
+    onBilling={() => {
+      setBillingNotice('');
+      setBillingOpen(true);
+    }}
+    onProfileChange={setProfile}
+  />;
+
   return (
-    <main className={cx('siteApp', siteTheme === 'light' && 'siteThemeLight')} data-theme={siteTheme}>
-      <header className={cx('topbar', `topbarPage-${activePage}`)}>
-        <a className="brand pic365Brand" href="#" aria-label="pic365">
-          <img className="pic365BrandLogo" src="/images/pic365-logo.png" alt="pic365" />
-        </a>
+    <main className={cx('siteApp', isPublicPage && 'sitePublicPage', activePage === 'home' && 'siteHomepageActive', activePage === 'canvas' && 'siteWorkspaceCanvas', siteTheme === 'light' && 'siteThemeLight')} data-theme={siteTheme}>
+      {isPublicPage && activePage !== 'home' ? publicNavigation : null}
+      {!isPublicPage ? <header className={cx('topbar', 'workspaceTopbar', `topbarPage-${activePage}`)}>
+        <div className="workspaceHomeCluster">
+          <a className="brand pic365Brand" href="#home" aria-label="pic365">
+            <img className="pic365BrandLogo" src="/images/pic365-logo.png" alt="pic365" />
+          </a>
+          <button className="workspaceHomeButton" type="button" onClick={() => handlePageChange('home')}>
+            {t.navHome}
+          </button>
+        </div>
         <div className="topbarControls">
           <nav className={cx('pageTabs', profile?.canAccessAdmin && 'withAdminTab')} aria-label={language === 'zh' ? '主页面' : 'Main pages'}>
             <button
@@ -5174,7 +5278,7 @@ function App() {
             >
               {t.canvasMode}
             </button>
-            {menuSettings.effective.ecommerce ? <button
+            <button
               className={cx('pageTab', activePage === 'create' && workspaceMode === 'ecommerce' && 'active')}
               type="button"
               onClick={() => {
@@ -5183,7 +5287,7 @@ function App() {
               }}
             >
               {t.ecommerceMode}
-            </button> : null}
+            </button>
             <button
               className={cx('pageTab', activePage === 'assets' && 'active')}
               type="button"
@@ -5191,36 +5295,6 @@ function App() {
             >
               {t.navAssets}
             </button>
-            {menuSettings.effective.templates ? <button
-              className={cx('pageTab', activePage === 'templates' && 'active')}
-              type="button"
-              onClick={() => handlePageChange('templates')}
-            >
-              {t.navTemplates}
-            </button> : null}
-            {menuSettings.effective.cases ? <button
-              className={cx('pageTab', activePage === 'cases' && 'active')}
-              type="button"
-              onClick={() => handlePageChange('cases')}
-            >
-              {t.navCases}
-            </button> : null}
-            <button
-              className={cx('pageTab', activePage === 'cooperation' && 'active')}
-              type="button"
-              onClick={() => handlePageChange('cooperation')}
-            >
-              {t.navCooperation}
-            </button>
-            {menuSettings.effective.api ? <button
-              className="pageTab apiPageTab"
-              type="button"
-              onClick={() => window.open(import.meta.env.VITE_API_PORTAL_URL || 'https://www.unikeyx.com', '_blank', 'noopener,noreferrer')}
-              title={t.api}
-            >
-              <Heart size={14} fill="currentColor" aria-hidden="true" />
-              {t.api}
-            </button> : null}
             {profile?.canAccessAdmin ? (
               <button
                 className={cx('pageTab', 'adminPageTab', activePage === 'admin' && 'active')}
@@ -5231,9 +5305,6 @@ function App() {
               </button>
             ) : null}
           </nav>
-          <LanguageSwitch language={language} setLanguage={setLanguage} />
-          <NotificationBell language={language} session={session} profile={profile} onProfileChange={setProfile} />
-          <button className="siteThemeToggle" type="button" aria-pressed={siteTheme === 'light'} aria-label={siteTheme === 'light' ? (language === 'zh' ? '切换深色风格' : 'Switch to dark theme') : (language === 'zh' ? '切换白色风格' : 'Switch to light theme')} title={siteTheme === 'light' ? (language === 'zh' ? '深色风格' : 'Dark theme') : (language === 'zh' ? '白色风格' : 'Light theme')} onClick={() => setSiteTheme((current) => current === 'light' ? 'dark' : 'light')}><SunMoon size={20} /></button>
           <UserMenu
             language={language}
             session={session}
@@ -5248,8 +5319,17 @@ function App() {
             }}
           />
         </div>
-      </header>
+      </header> : null}
       {favoriteMessage ? <div className="toastNotice">{favoriteMessage}</div> : null}
+
+      {activePage === 'home' ? <Homepage
+        language={language}
+        navigation={publicNavigation}
+        onCreate={() => { setWorkspaceMode('single'); handlePageChange('create'); }}
+        onCanvas={() => handlePageChange('canvas')}
+        onEcommerce={() => { setWorkspaceMode('ecommerce'); handlePageChange('create'); }}
+        onCases={() => handlePageChange('cases')}
+      /> : null}
 
       {activePage === 'cases' ? (
         <>
@@ -5421,11 +5501,6 @@ function App() {
               setBillingOpen(true);
             }}
             onProfileChange={handleProfileChange}
-            onGoHome={() => handlePageChange('cases')}
-            onExitCanvas={() => {
-              setWorkspaceMode('single');
-              handlePageChange('create');
-            }}
             onOpenInStudio={(node) => {
               setPendingCanvasReference(node);
               setWorkspaceMode('single');

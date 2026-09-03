@@ -9,10 +9,13 @@ import {
   priceRmbToMicros
 } from '../../shared/chat-billing.js';
 import {
+  bindDefaultSystemGroupChannel,
+  filterProvidersForUser,
   getDb,
   getUserProfile,
   reserveCreditCenti,
-  settleCreditReservationInTransaction
+  settleCreditReservationInTransaction,
+  userCanAccessProvider
 } from './local-db.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
 
@@ -138,13 +141,14 @@ export function ensureDefaultChatProviderConfig() {
     createdAt,
     createdAt
   );
+  bindDefaultSystemGroupChannel('chat', id);
   return normalizeProviderRow(db.prepare('SELECT * FROM chat_provider_configs WHERE id = ?').get(id));
 }
 
-export function listChatProviderConfigs({ admin = false } = {}) {
+export function listChatProviderConfigs({ admin = false, userId = '' } = {}) {
   ensureDefaultChatProviderConfig();
   const rows = getDb().prepare(`SELECT * FROM chat_provider_configs ${admin ? '' : 'WHERE enabled = 1'} ORDER BY is_default DESC, created_at ASC`).all();
-  return rows.map((row) => {
+  const providers = rows.map((row) => {
     const provider = normalizeProviderRow(row);
     if (admin) return provider;
     return {
@@ -154,14 +158,16 @@ export function listChatProviderConfigs({ admin = false } = {}) {
       enabled: provider.enabled
     };
   });
+  return admin ? providers : filterProvidersForUser(providers, userId, 'chat');
 }
 
-export function getChatProviderConfig(providerId = '', { includeSecret = true } = {}) {
+export function getChatProviderConfig(providerId = '', { includeSecret = true, userId = '' } = {}) {
   ensureDefaultChatProviderConfig();
   const db = getDb();
-  const row = providerId
-    ? db.prepare('SELECT * FROM chat_provider_configs WHERE id = ? AND enabled = 1').get(providerId)
-    : db.prepare('SELECT * FROM chat_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC LIMIT 1').get();
+  const rows = providerId
+    ? [db.prepare('SELECT * FROM chat_provider_configs WHERE id = ? AND enabled = 1').get(providerId)].filter(Boolean)
+    : db.prepare('SELECT * FROM chat_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC').all();
+  const row = userId ? rows.find((item) => userCanAccessProvider(userId, 'chat', item.id)) : rows[0];
   return normalizeProviderRow(row, includeSecret);
 }
 

@@ -56,6 +56,14 @@ test('task creation persists the explicitly selected provider for a legacy proje
     enabled: true,
     isDefault: false
   });
+  const defaultGroup = localDb.getSystemUserGroup(localDb.DEFAULT_SYSTEM_USER_GROUP_ID);
+  localDb.saveSystemUserGroup({
+    ...defaultGroup,
+    channels: {
+      ...defaultGroup.channels,
+      image: [...defaultGroup.channels.image, provider.id]
+    }
+  });
   const project = localDb.createEcommerceProject(user.id, {
     projectName: 'Legacy provider project',
     platformId: 'douyin',

@@ -48,6 +48,7 @@ import {
   resolveDeliveryOverlayBoxes
 } from '../shared/ecommerce-delivery.js';
 import { ECOMMERCE_PLATFORMS } from '../shared/ecommerce-catalog.js';
+import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-selection.js';
 import { resolveEcommerceRefinementSize } from '../shared/image-pricing.js';
 import { ImageCreditPrice, useServerImagePricing } from './image-pricing-client.jsx';
 import { clampImagePanOffset } from './image-pan-zoom.js';
@@ -581,6 +582,7 @@ function DeliveryArtboard({ document, generation, slotName, logoUrl, t, editable
 function DeliveryArtboardLightbox({
   document,
   generation,
+  slot,
   slotName,
   logoUrl,
   language,
@@ -600,8 +602,6 @@ function DeliveryArtboardLightbox({
   onUpdateOpacity,
   onResetObject,
   onSave,
-  refinementPricing,
-  refinementPricingLoading,
   onRefine,
   onUploadAssets,
   onClose
@@ -627,6 +627,23 @@ function DeliveryArtboardLightbox({
   const selectedReferenceAssets = referenceInputs
     .map((input) => ({ ...input, asset: availableAssets.find((asset) => asset.id === input.assetId) }))
     .filter((input) => input.asset);
+  const refinementSize = slot ? resolveEcommerceRefinementSize(generation, slot) : '1024x1024';
+  const refinementReferenceCount = countEcommerceReferenceImages({
+    project,
+    slot,
+    assets: [...(assets || []), ...uploadedAssets],
+    baseGenerationId: generation?.id || '',
+    referenceInputs
+  });
+  const {
+    pricing: refinementPricing,
+    loading: refinementPricingLoading
+  } = useServerImagePricing({
+    size: refinementSize,
+    quality: 'medium',
+    providerId: project.imageProviderId,
+    referenceCount: refinementReferenceCount
+  }, { enabled: Boolean(slot && generation?.id) });
   const selectedLayerVisible = selectedObject === 'mask' ? maskVisible : textVisible;
 
   useEffect(() => {
@@ -920,13 +937,6 @@ export default function EcommerceDeliveryCenter({
   const selectedDocument = includedDocuments.find((document) => document.id === selectedDocumentId) || includedDocuments[0] || null;
   const selectedSlot = selectedDocument ? slotById.get(selectedDocument.slotId) : null;
   const selectedGeneration = selectedDocument ? generationById.get(selectedDocument.sourceGenerationId) : null;
-  const selectedRefinementSize = selectedSlot
-    ? resolveEcommerceRefinementSize(selectedGeneration, selectedSlot)
-    : '1024x1024';
-  const {
-    pricing: selectedRefinementPricing,
-    loading: selectedRefinementPricingLoading
-  } = useServerImagePricing({ size: selectedRefinementSize, quality: 'medium', providerId: project.imageProviderId });
   const selectedOutput = selectedDocument ? outputBySlot.get(selectedDocument.slotId) : null;
   const selectedLogo = selectedDocument?.content?.logoAssetId
     ? assets.find((asset) => asset.id === selectedDocument.content.logoAssetId)
@@ -1725,6 +1735,7 @@ export default function EcommerceDeliveryCenter({
         <DeliveryArtboardLightbox
           document={selectedDocument}
           generation={selectedGeneration}
+          slot={selectedSlot}
           slotName={localized(selectedSlot, language)}
           logoUrl={selectedLogo?.imageUrl}
           language={language}
@@ -1744,8 +1755,6 @@ export default function EcommerceDeliveryCenter({
           onUpdateOpacity={updateSelectedObjectOpacity}
           onResetObject={resetCanvasObject}
           onSave={saveDocument}
-          refinementPricing={selectedRefinementPricing}
-          refinementPricingLoading={selectedRefinementPricingLoading}
           onRefine={selectedOutput?.locked ? null : refineSelectedImage}
           onUploadAssets={onUploadRefinementAssets}
           onClose={() => setLargePreviewOpen(false)}

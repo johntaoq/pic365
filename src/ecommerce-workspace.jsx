@@ -71,6 +71,7 @@ import {
   useServerImagePricing,
   useServerImagePricingBatch
 } from './image-pricing-client.jsx';
+import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-selection.js';
 
 function ecommerceProviderCompatibility(provider, assets = []) {
   if (!provider) return { valid: false, error: 'AI_PROVIDER_NOT_CONFIGURED' };
@@ -107,7 +108,7 @@ function isGptImageProvider(provider) {
 
 const copy = {
   en: {
-    title: 'E-commerce image set',
+    title: 'One image in, a full set out',
     projects: 'Product projects',
     collapseProjects: 'Collapse project list',
     expandProjects: 'Expand project list',
@@ -148,6 +149,7 @@ const copy = {
     pasteEmpty: 'No supported image was found on the clipboard. Copy an image, then paste again.',
     pasteUnavailable: 'Clipboard access is unavailable here. Press Ctrl+V directly in this image area.',
     assetTooLarge: 'Each image must be 5 MB or smaller.',
+    referenceTooLarge: 'Each reference image must be no larger than 7 MB.',
     assetCountLimit: 'Each product project supports up to 9 images.',
     uploadingAssets: 'Uploading...',
     uploadFailed: 'One or more files could not be uploaded.',
@@ -306,7 +308,7 @@ const copy = {
     updated: 'Updated'
   },
   zh: {
-    title: '电商套图',
+    title: '一图入，全套生',
     projects: '商品项目',
     collapseProjects: '收起项目列表',
     expandProjects: '展开项目列表',
@@ -347,6 +349,7 @@ const copy = {
     pasteEmpty: '剪贴板中没有可用图片，请复制图片后再粘贴。',
     pasteUnavailable: '当前浏览器无法主动读取剪贴板，请在商品图片区直接按 Ctrl+V。',
     assetTooLarge: '单张图片不能超过 5 MB。',
+    referenceTooLarge: '每张参考图不能超过 7 MB。',
     assetCountLimit: '每个商品项目最多 9 张图片。',
     uploadingAssets: '正在上传……',
     uploadFailed: '部分素材上传失败。',
@@ -783,6 +786,34 @@ function clampImageZoom(value) {
   return Math.min(4, Math.max(0.5, value));
 }
 
+function ecommerceThumbnailHoverPreviewLayout(target, sourceWidth, sourceHeight) {
+  const rect = target?.getBoundingClientRect?.();
+  if (!rect) return null;
+  const viewportWidth = Math.max(320, Number(globalThis.innerWidth || 0));
+  const viewportHeight = Math.max(320, Number(globalThis.innerHeight || 0));
+  const fallbackWidth = Math.max(1, Number(target?.naturalWidth || rect.width || 1));
+  const fallbackHeight = Math.max(1, Number(target?.naturalHeight || rect.height || 1));
+  const ratio = Math.max(0.05, Number(sourceWidth || fallbackWidth) / Math.max(1, Number(sourceHeight || fallbackHeight)));
+  const maxWidth = Math.min(520, viewportWidth - 32);
+  const maxImageHeight = Math.max(150, viewportHeight - 58);
+  let width = Math.min(maxWidth, Math.max(180, rect.width * 3));
+  let height = width / ratio;
+  if (height > maxImageHeight) {
+    height = maxImageHeight;
+    width = height * ratio;
+  }
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = width / ratio;
+  }
+  const totalHeight = height + 34;
+  let left = rect.right + 12;
+  if (left + width > viewportWidth - 12) left = rect.left - width - 12;
+  left = Math.max(12, Math.min(left, viewportWidth - width - 12));
+  const top = Math.max(12, Math.min(rect.top + (rect.height - totalHeight) / 2, viewportHeight - totalHeight - 12));
+  return { left, top, width, height };
+}
+
 function EcommerceImageLightbox({ image, t, onClose }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -952,6 +983,8 @@ function EcommerceVersionCenterModal({
   language,
   platformName,
   productName,
+  project,
+  assets,
   providerId,
   quality,
   actionState,
@@ -974,8 +1007,9 @@ function EcommerceVersionCenterModal({
 
   const baseGeneration = versions.find((item) => item.id === baseGenerationId) || null;
   const revisionSize = slot ? resolveEcommerceRefinementSize(baseGeneration, slot) : '1024x1024';
+  const referenceCount = countEcommerceReferenceImages({ project, slot, assets, baseGenerationId });
   const { pricing: revisionPricing, loading: revisionPricingLoading } = useServerImagePricing(
-    { size: revisionSize, quality, providerId },
+    { size: revisionSize, quality, providerId, referenceCount },
     { enabled: Boolean(slot) }
   );
 
@@ -1105,6 +1139,7 @@ function ecommerceGenerationFailureText(payload, t) {
   if (code === 'AI_PROVIDER_NOT_CONFIGURED' || code === 'INVALID_IMAGE_PROVIDER') return t.providerRequired;
   if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.maiReferenceUnsupported;
   if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maiReferenceLimit;
+  if (code === 'REFERENCE_IMAGE_TOO_LARGE') return t.referenceTooLarge;
   if (code === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceFormat;
   if (code === 'IMAGE_PROVIDER_UNAVAILABLE') return t.providerUnavailable(payload?.providerName, payload?.providerModel);
   if (code === 'IMAGE_PROVIDER_AUTH_FAILED') return t.providerAuthFailed;
@@ -1158,6 +1193,7 @@ export default function EcommerceWorkspace({
   const [selectedWorkflowStep, setSelectedWorkflowStep] = useState(0);
   const [hoveredWorkflowStep, setHoveredWorkflowStep] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
+  const [thumbnailHoverPreview, setThumbnailHoverPreview] = useState(null);
   const [versionCenterSlotId, setVersionCenterSlotId] = useState('');
   const [versionActionState, setVersionActionState] = useState('');
   const formRef = useRef(form);
@@ -2119,6 +2155,7 @@ export default function EcommerceWorkspace({
 
   async function handleDeleteAsset(assetId) {
     if (!signedIn || assetStatus === 'uploading') return;
+    setThumbnailHoverPreview(null);
     setAssetStatus('deleting');
     try {
       const response = await fetch(`/api/ecommerce/assets?id=${encodeURIComponent(assetId)}`, { method: 'DELETE' });
@@ -2307,11 +2344,29 @@ export default function EcommerceWorkspace({
       return false;
     }
     const catalogSlot = platform.slots.find((item) => item.id === slotId);
+    const referenceCount = countEcommerceReferenceImages({
+      project,
+      slot: catalogSlot,
+      assets,
+      baseGenerationId: request.baseGenerationId || '',
+      referenceInputs: request.referenceInputs || []
+    });
+    const baseGeneration = request.baseGenerationId
+      ? generations.find((generation) => generation.id === request.baseGenerationId)
+      : null;
+    const pricingSize = catalogSlot
+      ? request.baseGenerationId
+        ? resolveEcommerceRefinementSize(baseGeneration, catalogSlot)
+        : resolveEcommerceSlotGenerationSize(catalogSlot)
+      : '1024x1024';
     let confirmedPricing;
     try {
-      confirmedPricing = await requestImagePricing(catalogSlot
-        ? { size: resolveEcommerceSlotGenerationSize(catalogSlot), quality: effectiveGenerationQuality, providerId: project.imageProviderId }
-        : { size: '1024x1024', quality: effectiveGenerationQuality, providerId: project.imageProviderId });
+      confirmedPricing = await requestImagePricing({
+        size: pricingSize,
+        quality: effectiveGenerationQuality,
+        providerId: project.imageProviderId,
+        referenceCount
+      });
     } catch (error) {
       setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
       return false;
@@ -2434,9 +2489,10 @@ export default function EcommerceWorkspace({
     try {
       pricingQuotes = await requestImagePricingBatch(slotIds.map((slotId) => {
         const slot = platform.slots.find((item) => item.id === slotId);
+        const referenceCount = countEcommerceReferenceImages({ project, slot, assets });
         return slot
-          ? { key: slotId, size: resolveEcommerceSlotGenerationSize(slot), quality: effectiveGenerationQuality, providerId: project.imageProviderId }
-          : { key: slotId, size: '1024x1024', quality: effectiveGenerationQuality, providerId: project.imageProviderId };
+          ? { key: slotId, size: resolveEcommerceSlotGenerationSize(slot), quality: effectiveGenerationQuality, providerId: project.imageProviderId, referenceCount }
+          : { key: slotId, size: '1024x1024', quality: effectiveGenerationQuality, providerId: project.imageProviderId, referenceCount };
       }));
     } catch (error) {
       setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
@@ -2623,7 +2679,8 @@ export default function EcommerceWorkspace({
     key: slot.id,
     size: resolveEcommerceSlotGenerationSize(slot),
     quality: effectiveGenerationQuality,
-    providerId: form.imageProviderId
+    providerId: form.imageProviderId,
+    referenceCount: countEcommerceReferenceImages({ project: form, slot, assets })
   })));
   const productionPricingBySlot = new Map(productionSlots.map((slot) => [slot.id, productionPricingQuotes[slot.id] || null]));
   const selectableProductionSlots = productionSlots.filter((item) => !outputsBySlot.get(item.id)?.locked);
@@ -2653,8 +2710,49 @@ export default function EcommerceWorkspace({
   const resetLabelFor = (field) => hasAiOriginal(field) ? t.restoreAiField : t.clearField;
   const showProjectList = projects.length > 0;
 
+  function showThumbnailHoverPreview(event, asset) {
+    const image = event.currentTarget?.querySelector?.('img') || event.currentTarget;
+    const layout = ecommerceThumbnailHoverPreviewLayout(image, asset?.width, asset?.height);
+    const imageUrl = asset?.imageUrl || asset?.thumbnailUrl || asset?.previewUrl || asset?.originalUrl;
+    if (!layout || !imageUrl) return;
+    const dimensions = Number(asset?.width) > 0 && Number(asset?.height) > 0
+      ? `${asset.width}×${asset.height}`
+      : '';
+    setThumbnailHoverPreview({
+      ...layout,
+      imageUrl,
+      details: [asset?.fileName, dimensions].filter(Boolean)
+    });
+  }
+
+  function hideThumbnailHoverPreview() {
+    setThumbnailHoverPreview(null);
+  }
+
   return (
     <div className="ecommerceWorkspace">
+      {thumbnailHoverPreview ? (
+        <div
+          className="freeImageThumbnailHoverPreview ecommerceThumbnailHoverPreview"
+          role="tooltip"
+          style={{
+            left: `${thumbnailHoverPreview.left}px`,
+            top: `${thumbnailHoverPreview.top}px`,
+            width: `${thumbnailHoverPreview.width}px`
+          }}
+        >
+          <img
+            src={thumbnailHoverPreview.imageUrl}
+            alt=""
+            style={{ height: `${thumbnailHoverPreview.height}px` }}
+            decoding="async"
+            draggable={false}
+          />
+          {thumbnailHoverPreview.details.length ? (
+            <div>{thumbnailHoverPreview.details.map((detail) => <span key={detail}>{detail}</span>)}</div>
+          ) : null}
+        </div>
+      ) : null}
       {taskStartedNotice ? (
         <div className="ecommerceTaskStartedToast" role="status" aria-live="polite">
           <CircleCheck size={22} />
@@ -2668,7 +2766,7 @@ export default function EcommerceWorkspace({
         </div>
       ) : null}
       <div className="ecommerceHero">
-        <h2>{t.title}</h2>
+        <p>{t.title}</p>
       </div>
 
       <div className="ecommerceWorkflow" aria-label={language === 'zh' ? '项目流程' : 'Project workflow'}>
@@ -2877,14 +2975,19 @@ export default function EcommerceWorkspace({
                 {assets.length ? (
                   <div className="ecommerceAssetGrid">
                     {assets.map((asset) => (
-                      <article className={`${asset.isMaster ? 'master' : ''} ${asset.available === false ? 'unavailable' : ''}`.trim()} key={asset.id}>
+                      <article
+                        className={`${asset.isMaster ? 'master' : ''} ${asset.available === false ? 'unavailable' : ''}`.trim()}
+                        key={asset.id}
+                        onMouseEnter={(event) => { if (asset.available !== false) showThumbnailHoverPreview(event, asset); }}
+                        onMouseLeave={hideThumbnailHoverPreview}
+                      >
                         {asset.available === false ? <div className="ecommerceAssetUnavailable"><ShieldAlert size={22} /><strong>{t.assetUnavailable}</strong><small>{t.assetUnavailableHint}</small></div> : <img src={asset.imageUrl} alt={asset.fileName} loading="lazy" />}
                         {asset.isMaster ? <em className="ecommerceMasterBadge"><Check size={12} /> {t.masterAsset}</em> : null}
                         <div className="ecommerceAssetInfo">
                           <span>{assetTypeLabels[asset.assetType] || asset.assetType}</span>
                           <strong title={asset.fileName}>{asset.fileName}</strong>
                         </div>
-                        <button className="ecommerceAssetDeleteButton" type="button" aria-label={`${t.deleteAsset}: ${asset.fileName}`} onClick={() => handleDeleteAsset(asset.id)}>
+                        <button className="ecommerceAssetDeleteButton" type="button" aria-label={`${t.deleteAsset}: ${asset.fileName}`} onMouseEnter={hideThumbnailHoverPreview} onFocus={hideThumbnailHoverPreview} onPointerDown={hideThumbnailHoverPreview} onClick={() => handleDeleteAsset(asset.id)}>
                           <Trash2 size={14} />
                         </button>
                         {asset.available !== false && !asset.isMaster && asset.assetType === 'product' ? (
@@ -3283,6 +3386,8 @@ export default function EcommerceWorkspace({
         language={language}
         platformName={localName(platform)}
         productName={form.productName}
+        project={form}
+        assets={assets}
         providerId={form.imageProviderId}
         quality={effectiveGenerationQuality}
         actionState={versionActionState}

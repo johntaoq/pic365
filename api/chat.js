@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const history = listChatMessages(auth.user.id, req.query?.limit);
-    const provider = getChatProviderConfig('', { includeSecret: false });
+    const provider = getChatProviderConfig('', { includeSecret: false, userId: auth.user.id });
     return res.status(200).json({
       ok: true,
       ...history,
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     const rawImages = Array.isArray(body.images) ? body.images.slice(0, MAX_IMAGES) : [];
     const images = rawImages.map((item) => inspectImageDataUrl(item?.dataUrl || item)).filter(Boolean);
     if (rawImages.length !== images.length) return res.status(400).json({ ok: false, error: 'INVALID_CHAT_IMAGE' });
-    const provider = getChatProviderConfig();
+    const provider = getChatProviderConfig('', { userId: auth.user.id });
     if (!provider) return res.status(503).json({ ok: false, error: 'CHAT_PROVIDER_NOT_CONFIGURED' });
     const chat = buildChatMessages(auth.user.id, { text, images: images.map((item) => item.dataUrl) });
     const textualContext = chat.messages.map((item) => Array.isArray(item.content)

@@ -3,7 +3,7 @@ import { requirePermission } from './_lib/governance.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import { readJsonBody } from './_lib/billing.js';
 import { getImagePromotionConfig, getImageProviderConfig, updateImagePromotionConfig } from './_lib/local-db.js';
-import { normalizeImageQuality, validateImageSizeForModel } from '../shared/image-generation.js';
+import { normalizeImageQuality, validateImageReferenceInputsForModel, validateImageSizeForModel } from '../shared/image-generation.js';
 import {
   applyImagePromotion,
   IMAGE_CREDIT_ROUNDING_STEP,
@@ -22,10 +22,10 @@ function json(res, status, payload) {
   res.status(status).json(payload);
 }
 
-function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig()) {
+function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig(), userId = '') {
   // Pricing only needs the provider model and pricing policy. Avoid decrypting
   // the API key here so a key-rotation/configuration issue cannot block quotes.
-  const provider = getImageProviderConfig(String(input.providerId || '').trim(), { includeSecret: false });
+  const provider = getImageProviderConfig(String(input.providerId || '').trim(), { includeSecret: false, userId });
   if (!provider) {
     const error = new Error('AI_PROVIDER_NOT_CONFIGURED');
     error.code = 'AI_PROVIDER_NOT_CONFIGURED';
@@ -41,8 +41,15 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
   }
   const quality = normalizeImageQuality(input.quality, 'low');
   const count = Math.max(1, Math.min(50, Math.round(Number(input.count) || 1)));
+  const referenceCount = Math.max(0, Math.min(9, Math.round(Number(input.referenceCount) || 0)));
+  const referenceCheck = validateImageReferenceInputsForModel({ model: provider.model, count: referenceCount });
+  if (!referenceCheck.valid) {
+    const error = new Error(referenceCheck.error);
+    error.code = referenceCheck.error;
+    throw error;
+  }
   const pricing = applyImagePromotion(
-    getImageGenerationPricing({ size, quality, model: provider.model }, provider.pricingConfig),
+    getImageGenerationPricing({ size, quality, model: provider.model, referenceCount }, provider.pricingConfig),
     promotionConfig
   );
   return {
@@ -83,14 +90,17 @@ function publicPayload(extra = {}) {
 }
 
 export default async function handler(req, res) {
+  const auth = authenticateRequest(req, { allowAnonymous: req.method !== 'PATCH' });
+  if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
   if (req.method === 'GET') {
     try {
       const pricing = quoteImagePricing({
         size: req.query?.size,
         quality: req.query?.quality,
         count: req.query?.count,
+        referenceCount: req.query?.referenceCount,
         providerId: req.query?.providerId
-      });
+      }, getImagePromotionConfig(), auth.user?.id || '');
       return json(res, 200, publicPayload({ pricing }));
     } catch (error) {
       return json(res, 400, { ok: false, error: error?.code || 'INVALID_PRICING_REQUEST', reason: error?.reason || undefined });
@@ -105,7 +115,7 @@ export default async function handler(req, res) {
       const promotionConfig = getImagePromotionConfig();
       const quotes = items.map((item, index) => ({
         key: String(item?.key || index).slice(0, 120),
-        pricing: quoteImagePricing(item, promotionConfig)
+        pricing: quoteImagePricing(item, promotionConfig, auth.user?.id || '')
       }));
       return json(res, 200, publicPayload({ quotes }));
     } catch (error) {
@@ -118,8 +128,6 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  const auth = authenticateRequest(req);
-  if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
   try {
     requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_PROMOTIONS);
   } catch {

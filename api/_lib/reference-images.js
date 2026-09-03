@@ -4,12 +4,11 @@ import sharp from 'sharp';
 import { getGeneration } from './local-db.js';
 import { getVariantRecord } from './media-assets.js';
 import { readStoredFile, readStoredImage } from './storage.js';
-import { validateImageReferenceInputsForModel } from '../../shared/image-generation.js';
+import { IMAGE_REFERENCE_MAX_BYTES, validateImageReferenceInputsForModel } from '../../shared/image-generation.js';
 
 export const MAX_REFERENCE_IMAGES = 9;
 const MAX_ANNOTATIONS_PER_IMAGE = 64;
-const MAX_INLINE_REFERENCE_BYTES = 2 * 1024 * 1024;
-const MAX_INLINE_REFERENCE_TOTAL_BYTES = 16 * 1024 * 1024;
+const MAX_INLINE_REFERENCE_TOTAL_BYTES = MAX_REFERENCE_IMAGES * IMAGE_REFERENCE_MAX_BYTES;
 const MAX_INLINE_REFERENCE_PIXELS = 40_000_000;
 const MAX_BRUSH_POINTS = 512;
 const ANNOTATION_TYPES = new Set(['brush', 'rectangle', 'ellipse', 'line']);
@@ -70,7 +69,8 @@ function parseInlineReference(value) {
   const match = String(value || '').match(/^data:([^;,]+);base64,([a-z0-9+/=\s]+)$/i);
   if (!match || !INLINE_REFERENCE_TYPES.has(match[1].toLowerCase())) return null;
   const bytes = Buffer.from(match[2], 'base64');
-  if (!bytes.length || bytes.length > MAX_INLINE_REFERENCE_BYTES) return null;
+  if (!bytes.length) return null;
+  if (bytes.length > IMAGE_REFERENCE_MAX_BYTES) throw referenceError('REFERENCE_IMAGE_TOO_LARGE');
   return {
     contentType: match[1].toLowerCase(),
     bytes,
@@ -187,6 +187,9 @@ export async function loadReferenceImageInputs(userId, references, { model = '' 
       }
       stored = await readStoredImage(generation.storage_path);
     }
+    if (!stored?.bytes?.length || stored.bytes.length > IMAGE_REFERENCE_MAX_BYTES) {
+      throw referenceError('REFERENCE_IMAGE_TOO_LARGE');
+    }
     const sourceType = normalizedMimeType(stored?.contentType);
     if (!allowedTypes.has(sourceType)) {
       throw referenceError('INVALID_REFERENCE_IMAGE_FORMAT');
@@ -207,13 +210,20 @@ export async function loadReferenceImageInputs(userId, references, { model = '' 
   return images;
 }
 
-export function buildReferencePrompt(prompt, references) {
+export function buildReferencePrompt(prompt, references, { includeNumberedMap = true } = {}) {
   if (!references.length) return prompt;
   const markedIndexes = references
     .map((reference, index) => reference.annotations.length ? index + 1 : null)
     .filter(Boolean);
+  const numberedMap = includeNumberedMap
+    ? references.map((reference, index) => index === 0
+      ? 'Image 1 / Reference 1 / 图1 / 参考图1 / 母版 = supplied reference image 1. This is the primary image and the default editing subject.'
+      : `Image ${index + 1} / Reference ${index + 1} / 图${index + 1} / 参考图${index + 1} = supplied reference image ${index + 1}.`
+    ).join('\n')
+    : '';
   return [
     `Use the ${references.length} supplied reference image${references.length === 1 ? '' : 's'} in their given order.`,
+    numberedMap ? `Fixed image naming and input order:\n${numberedMap}\nInterpret the same number as the same supplied image whenever the user says Image N, Reference N, 图N, or 参考图N. “Master” and “母版” always mean Image 1.` : '',
     markedIndexes.length
       ? 'This is a localized image-editing task, not a new image composition.'
       : 'Preserve the visual facts the user is referring to, but follow the written request for composition and changes.',

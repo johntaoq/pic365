@@ -6,20 +6,25 @@ import {
   assignCanvasNodeNames,
   canvasBatchResultPlacements,
   canvasReferenceConnectorPath,
+  canvasReferenceConnectorMidpoint,
   canvasReferenceEdges,
   canvasReferenceRemovalImpact,
   canvasImageDownloadFilename,
+  canvasMovableNodeIds,
   inferCanvasReferenceRole,
   canvasReferencePrompt,
   canvasNodeBounds,
   canvasConnectorPath,
+  canvasConnectorMidpoint,
   canvasPipelineLabel,
   clampCanvasZoom,
   clipboardImageFiles,
   isCanvasUiTarget,
   normalizeCanvasState,
   orderedCanvasReferenceNodes,
+  removeCanvasReferenceConnection,
   replaceCanvasTaskForRetry,
+  setCanvasNodesLocked,
   viewportRightMiddlePosition,
   viewportForCanvasNodes
 } from '../shared/infinite-canvas.js';
@@ -105,6 +110,13 @@ test('automatic canvas layout places child generations to the right', () => {
   assert.equal(clampCanvasZoom(0), 1);
 });
 
+test('generation settings popover is positioned at the generation curve midpoint', () => {
+  assert.deepEqual(canvasConnectorMidpoint(
+    { x: 100, y: 80 },
+    { x: 760, y: 360 }
+  ), { x: 576, y: 355 });
+});
+
 test('automatic canvas layout preserves locked entity positions', () => {
   const arranged = arrangeCanvasNodes([
     { id: 'locked', type: 'image', x: 777, y: 333, locked: true, createdAt: '2026-01-01T00:00:00.000Z' },
@@ -112,6 +124,25 @@ test('automatic canvas layout preserves locked entity positions', () => {
   ]);
   assert.deepEqual({ x: arranged[0].x, y: arranged[0].y }, { x: 777, y: 333 });
   assert.notDeepEqual({ x: arranged[1].x, y: arranged[1].y }, { x: 999, y: 999 });
+});
+
+test('selection locking and movement apply to every canvas entity type', () => {
+  const nodes = [
+    { id: 'idea', type: 'idea', locked: false },
+    { id: 'image', type: 'image', locked: false },
+    { id: 'video', type: 'video', locked: true },
+    { id: 'task', type: 'task', locked: false }
+  ];
+  const selectedIds = nodes.map((node) => node.id);
+  assert.deepEqual(canvasMovableNodeIds(nodes, selectedIds), ['idea', 'image', 'task']);
+
+  const locked = setCanvasNodesLocked(nodes, selectedIds, true);
+  assert.ok(locked.every((node) => node.locked));
+  assert.deepEqual(canvasMovableNodeIds(locked, selectedIds), []);
+
+  const unlocked = setCanvasNodesLocked(locked, selectedIds, false);
+  assert.ok(unlocked.every((node) => !node.locked));
+  assert.deepEqual(canvasMovableNodeIds(unlocked, selectedIds), selectedIds);
 });
 
 test('canvas state keeps persisted task metadata for reload recovery', () => {
@@ -177,9 +208,9 @@ test('reference tray keeps the primary first and supporting references ordered',
   const ordered = orderedCanvasReferenceNodes(nodes, 'primary');
   assert.deepEqual(ordered.map((node) => node.id), ['primary', 'subject', 'style']);
   const prompt = canvasReferencePrompt('保留产品并优化画面', ordered.map((node, index) => ({ ...node, isPrimaryReference: index === 0 })), 'zh');
-  assert.match(prompt, /母版 = 输入图1/);
-  assert.match(prompt, /参考图1 = 输入图2.*主体参考/);
-  assert.match(prompt, /参考图2 = 输入图3.*风格参考/);
+  assert.match(prompt, /母版 \/ 参考图1 \/ 图1 = 输入图1/);
+  assert.match(prompt, /参考图2 \/ 图2 = 输入图2.*主体参考/);
+  assert.match(prompt, /参考图3 \/ 图3 = 输入图3.*风格参考/);
   assert.match(prompt, /用户修改要求：保留产品并优化画面/);
 });
 
@@ -193,6 +224,36 @@ test('reference edges are direct one-hop links and never recurse through another
   const edges = canvasReferenceEdges(nodes);
   assert.deepEqual(edges.map((edge) => `${edge.source.id}->${edge.target.id}`).sort(), ['color->style', 'style->primary']);
   assert.match(canvasReferenceConnectorPath(edges[0].source, edges[0].target), /^M /);
+});
+
+test('reference delete control is positioned on the reference curve midpoint', () => {
+  const source = { x: 100, y: 80 };
+  const target = { x: 760, y: 360 };
+  assert.deepEqual(canvasReferenceConnectorMidpoint(source, target), {
+    x: (100 + 292 + 760) / 2,
+    y: (80 + 270 / 2 + 360 + 270 / 2) / 2
+  });
+});
+
+test('removing a reference connection never removes the generation relationship', () => {
+  const nodes = [
+    { id: 'generation-parent', type: 'image' },
+    { id: 'style', type: 'image' },
+    { id: 'color', type: 'image' },
+    {
+      id: 'target',
+      type: 'image',
+      parentId: 'generation-parent',
+      referenceLinks: [
+        { nodeId: 'style', role: 'style', order: 1 },
+        { nodeId: 'color', role: 'color', order: 2 }
+      ]
+    }
+  ];
+  const updated = removeCanvasReferenceConnection(nodes, 'style', 'target');
+  const target = updated.find((node) => node.id === 'target');
+  assert.equal(target.parentId, 'generation-parent');
+  assert.deepEqual(target.referenceLinks, [{ nodeId: 'color', role: 'color', order: 1 }]);
 });
 
 test('reference removal impact distinguishes internal and external relationships', () => {

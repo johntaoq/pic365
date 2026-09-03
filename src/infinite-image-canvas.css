@@ -817,8 +817,6 @@
 .infiniteCanvasProjectDock select { width: 126px; padding: 0 7px; }
 .infiniteCanvasProjectDock input { width: 142px; padding: 0 8px; }
 .infiniteCanvasProjectDock input:disabled { color: #7d8da3; cursor: not-allowed; opacity: 0.7; }
-.infiniteCanvasProjectDock .infiniteCanvasExit { color: #aaf4dd; font-weight: 850; }
-.infiniteCanvasProjectDock .infiniteCanvasHome { color: #fef08a; font-weight: 900; }
 .infiniteCanvasProjectDock .infiniteCanvasSaveState {
   flex: 0 0 auto;
   font-family: inherit;
@@ -869,6 +867,40 @@
   filter: drop-shadow(0 0 7px rgba(75, 231, 184, 0.2));
 }
 
+.infiniteCanvasGenerationConnection {
+  pointer-events: none;
+}
+
+.infiniteCanvasGenerationConnection .infiniteCanvasGenerationPoint {
+  fill: #8df4cc;
+  stroke: rgba(7, 15, 29, 0.88);
+  stroke-width: 3;
+  pointer-events: all;
+  cursor: help;
+  filter: drop-shadow(0 0 7px rgba(75, 231, 184, 0.7));
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: fill 120ms ease, stroke 120ms ease, transform 120ms ease, filter 120ms ease;
+}
+
+.infiniteCanvasGenerationConnection .infiniteCanvasGenerationPoint:hover,
+.infiniteCanvasGenerationConnection .infiniteCanvasGenerationPoint:focus,
+.infiniteCanvasGenerationConnection.active .infiniteCanvasGenerationPoint {
+  fill: #c6ffe9;
+  stroke: #3dddb2;
+  outline: none;
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 10px rgba(75, 231, 184, 0.92));
+}
+
+.infiniteCanvasGenerationConnection:hover .generationLink,
+.infiniteCanvasGenerationConnection:focus-within .generationLink,
+.infiniteCanvasGenerationConnection.active .generationLink {
+  stroke: rgba(141, 244, 204, 0.92);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 9px rgba(75, 231, 184, 0.5));
+}
+
 .infiniteCanvasConnections path.referenceLink {
   stroke: rgba(82, 164, 255, 0.92);
   stroke-width: 2.4;
@@ -876,6 +908,170 @@
   filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.48));
   animation: infiniteCanvasReferenceFlow 1.2s linear infinite;
 }
+
+.infiniteCanvasReferenceConnection {
+  pointer-events: none;
+}
+
+.infiniteCanvasReferenceConnection .infiniteCanvasReferenceHit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.infiniteCanvasReferenceConnection:hover .referenceLink,
+.infiniteCanvasReferenceConnection:focus-within .referenceLink {
+  stroke: #75baff;
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 9px rgba(59, 130, 246, 0.72));
+}
+
+.infiniteCanvasReferenceDeleteObject {
+  overflow: visible;
+  opacity: 0;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.76);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.infiniteCanvasReferenceConnection:hover .infiniteCanvasReferenceDeleteObject,
+.infiniteCanvasReferenceConnection:focus-within .infiniteCanvasReferenceDeleteObject {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.infiniteCanvasReferenceDeleteObject button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(125, 211, 252, 0.72);
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(7, 15, 29, 0.96);
+  color: #fda4af;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.36), 0 0 0 3px rgba(59, 130, 246, 0.12);
+  cursor: pointer;
+}
+
+.infiniteCanvasReferenceDeleteObject button:hover,
+.infiniteCanvasReferenceDeleteObject button:focus-visible {
+  border-color: rgba(251, 113, 133, 0.9);
+  background: rgba(68, 15, 29, 0.97);
+  color: #ffe4e6;
+  outline: none;
+}
+
+.infiniteCanvasGenerationPopover {
+  position: absolute;
+  z-index: 28;
+  display: grid;
+  gap: 7px;
+  width: 286px;
+  max-height: 190px;
+  overflow: hidden;
+  border: 1px solid rgba(141, 244, 204, 0.34);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(7, 15, 29, 0.91);
+  color: #dbe9f6;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42), 0 0 24px rgba(45, 212, 191, 0.1);
+  backdrop-filter: blur(14px);
+  transform: translate(-50%, calc(-100% + 9px));
+  transform-origin: bottom center;
+}
+
+.infiniteCanvasGenerationPopover > header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #a7f3d0;
+}
+
+.infiniteCanvasGenerationPopover > header svg {
+  flex: 0 0 auto;
+}
+
+.infiniteCanvasGenerationPopover > header strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infiniteCanvasGenerationPopover dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 8px;
+  margin: 0;
+}
+
+.infiniteCanvasGenerationPopover dl > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px;
+  align-items: baseline;
+}
+
+.infiniteCanvasGenerationPopover dt {
+  color: #7289a2;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.infiniteCanvasGenerationPopover dd {
+  overflow: hidden;
+  margin: 0;
+  color: #d6e5f3;
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infiniteCanvasGenerationPopover > section {
+  min-height: 0;
+  border-top: 1px solid rgba(137, 165, 204, 0.14);
+  padding-top: 7px;
+}
+
+.infiniteCanvasGenerationPopover > section > strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #8aa0b8;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.infiniteCanvasGenerationPopover > section > p {
+  max-height: 66px;
+  overflow: auto;
+  margin: 0;
+  padding-right: 4px;
+  color: #c3d2e2;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-color: rgba(141, 244, 204, 0.36) transparent;
+  scrollbar-width: thin;
+}
+
+.infiniteCanvasGenerationPopover > section > p::-webkit-scrollbar { width: 5px; }
+.infiniteCanvasGenerationPopover > section > p::-webkit-scrollbar-track { background: transparent; }
+.infiniteCanvasGenerationPopover > section > p::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(141, 244, 204, 0.34); }
 
 .infiniteCanvasConnections path.referenceDraft {
   stroke-width: 3;
@@ -936,6 +1132,8 @@
 }
 
 .infiniteCanvasSelectionActions button:hover { background: rgba(248, 113, 113, 0.22); color: #fff1f2; }
+.infiniteCanvasSelectionActions button.lockAction { border-color: rgba(96, 165, 250, 0.38); background: rgba(59, 130, 246, 0.12); color: #cbe1ff; }
+.infiniteCanvasSelectionActions button.lockAction:hover { background: rgba(59, 130, 246, 0.22); color: #eff6ff; }
 .infiniteCanvasSelectionActions button:disabled { border-color: rgba(148, 163, 184, 0.22); background: rgba(148, 163, 184, 0.1); color: #8290a3; cursor: not-allowed; opacity: 0.72; }
 
 .infiniteCanvasImageContextMenu {
@@ -1030,6 +1228,11 @@
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.2), 0 0 28px rgba(45, 212, 191, 0.28), 0 20px 58px rgba(0, 0, 0, 0.5);
 }
 
+.infiniteCanvasNode.selectedMovable,
+.infiniteCanvasNode.selectedMovable > :not(button):not(a) { cursor: grab; }
+.infiniteCanvasNode.selectedMovable:active,
+.infiniteCanvasNode.selectedMovable:active > :not(button):not(a) { cursor: grabbing; }
+
 .infiniteCanvasNode.primarySelected { border-color: #67e8f9; outline-color: rgba(103, 232, 249, 0.62); box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25), 0 0 34px rgba(34, 211, 238, 0.38), 0 22px 62px rgba(0, 0, 0, 0.54); }
 
 .infiniteCanvasNode.primaryImageSelected {
@@ -1063,6 +1266,7 @@
 
 .infiniteCanvasNode.adopted > header { background: rgba(250, 204, 21, 0.065); }
 .infiniteCanvasNode.locked > header { border-bottom-color: rgba(125, 211, 252, 0.28); }
+.infiniteCanvasNode.locked,
 .infiniteCanvasNode.locked > header { cursor: not-allowed; }
 
 .infiniteCanvasNode > header {
@@ -1797,6 +2001,9 @@
   color: #fecaca;
 }
 
+.infiniteCanvasBatchActions button:disabled { cursor: not-allowed; opacity: 0.46; }
+.infiniteCanvasBatchActions button.active { border-color: rgba(96, 165, 250, 0.42); background: rgba(59, 130, 246, 0.14); color: #dbeafe; }
+
 .infiniteCanvasVersionActions {
   display: flex;
   min-width: 0;
@@ -2177,7 +2384,7 @@
 
 .infiniteCanvasModalBackdrop {
   position: fixed;
-  z-index: 120;
+  z-index: var(--layer-modal, 1200);
   inset: 0;
   display: grid;
   place-items: center;
@@ -2626,8 +2833,6 @@
 
 .infiniteCanvasPage.themeLight .infiniteCanvasProjectDock > button:hover,
 .infiniteCanvasPage.themeLight .infiniteCanvasTools button:hover { background: #ddf2eb; color: #116657; }
-.infiniteCanvasPage.themeLight .infiniteCanvasProjectDock .infiniteCanvasExit { color: #147866; }
-.infiniteCanvasPage.themeLight .infiniteCanvasProjectDock .infiniteCanvasHome { color: #9a6500; }
 .infiniteCanvasPage.themeLight .infiniteCanvasProjectDock > button.danger { color: #c2414b; }
 .infiniteCanvasPage.themeLight .infiniteCanvasProjectDock > em { color: #147866; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSaveState { color: #63768d; }
@@ -2658,6 +2863,20 @@
   stroke: rgba(13, 148, 136, 0.54);
   filter: drop-shadow(0 0 4px rgba(13, 148, 136, 0.18));
 }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection:hover .generationLink,
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection:focus-within .generationLink,
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection.active .generationLink { stroke: #0d9488; filter: drop-shadow(0 0 7px rgba(13, 148, 136, 0.32)); }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection .infiniteCanvasGenerationPoint { fill: #0d9488; stroke: rgba(255, 255, 255, 0.96); filter: drop-shadow(0 0 6px rgba(13, 148, 136, 0.48)); }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection .infiniteCanvasGenerationPoint:hover,
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection .infiniteCanvasGenerationPoint:focus,
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationConnection.active .infiniteCanvasGenerationPoint { fill: #19b89b; stroke: #d8fff3; filter: drop-shadow(0 0 9px rgba(13, 148, 136, 0.64)); }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover { border-color: rgba(13, 148, 136, 0.3); background: rgba(255, 255, 255, 0.94); color: #30445a; box-shadow: 0 16px 40px rgba(55, 78, 103, 0.2), 0 0 20px rgba(13, 148, 136, 0.08); }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover > header { color: #147866; }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover dt,
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover > section > strong { color: #6d8095; }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover dd,
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover > section > p { color: #30445a; }
+.infiniteCanvasPage.themeLight .infiniteCanvasGenerationPopover > section { border-top-color: #dce4ec; }
 .infiniteCanvasPage.themeLight .infiniteCanvasConnections path.referenceLink {
   stroke: rgba(37, 99, 235, 0.84);
   filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.24));
@@ -2666,6 +2885,8 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions { border-color: rgba(13, 148, 136, 0.58); background: rgba(255, 255, 255, 0.97); color: #17685a; box-shadow: 0 14px 34px rgba(55, 78, 103, 0.2), 0 0 20px rgba(13, 148, 136, 0.13); }
 .infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions button { border-color: rgba(225, 70, 82, 0.34); background: #fff0f1; color: #b83e47; }
 .infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions button:hover { background: #ffe4e6; color: #a62f3a; }
+.infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions button.lockAction { border-color: rgba(37, 99, 235, 0.3); background: #eaf2ff; color: #285eaa; }
+.infiniteCanvasPage.themeLight .infiniteCanvasSelectionActions button.lockAction:hover { background: #dce9ff; color: #1d4f91; }
 .infiniteCanvasPage.themeLight .infiniteCanvasDropReference { background: rgba(236, 253, 245, 0.86); color: #116657; }
 
 .infiniteCanvasPage.themeLight .infiniteCanvasNode {
@@ -2736,6 +2957,7 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasBatchActions button,
 .infiniteCanvasPage.themeLight .infiniteCanvasBranchNav button { border-color: rgba(13, 148, 136, 0.24); background: #eaf7f3; color: #17685a; }
 .infiniteCanvasPage.themeLight .infiniteCanvasBatchActions button.danger { background: #fff0f1; color: #bd3d49; }
+.infiniteCanvasPage.themeLight .infiniteCanvasBatchActions button.active { border-color: rgba(37, 99, 235, 0.3); background: #eaf2ff; color: #285eaa; }
 .infiniteCanvasPage.themeLight .infiniteCanvasVersionActions button,
 .infiniteCanvasPage.themeLight .infiniteCanvasVersionActions a { border-color: #d5dfe8; background: #f7f9fb; color: #526980; }
 .infiniteCanvasPage.themeLight .infiniteCanvasVersionActions .active { border-color: rgba(217, 144, 0, 0.42); background: #fff6da; color: #946100; }
@@ -2750,6 +2972,9 @@
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceSourceMenu button { color: #40566e; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceSourceMenu button:hover { background: #edf4ff; color: #245cae; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceTray { border-color: rgba(37, 99, 235, 0.18); background: #f7fafd; }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceDeleteObject button { border-color: #8ab9df; background: rgba(255, 255, 255, 0.98); color: #c43d50; box-shadow: 0 7px 18px rgba(55, 78, 103, 0.2), 0 0 0 3px rgba(37, 99, 235, 0.08); }
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceDeleteObject button:hover,
+.infiniteCanvasPage.themeLight .infiniteCanvasReferenceDeleteObject button:focus-visible { border-color: #df7a87; background: #fff1f3; color: #a8273a; }
 .infiniteCanvasPage.themeLight .infiniteCanvasReferenceTray.dropActive { border-color: rgba(37, 99, 235, 0.72); background: #eaf2ff; }
 .infiniteCanvasPage.themeLight .infiniteCanvasPrimaryReference { border-right-color: #dce4ec; }
 .infiniteCanvasPage.themeLight .infiniteCanvasPrimaryReference article > button:first-child,
@@ -2928,8 +3153,6 @@
   .infiniteCanvasLayout { min-height: 0; border-radius: 0; }
   .infiniteCanvasStage { min-height: 0; }
   .infiniteCanvasProjectDock { right: auto; left: 8px; max-width: calc(76.923vw - 12px); }
-  .infiniteCanvasProjectDock .infiniteCanvasExit span,
-  .infiniteCanvasProjectDock .infiniteCanvasHome span,
   .infiniteCanvasProjectDock .infiniteCanvasSaveState span { display: none; }
   .infiniteCanvasProjectDock input { width: 120px; }
   .infiniteCanvasProjectDock select { width: 112px; }

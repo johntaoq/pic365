@@ -5,6 +5,8 @@ export const IMAGE_MIN_PIXELS = 655_360;
 export const IMAGE_MAX_PIXELS = 8_294_400;
 export const IMAGE_MIN_ASPECT = 1 / 3;
 export const IMAGE_MAX_ASPECT = 3;
+export const IMAGE_REFERENCE_MAX_BYTES = 7 * 1024 * 1024;
+export const IMAGE_REFERENCE_MAX_MEGABYTES = 7;
 
 export const MAI_IMAGE_MIN_SIDE = 768;
 export const MAI_IMAGE_MAX_PIXELS = 1_048_576;

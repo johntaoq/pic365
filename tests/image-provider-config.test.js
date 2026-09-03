@@ -28,6 +28,7 @@ test('image provider keys are encrypted and named configs can be selected', () =
       priceStepRmb: 0.1,
       minimumChargeRmb: 0.2,
       maximumChargeRmb: 20,
+      referenceImagePriceRmb: 0.12,
       qualityPricesRmb: { low: 0.4, medium: 0.8, high: 1.6 }
     },
     enabled: true,
@@ -43,6 +44,7 @@ test('image provider keys are encrypted and named configs can be selected', () =
   assert.equal(selected.model, 'banana-2-image');
   assert.equal(selected.pricingStrategy, 'fixed-quality');
   assert.equal(selected.pricingConfig.qualityPricesRmb.high, 1.6);
+  assert.equal(selected.pricingConfig.referenceImagePriceRmb, 0.12);
   assert.equal(db.listImageProviderConfigs()[0].name, 'Gemini Banana');
 });
 

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
 
+import { IMAGE_REFERENCE_MAX_BYTES } from '../shared/image-generation.js';
+
 import {
   buildReferencePrompt,
   loadReferenceImageInputs,
@@ -55,6 +57,15 @@ test('invalid inline reference images are rejected', () => {
   assert.throws(
     () => normalizeReferenceRequests([{ imageDataUrl: 'data:text/plain;base64,SGVsbG8=' }]),
     /INVALID_REFERENCE_IMAGE/
+  );
+});
+
+test('reference images use a seven megabyte per-file limit', () => {
+  assert.equal(IMAGE_REFERENCE_MAX_BYTES, 7 * 1024 * 1024);
+  const oversized = `data:image/png;base64,${Buffer.alloc(IMAGE_REFERENCE_MAX_BYTES + 1).toString('base64')}`;
+  assert.throws(
+    () => normalizeReferenceRequests([{ imageDataUrl: oversized }]),
+    /REFERENCE_IMAGE_TOO_LARGE/
   );
 });
 
@@ -155,4 +166,23 @@ test('brush annotations preserve an irregular path and lock unpainted regions', 
   assert.match(prompt, /Modify only the content inside those marked regions/);
   assert.match(prompt, /Lock every unmarked region/);
   assert.match(prompt, /Do not redraw, restyle, reframe, or regenerate the whole image/);
+});
+
+test('reference prompt maps the primary image to image one and continues supporting image numbers', () => {
+  const references = [
+    { generationId: 'master', annotations: [] },
+    { generationId: 'style', annotations: [] },
+    { generationId: 'background', annotations: [] }
+  ];
+  const prompt = buildReferencePrompt('Use 图2 clothing and 图3 lighting on the 母版.', references);
+  assert.match(prompt, /Image 1 \/ Reference 1 \/ 图1 \/ 参考图1 \/ 母版 = supplied reference image 1/);
+  assert.match(prompt, /Image 2 \/ Reference 2 \/ 图2 \/ 参考图2 = supplied reference image 2/);
+  assert.match(prompt, /Image 3 \/ Reference 3 \/ 图3 \/ 参考图3 = supplied reference image 3/);
+  assert.match(prompt, /“Master” and “母版” always mean Image 1/);
+});
+
+test('reference prompt can skip the generic numbered map when a canvas prompt already contains it', () => {
+  const prompt = buildReferencePrompt('Image names and input order are already defined.', [{ generationId: 'master', annotations: [] }], { includeNumberedMap: false });
+  assert.doesNotMatch(prompt, /Fixed image naming and input order/);
+  assert.match(prompt, /User request:\nImage names and input order are already defined/);
 });

@@ -56,6 +56,7 @@ test('server worker completes a queued task without a browser request remaining 
     enabled: true,
     isDefault: true
   });
+  localDb.bindDefaultSystemGroupChannel('image', provider.id);
   localDb.updatePromptLoggingConfig({ enabled: true }, user.id);
   const created = queue.createFreeGenerationTask(user.id, {
     prompt: 'Generate a worker image',

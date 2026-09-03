@@ -197,6 +197,30 @@ test('fixed quality and fixed image strategies charge their configured unit pric
   assert.equal(applyImagePromotion(fixedImage, { enabled: true, payPercent: 80 }).credits, 34);
 });
 
+test('reference image pricing is added by actual reference count before promotion', () => {
+  const pricing = getImageGenerationPricing({
+    size: '1024x1024',
+    quality: 'medium',
+    model: 'banana-2',
+    referenceCount: 3
+  }, {
+    ...defaultImagePricingConfigForModel('banana-2'),
+    strategy: IMAGE_PRICING_STRATEGIES.FIXED_QUALITY,
+    qualityPricesRmb: { low: 0.2, medium: 0.4, high: 0.8 },
+    referenceImagePriceRmb: 0.12
+  });
+  assert.equal(pricing.baseCredits, 40);
+  assert.equal(pricing.referenceCount, 3);
+  assert.equal(pricing.referenceUnitCredits, 12);
+  assert.equal(pricing.referenceCredits, 36);
+  assert.equal(pricing.credits, 76);
+  assert.equal(pricing.retailRmb, 0.76);
+
+  const promoted = applyImagePromotion(pricing, { enabled: true, payPercent: 80 });
+  assert.equal(promoted.originalCredits, 76);
+  assert.equal(promoted.credits, 61);
+});
+
 test('promotions respect the minimum charge and scheduled time window', () => {
   const minimum = applyImagePromotion(
     getImageGenerationPricing({ size: '816x816', quality: 'low' }),

@@ -296,6 +296,18 @@ export function canvasReferenceRemovalImpact(nodes = [], nodeIds = []) {
   };
 }
 
+export function removeCanvasReferenceConnection(nodes = [], sourceId = '', targetId = '') {
+  const source = String(sourceId || '');
+  const target = String(targetId || '');
+  if (!source || !target) return nodes;
+  return nodes.map((node) => node.id === target ? {
+    ...node,
+    referenceLinks: (node.referenceLinks || [])
+      .filter((link) => link.nodeId !== source)
+      .map((link, index) => ({ ...link, order: index + 1 }))
+  } : node);
+}
+
 export function canvasImageDownloadFilename(node = {}, language = 'zh') {
   const rawPrefix = String(node.name || node.autoName || node.title || 'image').trim();
   const prefix = rawPrefix
@@ -327,18 +339,18 @@ export function canvasReferencePrompt(prompt, references = [], language = 'zh') 
     const canvasName = String(node?.name || node?.autoName || '').replace(/\s+/g, ' ').trim().slice(0, 40);
     if (index === 0) {
       return language === 'zh'
-        ? `母版 = 输入图1${canvasName ? `（画布名：${canvasName}）` : ''}：唯一编辑对象；未明确要求修改的内容必须保留。`
-        : `Master = input image 1${canvasName ? ` (canvas name: ${canvasName})` : ''}: the only image to edit; preserve everything not explicitly requested to change.`;
+        ? `母版 / 参考图1 / 图1 = 输入图1${canvasName ? `（画布名：${canvasName}）` : ''}：唯一编辑对象；未明确要求修改的内容必须保留。`
+        : `Master / Reference 1 / Image 1 = input image 1${canvasName ? ` (canvas name: ${canvasName})` : ''}: the only image to edit; preserve everything not explicitly requested to change.`;
     }
-    const referenceNumber = index;
+    const referenceNumber = index + 1;
     const role = labels[node.referenceRole || 'general'] || labels.general;
     return language === 'zh'
-      ? `参考图${referenceNumber} = 输入图${index + 1}${canvasName ? `（画布名：${canvasName}）` : ''}：${role}；只提取用户指定的信息，不替换母版主体。`
-      : `Reference ${referenceNumber} = input image ${index + 1}${canvasName ? ` (canvas name: ${canvasName})` : ''}: ${role}; use only the requested information and do not replace the master subject.`;
+      ? `参考图${referenceNumber} / 图${referenceNumber} = 输入图${referenceNumber}${canvasName ? `（画布名：${canvasName}）` : ''}：${role}；只提取用户指定的信息，不替换母版主体。`
+      : `Reference ${referenceNumber} / Image ${referenceNumber} = input image ${referenceNumber}${canvasName ? ` (canvas name: ${canvasName})` : ''}: ${role}; use only the requested information and do not replace the master subject.`;
   });
   const composed = language === 'zh'
-    ? `图片称呼与输入顺序：\n${lines.join('\n')}\n解释规则：用户提示词中的“母版”与“参考图1、参考图2……”严格按以上映射理解；画布文件名只用于识别，不改变图片角色。\n\n用户修改要求：${base}`
-    : `Image names and input order:\n${lines.join('\n')}\nInterpretation rule: “Master” and “Reference 1, Reference 2…” in the user prompt strictly follow the mapping above. Canvas filenames are identifiers only and never change image roles.\n\nUser edit request: ${base}`;
+    ? `图片称呼与输入顺序：\n${lines.join('\n')}\n解释规则：用户提示词中的“母版”“参考图N”与“图N”严格按同一编号映射理解；画布文件名只用于识别，不改变图片角色。\n\n用户修改要求：${base}`
+    : `Image names and input order:\n${lines.join('\n')}\nInterpretation rule: “Master”, “Reference N”, and “Image N” strictly follow the same numbered mapping above. Canvas filenames are identifiers only and never change image roles.\n\nUser edit request: ${base}`;
   return composed.slice(0, 6000);
 }
 
@@ -407,6 +419,18 @@ export function arrangeCanvasNodes(nodes = []) {
     : { ...node, ...positions.get(node.id) });
 }
 
+export function canvasMovableNodeIds(nodes = [], selectedIds = []) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return [...new Set(selectedIds.map(String))].filter((id) => nodeById.has(id) && !nodeById.get(id).locked);
+}
+
+export function setCanvasNodesLocked(nodes = [], selectedIds = [], locked = true) {
+  const selected = new Set(selectedIds.map(String));
+  if (!selected.size) return nodes;
+  const nextLocked = Boolean(locked);
+  return nodes.map((node) => selected.has(node.id) ? { ...node, locked: nextLocked } : node);
+}
+
 export function canvasConnectorPath(parent, child) {
   const startX = Number(parent?.x || 0) + INFINITE_CANVAS_NODE_WIDTH;
   const startY = Number(parent?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
@@ -414,6 +438,17 @@ export function canvasConnectorPath(parent, child) {
   const endY = Number(child?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
   const bend = Math.max(70, Math.abs(endX - startX) * 0.42);
   return `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`;
+}
+
+export function canvasConnectorMidpoint(parent, child) {
+  const startX = Number(parent?.x || 0) + INFINITE_CANVAS_NODE_WIDTH;
+  const startY = Number(parent?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const endX = Number(child?.x || 0);
+  const endY = Number(child?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  return {
+    x: (startX + endX) / 2,
+    y: (startY + endY) / 2
+  };
 }
 
 export function canvasReferenceConnectorPath(source, target) {
@@ -427,4 +462,18 @@ export function canvasReferenceConnectorPath(source, target) {
   const direction = leftToRight ? 1 : -1;
   const bend = Math.max(64, Math.abs(endX - startX) * 0.38);
   return `M ${startX} ${sourceY} C ${startX + bend * direction} ${sourceY}, ${endX - bend * direction} ${targetY}, ${endX} ${targetY}`;
+}
+
+export function canvasReferenceConnectorMidpoint(source, target) {
+  const sourceCenterX = Number(source?.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
+  const targetCenterX = Number(target?.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
+  const sourceY = Number(source?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const targetY = Number(target?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const leftToRight = sourceCenterX <= targetCenterX;
+  const startX = Number(source?.x || 0) + (leftToRight ? INFINITE_CANVAS_NODE_WIDTH : 0);
+  const endX = Number(target?.x || 0) + (leftToRight ? 0 : INFINITE_CANVAS_NODE_WIDTH);
+  return {
+    x: (startX + endX) / 2,
+    y: (sourceY + targetY) / 2
+  };
 }

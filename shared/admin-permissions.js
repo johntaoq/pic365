@@ -11,6 +11,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
   EDIT_USER_NOTE: 'users.edit_note',
   RESET_USER_PASSWORD: 'users.reset_password',
   MANAGE_USER_ROLES: 'users.manage_roles',
+  MANAGE_SYSTEM_GROUPS: 'users.manage_system_groups',
   ADJUST_CREDITS: 'credits.adjust',
   VIEW_CREDIT_REPORTS: 'credits.reports',
   CREATE_REDEMPTION_CODES: 'redemption.create',

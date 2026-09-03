@@ -441,33 +441,36 @@ export function AuditEventsPanel({ language = 'zh', profile }) {
   </section>;
 }
 
-export function UserEditDialog({ language = 'zh', profile, user, onClose, onSaved }) {
+export function UserEditDialog({ language = 'zh', profile, user, systemGroups = [], onClose, onSaved }) {
   const zh = language === 'zh';
   const [adminNote, setAdminNote] = useState(user?.adminNote || '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState(user?.role || USER_ROLES.USER);
+  const [systemGroupId, setSystemGroupId] = useState(user?.systemGroupId || '');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
   useEffect(() => {
     setAdminNote(user?.adminNote || '');
     setPassword('');
     setRole(user?.role || USER_ROLES.USER);
+    setSystemGroupId(user?.systemGroupId || systemGroups.find((group) => group.isDefault)?.id || systemGroups[0]?.id || '');
     setStatus('idle');
     setMessage('');
-  }, [user?.id]);
+  }, [user?.id, systemGroups]);
   if (!user) return null;
   const canPassword = permission(profile, ADMIN_PERMISSIONS.RESET_USER_PASSWORD);
   const canRoles = permission(profile, ADMIN_PERMISSIONS.MANAGE_USER_ROLES);
+  const canSystemGroups = permission(profile, ADMIN_PERMISSIONS.MANAGE_SYSTEM_GROUPS);
   async function submit(event) {
     event.preventDefault(); setStatus('loading'); setMessage('');
-    const body = { userId: user.id, adminNote, role };
+    const body = { userId: user.id, adminNote, role, systemGroupId };
     if (password.length > 0) body.password = password;
     const response = await fetch('/api/admin/users/edit', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) { setStatus('error'); setMessage(apiError(payload, 'USER_UPDATE_FAILED')); return; }
     await onSaved?.(payload.user); onClose?.();
   }
-  return <div className="adminUserEditBackdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && status !== 'loading' && onClose?.()}><form className="adminAdjustForm governanceUserEdit" onSubmit={submit} role="dialog" aria-modal="true"><header><div><span>{zh ? '编辑用户' : 'Edit user'}</span><strong>{user.email}</strong></div><button className="adminEditClose" type="button" onClick={onClose} disabled={status === 'loading'}><X size={18} /></button></header><div className="governanceReadonlyGrid"><label><span>{zh ? '登录邮箱（不可修改）' : 'Login email'}</span><input value={user.email} readOnly /></label><label><span>{zh ? '用户名（不可修改）' : 'Username'}</span><input value={user.fullName || ''} readOnly /></label></div><label><span>{zh ? '管理员备注名' : 'Administrator note'}</span><input maxLength="160" value={adminNote} onChange={(e) => setAdminNote(e.target.value)} /></label>{canRoles ? <label><span>{zh ? '角色' : 'Role'}</span><select value={role} onChange={(e) => setRole(e.target.value)}>{Object.values(USER_ROLES).map((item) => <option value={item} key={item}>{roleLabel(item, language)}</option>)}</select></label> : null}{canPassword ? <label><span>{zh ? '新密码（留空不修改）' : 'New password (leave blank to keep)'}</span><input key={user.id} name={`admin-new-password-${user.id}`} type="password" autoComplete="new-password" data-lpignore="true" minLength="8" maxLength="128" value={password} placeholder={zh ? '不修改密码请保持为空' : 'Leave empty to keep the current password'} onChange={(e) => setPassword(e.target.value)} /></label> : null}{message ? <p className="authMessage error">{message}</p> : null}<footer><button className="secondary" type="button" onClick={onClose} disabled={status === 'loading'}>{zh ? '取消' : 'Cancel'}</button><button type="submit" disabled={status === 'loading'}>{status === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <UserCog size={16} />}{zh ? '保存用户' : 'Save user'}</button></footer></form></div>;
+  return <div className="adminUserEditBackdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && status !== 'loading' && onClose?.()}><form className="adminAdjustForm governanceUserEdit" onSubmit={submit} role="dialog" aria-modal="true"><header><div><span>{zh ? '编辑用户' : 'Edit user'}</span><strong>{user.email}</strong></div><button className="adminEditClose" type="button" onClick={onClose} disabled={status === 'loading'}><X size={18} /></button></header><div className="governanceReadonlyGrid"><label><span>{zh ? '登录邮箱（不可修改）' : 'Login email'}</span><input value={user.email} readOnly /></label><label><span>{zh ? '用户名（不可修改）' : 'Username'}</span><input value={user.fullName || ''} readOnly /></label></div><label><span>{zh ? '管理员备注名' : 'Administrator note'}</span><input maxLength="160" value={adminNote} onChange={(e) => setAdminNote(e.target.value)} /></label>{canRoles ? <label><span>{zh ? '角色' : 'Role'}</span><select value={role} onChange={(e) => setRole(e.target.value)}>{Object.values(USER_ROLES).map((item) => <option value={item} key={item}>{roleLabel(item, language)}</option>)}</select></label> : null}{canSystemGroups && role === USER_ROLES.USER ? <label><span>{zh ? '系统分组' : 'System group'}</span><select value={systemGroupId} required onChange={(event) => setSystemGroupId(event.target.value)}>{systemGroups.map((group) => <option value={group.id} key={group.id}>{group.name}{group.isDefault ? ` · ${zh ? '默认' : 'Default'}` : ''}</option>)}</select></label> : null}{canPassword ? <label><span>{zh ? '新密码（留空不修改）' : 'New password (leave blank to keep)'}</span><input key={user.id} name={`admin-new-password-${user.id}`} type="password" autoComplete="new-password" data-lpignore="true" minLength="8" maxLength="128" value={password} placeholder={zh ? '不修改密码请保持为空' : 'Leave empty to keep the current password'} onChange={(e) => setPassword(e.target.value)} /></label> : null}{message ? <p className="authMessage error">{message}</p> : null}<footer><button className="secondary" type="button" onClick={onClose} disabled={status === 'loading'}>{zh ? '取消' : 'Cancel'}</button><button type="submit" disabled={status === 'loading' || (role === USER_ROLES.USER && !systemGroupId)}>{status === 'loading' ? <LoaderCircle className="spinIcon" size={16} /> : <UserCog size={16} />}{zh ? '保存用户' : 'Save user'}</button></footer></form></div>;
 }
 
 const POSITIVE_REASON_LABELS = { corporate: '对公', swx: 'SWX', szfb: 'SZFB', compensation: '补偿', gift: '赠送', manual_plus: '手工调整+' };

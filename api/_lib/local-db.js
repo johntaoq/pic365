@@ -22,6 +22,8 @@ import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from
 const DEFAULT_DB_PATH = path.resolve(process.cwd(), 'data', 'app.sqlite');
 const PASSWORD_SCHEME = 'scrypt-v1';
 const STARTUP_RECOVERY_PATHS_KEY = Symbol.for('pic365.local-db-startup-recovery-paths');
+export const DEFAULT_SYSTEM_USER_GROUP_ID = 'default';
+export const SYSTEM_CHANNEL_TYPES = Object.freeze(['image', 'video', 'chat']);
 
 let database;
 
@@ -360,6 +362,23 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       credit_balance INTEGER NOT NULL DEFAULT 0 CHECK (credit_balance >= 0),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS system_user_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS system_user_group_channels (
+      group_id TEXT NOT NULL REFERENCES system_user_groups(id) ON DELETE CASCADE,
+      channel_type TEXT NOT NULL CHECK (channel_type IN ('image', 'video', 'chat')),
+      channel_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (group_id, channel_type, channel_id)
     );
 
     CREATE TABLE IF NOT EXISTS ecommerce_projects (
@@ -1454,6 +1473,9 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'user_ui_preferences', 'hide_ecommerce', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'users', 'admin_note', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'users', 'last_login_at', 'TEXT');
+  ensureColumn(db, 'users', 'system_group_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS users_system_group_idx ON users(system_group_id, role, status)');
+  db.exec('CREATE INDEX IF NOT EXISTS system_group_channels_lookup_idx ON system_user_group_channels(channel_type, channel_id, group_id)');
   ensureColumn(db, 'generations', 'slot_id', 'TEXT');
   ensureColumn(db, 'generations', 'version_number', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'generations', 'archived_at', 'TEXT');
@@ -1510,6 +1532,43 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'ecommerce_project_outputs', 'consistency_issues', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, 'ecommerce_project_outputs', 'consistency_summary', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'ecommerce_project_outputs', 'checked_at', 'TEXT');
+
+  const systemGroupMigrationKey = 'migration:system-user-groups:v1';
+  const systemGroupCreatedAt = now();
+  db.prepare(`
+    INSERT OR IGNORE INTO system_user_groups (id, name, description, is_default, created_at, updated_at)
+    VALUES (?, '默认组', '现有普通用户的默认渠道权限组', 1, ?, ?)
+  `).run(DEFAULT_SYSTEM_USER_GROUP_ID, systemGroupCreatedAt, systemGroupCreatedAt);
+  if (!db.prepare('SELECT 1 FROM app_settings WHERE setting_key = ?').get(systemGroupMigrationKey)) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare(`
+        UPDATE users SET system_group_id = ?, updated_at = ?
+        WHERE role = 'user' AND (system_group_id IS NULL OR TRIM(system_group_id) = '')
+      `).run(DEFAULT_SYSTEM_USER_GROUP_ID, systemGroupCreatedAt);
+      const bindExisting = db.prepare(`
+        INSERT OR IGNORE INTO system_user_group_channels (group_id, channel_type, channel_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      for (const row of db.prepare('SELECT id FROM image_provider_configs').all()) {
+        bindExisting.run(DEFAULT_SYSTEM_USER_GROUP_ID, 'image', row.id, systemGroupCreatedAt);
+      }
+      for (const row of db.prepare('SELECT id FROM video_provider_configs').all()) {
+        bindExisting.run(DEFAULT_SYSTEM_USER_GROUP_ID, 'video', row.id, systemGroupCreatedAt);
+      }
+      for (const row of db.prepare('SELECT id FROM chat_provider_configs').all()) {
+        bindExisting.run(DEFAULT_SYSTEM_USER_GROUP_ID, 'chat', row.id, systemGroupCreatedAt);
+      }
+      db.prepare(`
+        INSERT INTO app_settings (setting_key, value_json, updated_by, updated_at)
+        VALUES (?, '{"completed":true}', NULL, ?)
+      `).run(systemGroupMigrationKey, systemGroupCreatedAt);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   ensureColumn(db, 'free_generation_tasks', 'task_mode', "TEXT NOT NULL DEFAULT 'single'");
   ensureColumn(db, 'free_generation_tasks', 'batch_id', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'free_generation_tasks', 'batch_index', 'INTEGER NOT NULL DEFAULT 0');
@@ -2188,6 +2247,7 @@ export function normalizeUser(row) {
     canAccessAdmin: isAdministrativeRole(role),
     adminPermissions: permissionsForRole(role),
     status: row.status || 'active',
+    systemGroupId: row.system_group_id || '',
     creditBalance: Number(row.credit_balance || 0),
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || '',
@@ -2230,14 +2290,15 @@ export function createUser({
   db.exec('BEGIN IMMEDIATE');
   try {
     db.prepare(`
-      INSERT INTO users (id, email, password_hash, full_name, role, credit_balance, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, password_hash, full_name, role, system_group_id, credit_balance, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userId,
       normalizedEmail,
       hashPassword(password),
       String(fullName || '').trim().slice(0, 80),
       role,
+      role === USER_ROLES.USER ? DEFAULT_SYSTEM_USER_GROUP_ID : null,
       grantedCredits,
       createdAt,
       createdAt
@@ -3558,6 +3619,203 @@ export function listFavorites(userId) {
   return getDb().prepare('SELECT user_id, case_id, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC').all(userId);
 }
 
+function normalizeSystemChannelType(value) {
+  const channelType = String(value || '').trim().toLowerCase();
+  return SYSTEM_CHANNEL_TYPES.includes(channelType) ? channelType : '';
+}
+
+function normalizeSystemUserGroupRow(row, channels = []) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    isDefault: Boolean(row.is_default),
+    memberCount: Number(row.member_count || 0),
+    channels: SYSTEM_CHANNEL_TYPES.reduce((result, channelType) => {
+      result[channelType] = channels
+        .filter((channel) => channel.channel_type === channelType)
+        .map((channel) => channel.channel_id);
+      return result;
+    }, {}),
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || ''
+  };
+}
+
+export function listSystemUserGroups() {
+  const db = getDb();
+  const groups = db.prepare(`
+    SELECT group_row.*, COUNT(user.id) AS member_count
+    FROM system_user_groups group_row
+    LEFT JOIN users user ON user.system_group_id = group_row.id AND user.role = 'user'
+    GROUP BY group_row.id
+    ORDER BY group_row.is_default DESC, group_row.created_at ASC, group_row.name ASC
+  `).all();
+  const channels = db.prepare(`
+    SELECT group_id, channel_type, channel_id
+    FROM system_user_group_channels
+    ORDER BY channel_type ASC, channel_id ASC
+  `).all();
+  return groups.map((group) => normalizeSystemUserGroupRow(
+    group,
+    channels.filter((channel) => channel.group_id === group.id)
+  ));
+}
+
+export function getSystemUserGroup(groupId) {
+  const id = String(groupId || '').trim();
+  if (!id) return null;
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT group_row.*, COUNT(user.id) AS member_count
+    FROM system_user_groups group_row
+    LEFT JOIN users user ON user.system_group_id = group_row.id AND user.role = 'user'
+    WHERE group_row.id = ?
+    GROUP BY group_row.id
+  `).get(id);
+  const channels = row ? db.prepare(`
+    SELECT group_id, channel_type, channel_id
+    FROM system_user_group_channels WHERE group_id = ?
+    ORDER BY channel_type ASC, channel_id ASC
+  `).all(id) : [];
+  return normalizeSystemUserGroupRow(row, channels);
+}
+
+export function listSystemChannelCatalog() {
+  const db = getDb();
+  const normalize = (channelType, row) => ({
+    id: row.id,
+    channelType,
+    name: row.name,
+    model: row.model || '',
+    enabled: Boolean(row.enabled),
+    isDefault: Boolean(row.is_default)
+  });
+  return {
+    image: db.prepare('SELECT id, name, model, enabled, is_default FROM image_provider_configs ORDER BY is_default DESC, created_at ASC').all().map((row) => normalize('image', row)),
+    video: db.prepare('SELECT id, name, model, enabled, is_default FROM video_provider_configs ORDER BY is_default DESC, created_at ASC').all().map((row) => normalize('video', row)),
+    chat: db.prepare('SELECT id, name, model, enabled, is_default FROM chat_provider_configs ORDER BY is_default DESC, created_at ASC').all().map((row) => normalize('chat', row))
+  };
+}
+
+function validateSystemGroupChannels(db, channels = {}) {
+  const normalized = [];
+  const tables = { image: 'image_provider_configs', video: 'video_provider_configs', chat: 'chat_provider_configs' };
+  for (const channelType of SYSTEM_CHANNEL_TYPES) {
+    const ids = [...new Set((Array.isArray(channels?.[channelType]) ? channels[channelType] : [])
+      .map((value) => String(value || '').trim().slice(0, 160))
+      .filter(Boolean))];
+    for (const channelId of ids) {
+      if (!db.prepare(`SELECT 1 FROM ${tables[channelType]} WHERE id = ?`).get(channelId)) {
+        throw Object.assign(new Error('SYSTEM_GROUP_CHANNEL_NOT_FOUND'), { code: 'SYSTEM_GROUP_CHANNEL_NOT_FOUND' });
+      }
+      normalized.push({ channelType, channelId });
+    }
+  }
+  return normalized;
+}
+
+export function saveSystemUserGroup(values = {}) {
+  const db = getDb();
+  const id = String(values.id || '').trim().slice(0, 80) || randomUUID();
+  const existing = db.prepare('SELECT * FROM system_user_groups WHERE id = ?').get(id);
+  const name = String(values.name || existing?.name || '').trim().slice(0, 80);
+  const description = String(values.description ?? existing?.description ?? '').trim().slice(0, 500);
+  if (!name) throw Object.assign(new Error('SYSTEM_GROUP_NAME_REQUIRED'), { code: 'SYSTEM_GROUP_NAME_REQUIRED' });
+  const bindings = validateSystemGroupChannels(db, values.channels || {});
+  const updatedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`
+      INSERT INTO system_user_groups (id, name, description, is_default, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, updated_at = excluded.updated_at
+    `).run(id, name, description, existing?.is_default ? 1 : 0, existing?.created_at || updatedAt, updatedAt);
+    db.prepare('DELETE FROM system_user_group_channels WHERE group_id = ?').run(id);
+    const insertBinding = db.prepare(`
+      INSERT INTO system_user_group_channels (group_id, channel_type, channel_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    for (const binding of bindings) insertBinding.run(id, binding.channelType, binding.channelId, updatedAt);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    if (/unique/i.test(String(error?.message || ''))) {
+      throw Object.assign(new Error('SYSTEM_GROUP_NAME_EXISTS'), { code: 'SYSTEM_GROUP_NAME_EXISTS' });
+    }
+    throw error;
+  }
+  return getSystemUserGroup(id);
+}
+
+export function deleteSystemUserGroup(groupId) {
+  const id = String(groupId || '').trim().slice(0, 80);
+  if (!id) return null;
+  const db = getDb();
+  const group = getSystemUserGroup(id);
+  if (!group) return null;
+  if (group.isDefault || id === DEFAULT_SYSTEM_USER_GROUP_ID) {
+    throw Object.assign(new Error('DEFAULT_SYSTEM_GROUP_REQUIRED'), { code: 'DEFAULT_SYSTEM_GROUP_REQUIRED' });
+  }
+  const updatedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('UPDATE users SET system_group_id = ?, updated_at = ? WHERE system_group_id = ? AND role = ?')
+      .run(DEFAULT_SYSTEM_USER_GROUP_ID, updatedAt, id, USER_ROLES.USER);
+    db.prepare('DELETE FROM system_user_groups WHERE id = ?').run(id);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return group;
+}
+
+export function setUserSystemGroup(userId, groupId) {
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedGroupId = String(groupId || '').trim();
+  const db = getDb();
+  const user = db.prepare('SELECT id, role FROM users WHERE id = ?').get(normalizedUserId);
+  if (!user) throw Object.assign(new Error('USER_NOT_FOUND'), { code: 'USER_NOT_FOUND' });
+  if (!db.prepare('SELECT 1 FROM system_user_groups WHERE id = ?').get(normalizedGroupId)) {
+    throw Object.assign(new Error('SYSTEM_GROUP_NOT_FOUND'), { code: 'SYSTEM_GROUP_NOT_FOUND' });
+  }
+  db.prepare('UPDATE users SET system_group_id = ?, updated_at = ? WHERE id = ?')
+    .run(normalizedGroupId, now(), normalizedUserId);
+  return getUserById(normalizedUserId);
+}
+
+export function bindDefaultSystemGroupChannel(channelType, channelId) {
+  const normalizedType = normalizeSystemChannelType(channelType);
+  const normalizedId = String(channelId || '').trim().slice(0, 160);
+  if (!normalizedType || !normalizedId) return false;
+  return Boolean(getDb().prepare(`
+    INSERT OR IGNORE INTO system_user_group_channels (group_id, channel_type, channel_id, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(DEFAULT_SYSTEM_USER_GROUP_ID, normalizedType, normalizedId, now()).changes);
+}
+
+export function userCanAccessProvider(userId, channelType, channelId) {
+  const normalizedType = normalizeSystemChannelType(channelType);
+  const normalizedChannelId = String(channelId || '').trim().slice(0, 160);
+  if (!userId || !normalizedType || !normalizedChannelId) return false;
+  const db = getDb();
+  const user = db.prepare('SELECT role, status, system_group_id FROM users WHERE id = ?').get(userId);
+  if (!user || user.status !== 'active') return false;
+  if (normalizeUserRole(user.role) !== USER_ROLES.USER) return true;
+  if (!user.system_group_id) return false;
+  return Boolean(db.prepare(`
+    SELECT 1 FROM system_user_group_channels
+    WHERE group_id = ? AND channel_type = ? AND channel_id = ?
+  `).get(user.system_group_id, normalizedType, normalizedChannelId));
+}
+
+export function filterProvidersForUser(providers, userId, channelType) {
+  if (!userId) return Array.isArray(providers) ? providers : [];
+  return (Array.isArray(providers) ? providers : []).filter((provider) => userCanAccessProvider(userId, channelType, provider.id));
+}
+
 export function isAdminUser(userId) {
   return getUserById(userId)?.canAccessAdmin === true;
 }
@@ -3566,6 +3824,7 @@ export function listAdminUsers(limit = 100) {
   const rows = getDb().prepare(`
     SELECT
       u.*,
+      (SELECT system_group.name FROM system_user_groups system_group WHERE system_group.id = u.system_group_id) AS system_group_name,
       (SELECT COUNT(*) FROM generations g WHERE g.user_id = u.id) AS total_generations,
       (SELECT COUNT(*) FROM generations g WHERE g.user_id = u.id AND g.status = 'succeeded') AS succeeded_generations,
       (SELECT COUNT(*) FROM generations g WHERE g.user_id = u.id AND g.status = 'failed') AS failed_generations,
@@ -3597,6 +3856,7 @@ export function listAdminUsers(limit = 100) {
   return rows.map((row) => ({
     ...normalizeUser(row),
     adminNote: row.admin_note || '',
+    systemGroupName: row.system_group_name || '',
     freeGenerationsUsed: null,
     freeUsed: null,
     usage: {
@@ -4052,16 +4312,18 @@ export function ensureDefaultImageProviderConfig() {
   const createdAt = now();
   const model = process.env.AI_IMAGE_MODEL || 'gpt-image-2';
   const pricing = defaultImagePricingConfigForModel(model);
+  const providerId = randomUUID();
   db.prepare(`INSERT INTO image_provider_configs
     (id, name, provider_type, base_url, api_key_encrypted, model, pricing_strategy, pricing_config, enabled, is_default, created_at, updated_at)
     VALUES (?, ?, 'openai-compatible', ?, ?, ?, ?, ?, 1, 1, ?, ?)`)
-    .run(randomUUID(), process.env.AI_PROVIDER_NAME || 'GPT Image 2', process.env.AI_BASE_URL || process.env.UNIKEYX_BASE_URL || 'https://www.unikeyx.com', encryptProviderSecret(apiKey), model, pricing.strategy, JSON.stringify(pricing), createdAt, createdAt);
+    .run(providerId, process.env.AI_PROVIDER_NAME || 'GPT Image 2', process.env.AI_BASE_URL || process.env.UNIKEYX_BASE_URL || 'https://www.unikeyx.com', encryptProviderSecret(apiKey), model, pricing.strategy, JSON.stringify(pricing), createdAt, createdAt);
+  bindDefaultSystemGroupChannel('image', providerId);
 }
 
-export function listImageProviderConfigs({ admin = false } = {}) {
+export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
   ensureDefaultImageProviderConfig();
   const rows = getDb().prepare(`SELECT * FROM image_provider_configs ${admin ? '' : 'WHERE enabled = 1'} ORDER BY is_default DESC, created_at ASC`).all();
-  return rows.map((row) => {
+  const providers = rows.map((row) => {
     const normalized = normalizeProviderRow(row);
     return admin ? normalized : ({
       id: normalized.id,
@@ -4072,14 +4334,16 @@ export function listImageProviderConfigs({ admin = false } = {}) {
       isDefault: normalized.isDefault
     });
   });
+  return admin ? providers : filterProvidersForUser(providers, userId, 'image');
 }
 
-export function getImageProviderConfig(providerId = '', { includeSecret = true } = {}) {
+export function getImageProviderConfig(providerId = '', { includeSecret = true, userId = '' } = {}) {
   ensureDefaultImageProviderConfig();
   const db = getDb();
-  const row = providerId
-    ? db.prepare('SELECT * FROM image_provider_configs WHERE id = ? AND enabled = 1').get(providerId)
-    : db.prepare('SELECT * FROM image_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC LIMIT 1').get();
+  const rows = providerId
+    ? [db.prepare('SELECT * FROM image_provider_configs WHERE id = ? AND enabled = 1').get(providerId)].filter(Boolean)
+    : db.prepare('SELECT * FROM image_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC').all();
+  const row = userId ? rows.find((item) => userCanAccessProvider(userId, 'image', item.id)) : rows[0];
   return normalizeProviderRow(row, includeSecret);
 }
 
@@ -4120,6 +4384,7 @@ export function deleteImageProviderConfig(id) {
   if (referenced) throw Object.assign(new Error('PROVIDER_IN_USE'), { code: 'PROVIDER_IN_USE' });
   const enabledCount = db.prepare('SELECT COUNT(*) AS count FROM image_provider_configs WHERE enabled = 1').get()?.count || 0;
   if (row.enabled && enabledCount <= 1) throw Object.assign(new Error('LAST_PROVIDER_REQUIRED'), { code: 'LAST_PROVIDER_REQUIRED' });
+  db.prepare("DELETE FROM system_user_group_channels WHERE channel_type = 'image' AND channel_id = ?").run(id);
   db.prepare('DELETE FROM image_provider_configs WHERE id = ?').run(id);
   if (row.is_default) db.prepare('UPDATE image_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM image_provider_configs WHERE enabled = 1 ORDER BY created_at ASC LIMIT 1)').run();
   return normalizeProviderRow(row);

@@ -59,6 +59,7 @@ export const GPT_IMAGE_2_PRICING_CONFIG = Object.freeze({
   priceStepRmb: 0.1,
   minimumChargeRmb: 0.2,
   maximumChargeRmb: 5,
+  referenceImagePriceRmb: 0,
   promotionEligible: true,
   autoSizePixels: 2048 * 2048,
   maximumPixels: IMAGE_MAX_PIXELS,
@@ -134,6 +135,7 @@ export function defaultImagePricingConfigForModel(model = '') {
     priceStepRmb: 0.1,
     minimumChargeRmb: 0.2,
     maximumChargeRmb: 100,
+    referenceImagePriceRmb: 0,
     promotionEligible: true,
     autoSizePixels: geminiImage ? GEMINI_IMAGE_PRICING_TIERS.medium.pixels : Math.min(2048 * 2048, maximumPixels),
     maximumPixels,
@@ -164,6 +166,7 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
     priceStepRmb: roundMoney(finiteNumber(source.priceStepRmb, fallback.priceStepRmb, 0.01, 1000), 2),
     minimumChargeRmb: roundMoney(finiteNumber(source.minimumChargeRmb, fallback.minimumChargeRmb, 0, 100000), 2),
     maximumChargeRmb: roundMoney(finiteNumber(source.maximumChargeRmb, fallback.maximumChargeRmb, 0.01, 100000), 2),
+    referenceImagePriceRmb: roundMoney(finiteNumber(source.referenceImagePriceRmb, fallback.referenceImagePriceRmb ?? 0, 0, 100000), 2),
     promotionEligible: source.promotionEligible == null ? fallback.promotionEligible !== false : source.promotionEligible !== false,
     autoSizePixels: alignImagePricingPixelsUp(source.autoSizePixels, fallback.autoSizePixels, maximumPixels),
     maximumPixels,
@@ -343,7 +346,7 @@ function pricingBaseRmb(config, pixels, quality) {
   };
 }
 
-export function getImageGenerationPricing({ size = '1024x1024', quality = 'low', model = '' } = {}, pricingConfig = GPT_IMAGE_2_PRICING_CONFIG) {
+export function getImageGenerationPricing({ size = '1024x1024', quality = 'low', model = '', referenceCount = 0 } = {}, pricingConfig = GPT_IMAGE_2_PRICING_CONFIG) {
   const config = normalizeImagePricingConfig(pricingConfig, { model, strategy: pricingConfig?.strategy });
   const parsed = parseImageSize(size);
   const requestedPixels = parsed && !parsed.auto
@@ -365,7 +368,11 @@ export function getImageGenerationPricing({ size = '1024x1024', quality = 'low',
         config.minimumChargeRmb,
         config.maximumChargeRmb
       );
-  const credits = Math.round(roundedChargeRmb * IMAGE_CREDITS_PER_RMB);
+  const baseCredits = Math.round(roundedChargeRmb * IMAGE_CREDITS_PER_RMB);
+  const billedReferenceCount = Math.max(0, Math.min(9, Math.round(Number(referenceCount) || 0)));
+  const referenceUnitCredits = Math.round(config.referenceImagePriceRmb * IMAGE_CREDITS_PER_RMB);
+  const referenceCredits = billedReferenceCount * referenceUnitCredits;
+  const credits = baseCredits + referenceCredits;
   return {
     credits,
     retailRmb: roundMoney(credits / IMAGE_CREDITS_PER_RMB, 2),
@@ -373,6 +380,14 @@ export function getImageGenerationPricing({ size = '1024x1024', quality = 'low',
     estimatedActualCostRmb: roundMoney(base.actualCostRmb),
     estimatedListCostRmb: roundMoney(base.listCostRmb),
     rawChargeRmb: roundMoney(base.rawChargeRmb),
+    baseCredits,
+    baseRetailRmb: roundMoney(baseCredits / IMAGE_CREDITS_PER_RMB, 2),
+    referenceCount: billedReferenceCount,
+    referenceImagePriceRmb: config.referenceImagePriceRmb,
+    referenceUnitCredits,
+    referenceCredits,
+    referenceChargeRmb: roundMoney(referenceCredits / IMAGE_CREDITS_PER_RMB, 2),
+    totalRawChargeRmb: roundMoney((baseCredits + referenceCredits) / IMAGE_CREDITS_PER_RMB, 2),
     requestedPixels,
     billedPixels,
     maximumPixels: config.maximumPixels,
@@ -383,7 +398,7 @@ export function getImageGenerationPricing({ size = '1024x1024', quality = 'low',
     autoSize: !parsed || parsed.auto,
     autoQuality: quality === 'auto',
     minimumCredits: isFixedPrice ? 0 : Math.round(config.minimumChargeRmb * IMAGE_CREDITS_PER_RMB),
-    maximumCredits: isFixedPrice ? credits : Math.round(config.maximumChargeRmb * IMAGE_CREDITS_PER_RMB),
+    maximumCredits: (isFixedPrice ? baseCredits : Math.round(config.maximumChargeRmb * IMAGE_CREDITS_PER_RMB)) + referenceCredits,
     priceStepCredits: isFixedPrice ? 1 : Math.round(config.priceStepRmb * IMAGE_CREDITS_PER_RMB),
     promotionEligible: config.promotionEligible,
     pricingStrategy: config.strategy,

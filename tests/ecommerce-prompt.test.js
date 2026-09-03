@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { buildEcommerceSlotPrompt, selectEcommerceAssetsForSlot } from '../api/_lib/ecommerce-prompt.js';
 import { getEcommercePlatform } from '../shared/ecommerce-catalog.js';
+import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-selection.js';
 
 function project(overrides = {}) {
   return {
@@ -165,6 +166,14 @@ test('slot-aware asset selection prevents irrelevant reference and packaging con
   });
   assert.ok(lifestyleAssets.some((item) => item.id === 'scene-1'));
   assert.equal(lifestyleAssets.some((item) => item.id === 'pack-1'), false);
+
+  assert.equal(countEcommerceReferenceImages({
+    project: masterProject,
+    slot: platform.slots.find((item) => item.id === 'lifestyle'),
+    assets,
+    baseGenerationId: 'generation-1',
+    referenceInputs: [{ assetId: 'scene-1', role: 'scene' }]
+  }), 4);
 });
 
 test('angle prompts explicitly forbid inventing unseen product surfaces', () => {

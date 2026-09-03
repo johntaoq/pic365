@@ -29,9 +29,9 @@ function inlineReferenceMimeType(reference) {
   return mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
 }
 
-function serverValidatedBatchRepairTask(task = {}) {
+function serverValidatedBatchRepairTask(task = {}, userId = '') {
   if (task.taskMode !== 'batch-repair') return task;
-  const provider = getImageProviderConfig(String(task.providerId || '').trim());
+  const provider = getImageProviderConfig(String(task.providerId || '').trim(), { includeSecret: false, userId });
   if (!provider) return task;
   const references = Array.isArray(task.references) ? task.references.slice(0, 1) : [];
   if (!references.length && [
@@ -75,6 +75,12 @@ function serverValidatedBatchRepairTask(task = {}) {
   };
 }
 
+function serverAuthorizedTask(userId, task = {}) {
+  const provider = getImageProviderConfig(String(task.providerId || '').trim(), { includeSecret: false, userId });
+  if (!provider) throw Object.assign(new Error('AI_PROVIDER_NOT_AVAILABLE'), { code: 'AI_PROVIDER_NOT_AVAILABLE' });
+  return serverValidatedBatchRepairTask({ ...task, providerId: provider.id }, userId);
+}
+
 export default async function handler(req, res) {
   if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
     res.setHeader('Allow', 'GET, POST, DELETE');
@@ -91,7 +97,7 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req, { maxBytes: 24 * 1024 * 1024 });
+    body = await readJsonBody(req, { maxBytes: 96 * 1024 * 1024 });
   } catch (error) {
     return json(res, error?.status || 400, { ok: false, error: error?.code || 'INVALID_TASK_REQUEST' });
   }
@@ -125,14 +131,14 @@ export default async function handler(req, res) {
         canvasY: body.canvasY,
         replaceTaskId: Boolean(body.replaceTaskId)
       });
-      const task = createFreeGenerationTask(auth.user.id, serverValidatedBatchRepairTask(request));
+      const task = createFreeGenerationTask(auth.user.id, serverAuthorizedTask(auth.user.id, request));
       return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
     }
     if (Array.isArray(body.tasks)) {
-      const tasks = createFreeGenerationTasks(auth.user.id, body.tasks.map(serverValidatedBatchRepairTask));
+      const tasks = createFreeGenerationTasks(auth.user.id, body.tasks.map((task) => serverAuthorizedTask(auth.user.id, task)));
       return json(res, 201, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
     }
-    const task = createFreeGenerationTask(auth.user.id, body);
+    const task = createFreeGenerationTask(auth.user.id, serverAuthorizedTask(auth.user.id, body));
     return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
   } catch (error) {
     if (error?.code === 'TASK_ALREADY_EXISTS' && !Array.isArray(body.tasks)) {

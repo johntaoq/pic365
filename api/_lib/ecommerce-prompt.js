@@ -1,5 +1,14 @@
 import { getEcommerceIndustry, getEcommerceSubcategory, getEcommerceVisualStyle } from '../../shared/ecommerce-catalog.js';
+import {
+  ECOMMERCE_ANGLE_SLOT_IDS as ANGLE_SLOTS,
+  ECOMMERCE_DETAIL_SLOT_IDS as DETAIL_SLOTS,
+  ECOMMERCE_PACKAGING_SLOT_IDS as PACKAGING_SLOTS,
+  ECOMMERCE_VARIANT_SLOT_IDS as VARIANT_SLOTS,
+  selectEcommerceAssetsForSlot
+} from '../../shared/ecommerce-reference-selection.js';
 import { addEcommerceSafetyContext } from '../../shared/ecommerce-safety-context.js';
+
+export { selectEcommerceAssetsForSlot };
 
 const SLOT_RULES = {
   'taobao-tmall:main-square': '方形货架首图。商品主体清晰、构图直接、缩略图尺寸下仍可快速识别；保留少量干净留白。',
@@ -78,51 +87,6 @@ const REFINEMENT_AREAS = {
   'bottom-left': '画面左下区域',
   'bottom-right': '画面右下区域'
 };
-
-const PACKAGING_SLOTS = new Set(['spec-bundle', 'package-contents', 'bundle-cross-sell']);
-const DETAIL_SLOTS = new Set(['detail-material', 'detail-closeup', 'material-detail']);
-const ANGLE_SLOTS = new Set(['multi-angle', 'gallery-angle', 'dimensions', 'model-brief']);
-const VARIANT_SLOTS = new Set(['sku-variant', 'variant']);
-const SCENE_SLOTS = new Set([
-  'key-benefit', 'usage-scene', 'campaign', 'detail-page', 'three-second-benefit', 'person-scene',
-  'comparison', 'promotion-label', 'video-cover', 'video-storyboard', 'feature', 'lifestyle', 'product-hero',
-  'how-to', 'bundle-cross-sell', 'social-share'
-]);
-const CLEAN_PRODUCT_SLOTS = new Set(['white-background', 'compliant-main', 'main-square', 'main-portrait', 'cover-square', 'material-portrait', 'collection-card']);
-
-function assetRelevance(project, slot, asset) {
-  if (asset.id === project.masterAssetId) return 10000;
-  const purpose = String(asset.purpose || '');
-  if (asset.assetType === 'reference') {
-    if (!SCENE_SLOTS.has(slot.id)) return -1;
-    return ['composition', 'lighting', 'scene'].includes(purpose) ? 680 : 560;
-  }
-  if (asset.assetType === 'packaging') {
-    return PACKAGING_SLOTS.has(slot.id) ? 900 : -1;
-  }
-  if (asset.assetType === 'logo') {
-    return CLEAN_PRODUCT_SLOTS.has(slot.id) || slot.id === 'compliant-main' ? -1 : 560;
-  }
-  if (asset.assetType !== 'product') return -1;
-  if (purpose === 'identity') return 950;
-  if (purpose === 'angle') return ANGLE_SLOTS.has(slot.id) ? 920 : 760;
-  if (purpose === 'material' || purpose === 'detail') return DETAIL_SLOTS.has(slot.id) ? 920 : 740;
-  if (purpose === 'packaging') return PACKAGING_SLOTS.has(slot.id) ? 850 : -1;
-  if (purpose === 'brand') return 580;
-  if (['composition', 'lighting', 'scene'].includes(purpose)) return SCENE_SLOTS.has(slot.id) ? 660 : -1;
-  return CLEAN_PRODUCT_SLOTS.has(slot.id) || ANGLE_SLOTS.has(slot.id) ? 700 : 650;
-}
-
-export function selectEcommerceAssetsForSlot({ project, slot, assets, limit = 6 }) {
-  return [...(assets || [])]
-    .map((asset) => ({ asset, relevance: assetRelevance(project, slot, asset) }))
-    .filter((item) => item.relevance >= 0)
-    .sort((left, right) => (
-      right.relevance - left.relevance || Number(left.asset.sortOrder || 0) - Number(right.asset.sortOrder || 0)
-    ))
-    .slice(0, Math.max(1, Math.min(Number(limit) || 6, 8)))
-    .map((item) => item.asset);
-}
 
 function formatInputNumbers(numbers) {
   const sorted = [...numbers].sort((left, right) => left - right);

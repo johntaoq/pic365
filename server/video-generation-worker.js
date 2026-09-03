@@ -100,6 +100,7 @@ async function saveCompletedVideo(task, provider, providerTaskId) {
       sourceAssetId: task.sourceAssetId || undefined,
       sourceGenerationId: task.sourceGenerationId || undefined,
       seconds: task.seconds,
+      mode: task.mode,
       size: task.size,
       nativeAudio: 'unknown'
     }
@@ -121,7 +122,7 @@ async function saveCompletedVideo(task, provider, providerTaskId) {
 }
 
 async function executeTask(task) {
-  const provider = getVideoProviderConfig(task.providerId);
+  const provider = getVideoProviderConfig(task.providerId, { userId: task.userId });
   if (!provider?.apiKey || !provider?.baseUrl) return failVideoTask(task.userId, task.id, 'VIDEO_PROVIDER_NOT_CONFIGURED');
   let providerTaskId = task.providerTaskId || '';
   try {
@@ -133,6 +134,7 @@ async function executeTask(task) {
         prompt: buildVideoGenerationPrompt(task.prompt, { hasReference: Boolean(reference) }),
         seconds: task.seconds,
         size: task.size,
+        mode: task.mode,
         reference
       });
       providerTaskId = created.id;
@@ -147,8 +149,9 @@ async function executeTask(task) {
     for (let poll = 0; poll < MAX_PROVIDER_POLLS; poll += 1) {
       if (isVideoTaskCancellationRequested(task.userId, task.id)) {
         try {
-          await cancelVideoProviderTask({ provider, providerTaskId });
-          return failVideoTask(task.userId, task.id, 'VIDEO_GENERATION_CANCELLED');
+          const cancelled = await cancelVideoProviderTask({ provider, providerTaskId });
+          if (cancelled) return failVideoTask(task.userId, task.id, 'VIDEO_GENERATION_CANCELLED');
+          updateVideoTaskProgress(task.userId, task.id, { phase: 'cancelling' });
         } catch {
           updateVideoTaskProgress(task.userId, task.id, { phase: 'cancelling' });
         }

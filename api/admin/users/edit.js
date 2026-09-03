@@ -18,6 +18,7 @@ export default async function handler(req, res) {
       adminNote: body.adminNote,
       password,
       role: body.role,
+      systemGroupId: body.systemGroupId,
       auditMeta: requestAuditMetadata(req)
     });
     return res.status(200).json({ ok: true, ...result });

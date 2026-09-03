@@ -90,6 +90,7 @@ test('pricing quotes follow the selected provider rule', async () => {
       priceStepRmb: 0.1,
       minimumChargeRmb: 0.2,
       maximumChargeRmb: 10,
+      referenceImagePriceRmb: 0.12,
       qualityPricesRmb: { low: 0.4, medium: 0.8, high: 1.6 }
     },
     enabled: true,
@@ -101,6 +102,34 @@ test('pricing quotes follow the selected provider rule', async () => {
   assert.equal(result.payload.pricing.providerName, 'Banana test');
   assert.equal(result.payload.pricing.pricingStrategy, 'fixed-quality');
   assert.equal(result.payload.pricing.credits, 160);
+});
+
+test('pricing quotes add the configured price for every reference image', async () => {
+  const provider = localDb.saveImageProviderConfig({
+    name: 'Reference pricing test',
+    providerType: 'openai-compatible',
+    baseUrl: 'https://images.example.com',
+    apiKey: 'reference-pricing-test-key',
+    model: 'banana-image',
+    pricingStrategy: 'fixed-quality',
+    pricingConfig: {
+      strategy: 'fixed-quality',
+      qualityPricesRmb: { low: 0.4, medium: 0.8, high: 1.6 },
+      referenceImagePriceRmb: 0.12
+    },
+    enabled: true,
+    isDefault: false
+  });
+  const result = await invoke({
+    method: 'GET',
+    query: { size: '2048x2048', quality: 'high', referenceCount: '3', providerId: provider.id }
+  });
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.pricing.baseCredits, 160);
+  assert.equal(result.payload.pricing.referenceCount, 3);
+  assert.equal(result.payload.pricing.referenceUnitCredits, 12);
+  assert.equal(result.payload.pricing.referenceCredits, 36);
+  assert.equal(result.payload.pricing.credits, 196);
 });
 
 test('Gemini quotes map low, medium and high to 1K, 2K and 4K', async () => {

@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   Maximize2,
   Minus,
+  Plus,
   RotateCcw,
   Search,
   Trash2,
@@ -31,12 +32,19 @@ import {
   dimensionsForImageModelRatio,
   dimensionsFromLockedValue,
   getImageModelConstraints,
+  IMAGE_REFERENCE_MAX_BYTES,
   IMAGE_RATIO_PRESETS,
   parseImageSize,
   resolveReferenceImageSize,
   resolveSourceImageSizeForModel,
   validateImageSizeForModel
 } from '../shared/image-generation.js';
+import {
+  batchPromptLayout,
+  createBatchPromptAssignments,
+  MAX_BATCH_IMAGE_PROMPTS,
+  parseBatchPromptLines
+} from '../shared/batch-image-prompts.js';
 import {
   imageSizeTemplateForModel,
   loadImageSizePreferences,
@@ -131,13 +139,40 @@ function referenceSourceDimensions(item) {
   return parsed && !parsed.auto ? { width: parsed.width, height: parsed.height } : { width: 0, height: 0 };
 }
 
+function thumbnailHoverPreviewLayout(target, sourceWidth, sourceHeight, detailCount = 1) {
+  const rect = target?.getBoundingClientRect?.();
+  if (!rect) return null;
+  const viewportWidth = Math.max(320, Number(globalThis.innerWidth || 0));
+  const viewportHeight = Math.max(320, Number(globalThis.innerHeight || 0));
+  const fallbackWidth = Math.max(1, Number(target?.naturalWidth || rect.width || 1));
+  const fallbackHeight = Math.max(1, Number(target?.naturalHeight || rect.height || 1));
+  const ratio = Math.max(0.05, Number(sourceWidth || fallbackWidth) / Math.max(1, Number(sourceHeight || fallbackHeight)));
+  const maxWidth = Math.min(520, viewportWidth - 32);
+  const maxImageHeight = Math.max(150, viewportHeight - (detailCount > 1 ? 76 : 58));
+  let width = Math.min(maxWidth, Math.max(180, rect.width * 3));
+  let height = width / ratio;
+  if (height > maxImageHeight) {
+    height = maxImageHeight;
+    width = height * ratio;
+  }
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = width / ratio;
+  }
+  const totalHeight = height + (detailCount > 1 ? 48 : 34);
+  let left = rect.right + 12;
+  if (left + width > viewportWidth - 12) left = rect.left - width - 12;
+  left = Math.max(12, Math.min(left, viewportWidth - width - 12));
+  const top = Math.max(12, Math.min(rect.top + (rect.height - totalHeight) / 2, viewportHeight - totalHeight - 12));
+  return { left, top, width, height };
+}
+
 const MAX_QUEUE_TASKS = MAX_IMAGE_TASKS;
 const HISTORY_PAGE_SIZE = 12;
-const MAX_REFERENCE_SOURCE_BYTES = 40 * 1024 * 1024;
+const MAX_REFERENCE_SOURCE_BYTES = IMAGE_REFERENCE_MAX_BYTES;
 const REFERENCE_TARGET_BYTES = 1.2 * 1024 * 1024;
 const REFERENCE_MAX_SIDE = 1600;
 const MAX_BATCH_REPAIR_IMAGES = 10;
-const MAX_BATCH_REPAIR_PROMPTS = 10;
 const BATCH_REPAIR_TARGET_BYTES = 700 * 1024;
 const BATCH_REPAIR_THUMBNAIL_SIDE = 180;
 const REFERENCE_FILE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -149,18 +184,10 @@ function createBatchPromptItem(text = '') {
   };
 }
 
-function splitBatchPromptLines(value) {
-  return String(value || '')
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, MAX_BATCH_REPAIR_PROMPTS);
-}
-
-function resizeBatchPromptItems(items, count, seed = '') {
-  const target = Math.max(0, Math.min(MAX_BATCH_REPAIR_PROMPTS, Number(count) || 0));
-  const next = Array.isArray(items) ? items.slice(0, target) : [];
+function resizeBatchPromptItems(items, imageCount, seed = '', requestedCount) {
+  const current = Array.isArray(items) ? items.slice(0, MAX_BATCH_IMAGE_PROMPTS) : [];
+  const target = batchPromptLayout(imageCount, requestedCount == null ? current.length : requestedCount).visibleCount;
+  const next = current.slice(0, target);
   while (next.length < target) next.push(createBatchPromptItem(seed));
   return next;
 }
@@ -362,17 +389,18 @@ const copy = {
     title: '灵感生图',
     prompt: '提示词',
     promptFormatExampleLabel: '提示词写法示例',
-    promptFormatExample: '母版：保留商品主体和构图。\n参考图1：仅参考服装款式。\n参考图2：仅参考背景和光线。\n修改要求：把母版人物的服装替换为参考图1款式，并采用参考图2的背景氛围。',
+    promptFormatExample: '母版（图1 / 参考图1）：保留商品主体和构图。\n图2（参考图2）：仅参考服装款式。\n图3（参考图3）：仅参考背景和光线。\n修改要求：把图1人物的服装替换为图2款式，并采用图3的背景氛围。',
     placeholder: '输入画面主体、构图、风格、光线、文字和需要修改的内容。输入 @ 可引用历史生图。',
     placeholderNoReferences: '输入画面主体、构图、风格、光线、文字和细节要求。',
     optimize: 'AI 魔笔 · 1 积分',
     optimizing: '优化中',
     optimizeFailed: 'AI 魔笔暂时无法完成优化，本次积分已退回，请稍后重试。',
-    references: '参考图', primaryImage: '母版', supportingReferences: '其他参考图', swapPrimaryHint: '将右侧参考图拖到这里，可与母版交换',
+    references: '参考图', primaryImage: '母版', primaryImageNumbered: '母版 · 图1', imageNumber: (number) => `图${number}`, supportingReferences: '其他参考图', swapPrimaryHint: '将右侧参考图拖到这里，可与母版交换',
     referenceHint: '点击上传，或粘贴、拖拽多张图片；也可从历史生图中点击 @ 添加',
     uploadReference: '上传图片', localFolder: '本地图片', assetLibrary: '资产库', assetSearch: '搜索资产库图片', noAssets: '资产库中没有可用图片', closeLibrary: '关闭资产库', removeReference: '移除参考图', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`, addingAssets: '正在加入',
     uploadingReferences: '处理中',
     referenceUploadFailed: '部分参考图无法读取，请检查图片格式。',
+    referenceTooLarge: '每张参考图不能超过 7 MB。',
     maiReferenceUploadFailed: 'MAI 参考图仅支持 JPEG 或 PNG。',
     referenceUnsupported: 'MAI-Image-2 不支持参考图编辑。',
     maiReferenceHint: 'MAI-Image-2.5 最多使用 1 张 JPEG 或 PNG 参考图',
@@ -445,18 +473,24 @@ const copy = {
     referenceMissing: '所选历史图已不存在，请重新选择。',
     singleCreate: '单图创作',
     batchRepair: '批量改图',
-    sharedRepairPrompt: '共用提示词',
-    batchRepairPlaceholder: '输入所有图片共用的修复要求。每张原图会独立调用一次，不会相互拼接。',
     batchUpload: '上传 / 拖入图片',
-    batchUploadHint: '先添加图片，最多 10 张；每张图独立生成 1 张结果',
+    batchUploadHint: '最多 10 张；单图可配多条提示词，多图自动按序号 1 对 1',
     batchPromptUpload: '上传 / 粘贴提示词',
     batchPromptHint: '支持 TXT 文件或粘贴多行文字，按回车自动拆分，最多 10 条',
     batchPromptFile: '选择 TXT 文件',
     batchPromptEmpty: '请先上传图片，再填写提示词。',
-    batchPromptMissing: '每张图片都需要填写对应的独立提示词。',
-    batchPromptTrimmed: (count) => `提示词多于图片，只保留前 ${count} 条。`,
+    batchPromptMissing: '所有启用的提示词都需要填写完整。',
+    batchPromptTrimmed: '最多保留前 10 条提示词。',
+    batchPromptOverflowLocked: (active, overflow) => `当前 ${active} 张图片启用前 ${active} 条，另有 ${overflow} 条已保留并锁定，可拖动换位。`,
+    batchPromptSingleMode: '当前 1 张图：每条提示词生成 1 张结果，最多 10 条。',
+    batchPromptPairMode: (count) => `当前 ${count} 张图：图片与提示词按序号 1 对 1。`,
+    batchPromptCount: (active, total) => `启用 ${active}/${total}`,
+    addBatchPrompt: '增加提示词',
+    removeBatchPrompt: '删除提示词',
+    batchPromptLocked: '图片数量不足，拖到前面即可启用',
+    batchSinglePromptPlaceholder: (index) => `提示词 ${index}`,
     batchPromptPlaceholder: (index) => `图片 ${index} 的修改提示词`,
-    independentPrompts: '独立提示词',
+    independentPrompts: '提示词列表',
     preserveOriginalSize: '保留原图尺寸',
     submitBatchNow: '一键提交',
     addBatchQueue: '加入排队列表',
@@ -479,17 +513,18 @@ const copy = {
     title: 'Image Studio',
     prompt: 'Prompt',
     promptFormatExampleLabel: 'Prompt format example',
-    promptFormatExample: 'Master: Preserve the product subject and composition.\nReference 1: Use only the clothing style.\nReference 2: Use only the background and lighting.\nEdit request: Replace the clothing on the person in the master with the style from Reference 1, and use the background atmosphere from Reference 2.',
+    promptFormatExample: 'Master (Image 1 / Reference 1): Preserve the product subject and composition.\nImage 2 (Reference 2): Use only the clothing style.\nImage 3 (Reference 3): Use only the background and lighting.\nEdit request: Replace the clothing in Image 1 with the style from Image 2, and use the background atmosphere from Image 3.',
     placeholder: 'Describe the subject, composition, style, lighting, text, and edits. Type @ to reference a previous generation.',
     placeholderNoReferences: 'Describe the subject, composition, style, lighting, text, and visual details.',
     optimize: 'AI polish · 1 credit',
     optimizing: 'Polishing',
     optimizeFailed: 'AI polish is temporarily unavailable. This credit was refunded; please try again.',
-    references: 'References', primaryImage: 'Primary', supportingReferences: 'Supporting references', swapPrimaryHint: 'Drag a supporting image here to swap it with the primary image',
+    references: 'References', primaryImage: 'Primary', primaryImageNumbered: 'Master · Image 1', imageNumber: (number) => `Image ${number}`, supportingReferences: 'Supporting references', swapPrimaryHint: 'Drag a supporting image here to swap it with the primary image',
     referenceHint: 'Upload, paste, or drop multiple images; or click @ on a previous generation',
     uploadReference: 'Upload images', localFolder: 'Local images', assetLibrary: 'Asset library', assetSearch: 'Search asset images', noAssets: 'No usable images in the asset library', closeLibrary: 'Close asset library', removeReference: 'Remove reference', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`, addingAssets: 'Adding',
     uploadingReferences: 'Processing',
     referenceUploadFailed: 'Some references could not be read. Check the image format.',
+    referenceTooLarge: 'Each reference image must be no larger than 7 MB.',
     maiReferenceUploadFailed: 'MAI references must be JPEG or PNG.',
     referenceUnsupported: 'MAI-Image-2 does not support reference-image editing.',
     maiReferenceHint: 'MAI-Image-2.5 accepts one JPEG or PNG reference image',
@@ -597,18 +632,24 @@ const copy = {
     zoomOut: 'Zoom out',
     singleCreate: 'Single image',
     batchRepair: 'Batch edit',
-    sharedRepairPrompt: 'Shared prompt',
-    batchRepairPlaceholder: 'Describe one repair instruction shared by every image. Each source runs as an independent task and is never combined with another.',
     batchUpload: 'Upload / drop images',
-    batchUploadHint: 'Add images first, up to 10; each source produces one independent result',
+    batchUploadHint: 'Up to 10 images; one image can use many prompts, while multiple images pair by order',
     batchPromptUpload: 'Upload / paste prompts',
     batchPromptHint: 'Use a TXT file or paste multiple lines. New lines become separate prompts, up to 10.',
     batchPromptFile: 'Choose TXT file',
     batchPromptEmpty: 'Upload images before adding prompts.',
-    batchPromptMissing: 'Every image needs its own prompt.',
-    batchPromptTrimmed: (count) => `There are more prompts than images. Only the first ${count} were kept.`,
+    batchPromptMissing: 'Complete every enabled prompt before submitting.',
+    batchPromptTrimmed: 'Only the first 10 prompts were kept.',
+    batchPromptOverflowLocked: (active, overflow) => `${active} images enable the first ${active} prompts. ${overflow} extra prompt${overflow === 1 ? '' : 's'} are retained and locked; drag to reorder them.`,
+    batchPromptSingleMode: 'One image: each prompt creates one result, up to 10 prompts.',
+    batchPromptPairMode: (count) => `${count} images: images and prompts are paired one-to-one by order.`,
+    batchPromptCount: (active, total) => `${active}/${total} active`,
+    addBatchPrompt: 'Add prompt',
+    removeBatchPrompt: 'Remove prompt',
+    batchPromptLocked: 'Add more images or drag this prompt upward to enable it',
+    batchSinglePromptPlaceholder: (index) => `Prompt ${index}`,
     batchPromptPlaceholder: (index) => `Prompt for image ${index}`,
-    independentPrompts: 'Independent prompts',
+    independentPrompts: 'Prompt list',
     preserveOriginalSize: 'Keep original size',
     submitBatchNow: 'Submit all',
     addBatchQueue: 'Add to queue',
@@ -648,6 +689,7 @@ function generationFailureText(payload, t) {
   const code = typeof payload === 'string' ? payload : payload?.error;
   if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.referenceUnsupported;
   if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maxReferences(1);
+  if (code === 'REFERENCE_IMAGE_TOO_LARGE') return t.referenceTooLarge;
   if (code === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceUploadFailed;
   if (code === 'INVALID_SIZE' && payload?.reason) return sizeErrorText({ valid: false, error: payload.reason }, t);
   if (code === 'IMAGE_PROVIDER_UNAVAILABLE') return t.providerUnavailable(payload?.providerName, payload?.providerModel);
@@ -737,12 +779,12 @@ export default function FreeImageWorkspace({
   const [references, setReferences] = useState([]);
   const [creationMode, setCreationMode] = useState('single');
   const [batchRepairImages, setBatchRepairImages] = useState([]);
-  const [batchIndependentPrompts, setBatchIndependentPrompts] = useState(false);
   const [batchPromptItems, setBatchPromptItems] = useState([]);
   const [batchPreserveSourceSize, setBatchPreserveSourceSize] = useState(true);
   const [batchRepairUploading, setBatchRepairUploading] = useState(false);
   const [batchRepairSubmitting, setBatchRepairSubmitting] = useState(false);
   const [batchQueueNotice, setBatchQueueNotice] = useState('');
+  const [thumbnailHoverPreview, setThumbnailHoverPreview] = useState(null);
   const [mention, setMention] = useState(null);
   const [optimizing, setOptimizing] = useState(false);
   const [editingReferenceId, setEditingReferenceId] = useState('');
@@ -790,6 +832,31 @@ export default function FreeImageWorkspace({
   const commonSizeOptions = modelSizeTemplate.sizes;
   const ratioOptions = modelSizeTemplate.ratios;
 
+  function showThumbnailHoverPreview(event, item, details = []) {
+    const image = event.currentTarget?.querySelector?.('img') || event.currentTarget;
+    const dimensions = referenceSourceDimensions(item);
+    const resolvedWidth = dimensions.width || Number(image?.naturalWidth || 0);
+    const resolvedHeight = dimensions.height || Number(image?.naturalHeight || 0);
+    const visibleDetails = details.filter(Boolean);
+    const fallbackDetail = resolvedWidth > 0 && resolvedHeight > 0 ? `${resolvedWidth}×${resolvedHeight}` : '';
+    const layout = thumbnailHoverPreviewLayout(image, resolvedWidth, resolvedHeight, Math.max(1, visibleDetails.length));
+    const imageUrl = item?.markedImageUrl || item?.thumbnailUrl || item?.imageUrl;
+    if (!layout || !imageUrl) return;
+    setThumbnailHoverPreview({
+      ...layout,
+      imageUrl,
+      details: visibleDetails.length ? visibleDetails : [fallbackDetail].filter(Boolean)
+    });
+  }
+
+  function hideThumbnailHoverPreview() {
+    setThumbnailHoverPreview(null);
+  }
+
+  useEffect(() => {
+    setThumbnailHoverPreview(null);
+  }, [creationMode, workspaceTab]);
+
   useEffect(() => {
     if (!previewImage) return undefined;
     const keepPreviewInBounds = () => setPreviewOffset((current) => clampPreviewOffset(current, previewZoom));
@@ -800,6 +867,13 @@ export default function FreeImageWorkspace({
   useEffect(() => () => {
     if (batchQueueNoticeTimerRef.current) clearTimeout(batchQueueNoticeTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    setBatchPromptItems((current) => {
+      const next = resizeBatchPromptItems(current, batchRepairImages.length);
+      return next.length === current.length ? current : next;
+    });
+  }, [batchRepairImages.length]);
 
   useEffect(() => {
     function finishReferenceSwap() {
@@ -839,7 +913,7 @@ export default function FreeImageWorkspace({
     [selectedProvider?.model, size]
   );
   const { pricing, loading: pricingLoading } = useServerImagePricing(
-    { size, quality, providerId },
+    { size, quality, providerId, referenceCount: creationMode === 'single' ? references.length : 0 },
     { enabled: hasFullWorkspace && sizeCheck.valid && Boolean(providerId) }
   );
   const batchRepairItems = useMemo(() => batchRepairImages.map((item) => {
@@ -851,10 +925,20 @@ export default function FreeImageWorkspace({
       : { valid: false, error: 'INVALID_REFERENCE_IMAGE_FORMAT' };
     return { ...item, referenceSupported, sizing };
   }), [batchPreserveSourceSize, batchRepairImages, modelConstraints, selectedProvider?.model, sizeCheck]);
-  const batchPricingRequests = useMemo(() => batchRepairItems
-    .filter((item) => item.sizing.valid)
-    .map((item) => ({ key: item.id, size: item.sizing.size, quality, count: 1, providerId })),
-  [batchRepairItems, providerId, quality]);
+  const batchPromptState = batchPromptLayout(batchRepairItems.length, batchPromptItems.length);
+  const batchRepairJobs = useMemo(() => createBatchPromptAssignments(batchRepairItems, batchPromptItems)
+    .map(({ image, imageIndex, promptItem, promptIndex }) => ({
+      key: `${image.id}:${promptItem?.id || `prompt-${promptIndex}`}`,
+      image,
+      imageIndex,
+      promptIndex,
+      promptItem,
+      prompt: String(promptItem?.text || '').trim()
+    })), [batchPromptItems, batchRepairItems]);
+  const batchPricingRequests = useMemo(() => batchRepairJobs
+    .filter((job) => job.image.sizing.valid)
+    .map((job) => ({ key: job.key, size: job.image.sizing.size, quality, count: 1, referenceCount: 1, providerId })),
+  [batchRepairJobs, providerId, quality]);
   const {
     pricingByKey: batchPricingByKey,
     loading: batchPricingLoading,
@@ -862,8 +946,8 @@ export default function FreeImageWorkspace({
   } = useServerImagePricingBatch(batchPricingRequests, {
     enabled: creationMode === 'batch-repair' && hasFullWorkspace && Boolean(providerId) && batchPricingRequests.length > 0
   });
-  const batchRepairTotalCredits = batchRepairItems.reduce(
-    (total, item) => total + Number(batchPricingByKey[item.id]?.credits || 0),
+  const batchRepairTotalCredits = batchRepairJobs.reduce(
+    (total, job) => total + Number(batchPricingByKey[job.key]?.credits || 0),
     0
   );
   const imageReferenceTarget = resolveImageReferenceTarget(workspaceTab, creationMode);
@@ -874,17 +958,25 @@ export default function FreeImageWorkspace({
     () => queueTasks.filter(isActiveImageTask).length,
     [queueTasks]
   );
-  const batchPromptValues = batchRepairItems.map((_, index) => (
-    batchIndependentPrompts ? String(batchPromptItems[index]?.text || '').trim() : prompt.trim()
-  ));
-  const batchPromptsValid = Boolean(batchRepairItems.length) && batchPromptValues.every(Boolean);
-  const batchNewActiveCount = batchRepairItems.filter((item) => item.sizing.valid).length;
+  const batchPromptsValid = Boolean(batchRepairItems.length)
+    && batchRepairJobs.length === batchPromptState.activeCount
+    && batchRepairJobs.every((job) => Boolean(job.prompt));
+  const batchNewActiveCount = batchRepairJobs.filter((job) => job.image.sizing.valid).length;
   const batchQueueAtLimit = activeQueueTaskCount + batchNewActiveCount > MAX_ACTIVE_IMAGE_TASKS;
   const displayedQueueTasks = useMemo(() => [...queueTasks].sort((left, right) => {
     if (left.batchId && left.batchId === right.batchId) return left.batchIndex - right.batchIndex;
     const createdOrder = String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
     return createdOrder || String(right.id || '').localeCompare(String(left.id || ''));
   }), [queueTasks]);
+  const queueTaskSummary = useMemo(() => ({
+    active: queueTasks.filter(isActiveImageTask).length,
+    completed: queueTasks.filter((task) => task.status === 'completed').length,
+    failed: queueTasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
+    total: queueTasks.length
+  }), [queueTasks]);
+  const workspaceView = workspaceTab === 'tasks'
+    ? 'tasks'
+    : creationMode === 'batch-repair' ? 'batch' : 'single';
   const canvasRatio = useMemo(
     () => reducedCanvasRatio(sizeMode === 'auto' ? 1 : width, sizeMode === 'auto' ? 1 : height),
     [height, sizeMode, width]
@@ -1501,6 +1593,7 @@ export default function FreeImageWorkspace({
   }
 
   function removeReference(reference) {
+    hideThumbnailHoverPreview();
     const nextPrimary = references[0]?.id === reference.id ? references[1] : null;
     setReferences((current) => current.filter((item) => item.id !== reference.id));
     setPrompt((current) => current.split(reference.token).join('').replace(/[ \t]{2,}/g, ' ').trimStart());
@@ -1647,6 +1740,10 @@ export default function FreeImageWorkspace({
       if (!maxReferenceImages) setState((current) => ({ ...current, message: referenceLimitMessage }));
       return;
     }
+    if (files.some((file) => file.size > MAX_REFERENCE_SOURCE_BYTES)) {
+      setState((current) => ({ ...current, message: t.referenceTooLarge }));
+      return;
+    }
     const remaining = Math.max(0, maxReferenceImages - references.length);
     if (!remaining) {
       setState((current) => ({ ...current, message: referenceLimitMessage }));
@@ -1749,30 +1846,30 @@ export default function FreeImageWorkspace({
     if (files.length) void addBatchRepairImages(files);
   }
 
-  function applyBatchPromptLines(lines, { startIndex = 0 } = {}) {
-    const normalized = Array.from(lines || []).map((item) => String(item || '').trim()).filter(Boolean).slice(0, MAX_BATCH_REPAIR_PROMPTS);
+  function applyBatchPromptLines(lines, { startIndex = 0, truncated = false } = {}) {
+    const normalized = Array.from(lines || []).map((item) => String(item || '').trim()).filter(Boolean).slice(0, MAX_BATCH_IMAGE_PROMPTS);
     if (!batchRepairImages.length) {
       setState((current) => ({ ...current, message: t.batchPromptEmpty }));
       return;
     }
     if (!normalized.length) return;
-    if (!batchIndependentPrompts && normalized.length === 1) {
-      setPrompt(normalized[0]);
-      setPromptOptimized(false);
-      setState((current) => ({ ...current, message: '' }));
-      return;
-    }
-    setBatchIndependentPrompts(true);
     setBatchPromptItems((current) => {
-      const next = resizeBatchPromptItems(current, batchRepairImages.length);
-      normalized.slice(0, Math.max(0, next.length - startIndex)).forEach((text, offset) => {
+      const requestedCount = Math.min(MAX_BATCH_IMAGE_PROMPTS, Math.max(current.length, startIndex + normalized.length));
+      const next = resizeBatchPromptItems(current, batchRepairImages.length, '', requestedCount);
+      normalized.slice(0, Math.max(0, MAX_BATCH_IMAGE_PROMPTS - startIndex)).forEach((text, offset) => {
         next[startIndex + offset] = { ...next[startIndex + offset], text };
       });
       return next;
     });
+    const retainedCount = Math.min(MAX_BATCH_IMAGE_PROMPTS, Math.max(batchPromptItems.length, startIndex + normalized.length));
+    const overflowCount = batchRepairImages.length > 1 ? Math.max(0, retainedCount - batchRepairImages.length) : 0;
     setState((current) => ({
       ...current,
-      message: normalized.length > batchRepairImages.length ? t.batchPromptTrimmed(batchRepairImages.length) : ''
+      message: truncated
+        ? t.batchPromptTrimmed
+        : overflowCount
+          ? t.batchPromptOverflowLocked(batchRepairImages.length, overflowCount)
+          : ''
     }));
   }
 
@@ -1781,7 +1878,8 @@ export default function FreeImageWorkspace({
     if (!files.length) return;
     try {
       const contents = await Promise.all(files.map((file) => file.text()));
-      applyBatchPromptLines(splitBatchPromptLines(contents.join('\n')));
+      const parsed = parseBatchPromptLines(contents.join('\n'));
+      applyBatchPromptLines(parsed.lines, { truncated: parsed.truncated });
     } catch {
       setState((current) => ({ ...current, message: t.failed }));
     } finally {
@@ -1802,28 +1900,43 @@ export default function FreeImageWorkspace({
       return;
     }
     const textValue = event.dataTransfer?.getData('text/plain') || '';
-    if (textValue.trim()) applyBatchPromptLines(splitBatchPromptLines(textValue));
+    if (textValue.trim()) {
+      const parsed = parseBatchPromptLines(textValue);
+      applyBatchPromptLines(parsed.lines, { truncated: parsed.truncated });
+    }
   }
 
   function handleBatchPromptPaste(event, startIndex = 0) {
     const textValue = event.clipboardData?.getData('text/plain') || '';
-    const lines = splitBatchPromptLines(textValue);
-    if (!lines.length || (!batchIndependentPrompts && lines.length === 1)) return;
+    const parsed = parseBatchPromptLines(textValue);
+    if (parsed.lines.length <= 1) return;
     event.preventDefault();
     event.stopPropagation();
-    applyBatchPromptLines(lines, { startIndex });
+    applyBatchPromptLines(parsed.lines, { startIndex, truncated: parsed.truncated });
   }
 
-  function toggleBatchIndependentPrompts(event) {
-    const checked = event.target.checked;
-    setBatchIndependentPrompts(checked);
-    if (checked) {
-      setBatchPromptItems((current) => resizeBatchPromptItems(current, batchRepairImages.length, prompt.trim()));
-    }
+  function addBatchPrompt() {
+    if (!batchRepairImages.length || !batchPromptState.canAdd) return;
+    setBatchPromptItems((current) => resizeBatchPromptItems(
+      current,
+      batchRepairImages.length,
+      '',
+      Math.min(MAX_BATCH_IMAGE_PROMPTS, current.length + 1)
+    ));
+    setState((current) => ({ ...current, message: '' }));
+  }
+
+  function removeBatchPrompt(index) {
+    const canRemove = batchRepairImages.length === 1
+      ? batchPromptItems.length > 1
+      : index >= batchPromptState.activeCount;
+    if (!canRemove) return;
+    setBatchPromptItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
     setState((current) => ({ ...current, message: '' }));
   }
 
   function updateBatchPrompt(index, value) {
+    if (batchRepairImages.length > 1 && index >= batchPromptState.activeCount) return;
     setBatchPromptItems((current) => resizeBatchPromptItems(current, batchRepairImages.length).map((item, itemIndex) => (
       itemIndex === index ? { ...item, text: String(value || '').slice(0, 6000) } : item
     )));
@@ -1893,6 +2006,10 @@ export default function FreeImageWorkspace({
       setState((current) => ({ ...current, message: t.providerReferenceUnsupported }));
       return;
     }
+    if (files.some((file) => file.size > MAX_REFERENCE_SOURCE_BYTES)) {
+      setState((current) => ({ ...current, message: t.referenceTooLarge }));
+      return;
+    }
     if (manageLoading) setBatchRepairUploading(true);
     const added = [];
     let failed = false;
@@ -1927,9 +2044,10 @@ export default function FreeImageWorkspace({
       }
       if (added.length) {
         setBatchRepairImages((current) => [...current, ...added].slice(0, MAX_BATCH_REPAIR_IMAGES));
-        if (batchIndependentPrompts) {
-          setBatchPromptItems((current) => resizeBatchPromptItems(current, Math.min(MAX_BATCH_REPAIR_IMAGES, batchRepairImages.length + added.length)));
-        }
+        setBatchPromptItems((current) => resizeBatchPromptItems(
+          current,
+          Math.min(MAX_BATCH_REPAIR_IMAGES, batchRepairImages.length + added.length)
+        ));
       }
       setState((current) => ({
         ...current,
@@ -1942,9 +2060,8 @@ export default function FreeImageWorkspace({
   }
 
   function removeBatchRepairImage(id) {
-    const index = batchRepairImages.findIndex((item) => item.id === id);
+    hideThumbnailHoverPreview();
     setBatchRepairImages((current) => current.filter((item) => item.id !== id));
-    if (index >= 0) setBatchPromptItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   function clearBatchRepair() {
@@ -1982,7 +2099,7 @@ export default function FreeImageWorkspace({
     event?.preventDefault?.();
     if (batchRepairSubmittingRef.current) return;
     if (!batchPromptsValid) {
-      setState((current) => ({ ...current, message: batchIndependentPrompts ? t.batchPromptMissing : t.emptyPrompt }));
+      setState((current) => ({ ...current, message: t.batchPromptMissing }));
       return;
     }
     if (!hasFullWorkspace) {
@@ -2002,9 +2119,9 @@ export default function FreeImageWorkspace({
       setState((current) => ({ ...current, message: t.queueFull }));
       return;
     }
-    const supportedItems = batchRepairItems.filter((item) => item.sizing.valid);
-    if (supportedItems.length && (batchPricingLoading || batchPricingError
-      || supportedItems.some((item) => !batchPricingByKey[item.id]))) {
+    const supportedJobs = batchRepairJobs.filter((job) => job.image.sizing.valid);
+    if (supportedJobs.length && (batchPricingLoading || batchPricingError
+      || supportedJobs.some((job) => !batchPricingByKey[job.key]))) {
       setState((current) => ({ ...current, message: t.failed }));
       return;
     }
@@ -2020,25 +2137,25 @@ export default function FreeImageWorkspace({
     showBatchQueueNotice(t.batchProcessingNotice);
 
     const batchId = `repair-${globalThis.crypto?.randomUUID?.() || Date.now()}`;
-    const tasks = batchRepairItems.map((item, index) => ({
+    const tasks = batchRepairJobs.map((job, index) => ({
       clientTaskId: `${batchId}-${String(index + 1).padStart(2, '0')}`,
       taskMode: 'batch-repair',
       batchId,
       batchIndex: index,
-      sourceName: item.sourceName,
-      sourceWidth: item.width,
-      sourceHeight: item.height,
-      sourceThumbnail: item.thumbnailUrl || item.imageUrl,
-      prompt: batchPromptValues[index],
-      size: item.sizing.valid ? item.sizing.size : '1024x1024',
+      sourceName: job.image.sourceName,
+      sourceWidth: job.image.width,
+      sourceHeight: job.image.height,
+      sourceThumbnail: job.image.thumbnailUrl || job.image.imageUrl,
+      prompt: job.prompt,
+      size: job.image.sizing.valid ? job.image.sizing.size : '1024x1024',
       preserveSourceSize: batchPreserveSourceSize,
       quality,
       count: 1,
       providerId,
-      references: item.sizing.valid ? [{ clientId: item.id, imageDataUrl: item.imageDataUrl, annotations: [] }] : [],
-      preflightError: item.sizing.valid
+      references: job.image.sizing.valid ? [{ clientId: job.image.id, imageDataUrl: job.image.imageDataUrl, annotations: [] }] : [],
+      preflightError: job.image.sizing.valid
         ? ''
-        : item.referenceSupported
+        : job.image.referenceSupported
           ? batchPreserveSourceSize ? 'PROVIDER_SOURCE_SIZE_UNSUPPORTED' : 'PROVIDER_OUTPUT_SIZE_UNSUPPORTED'
           : 'INVALID_REFERENCE_IMAGE_FORMAT'
     }));
@@ -2062,8 +2179,8 @@ export default function FreeImageWorkspace({
       setBatchPromptItems([]);
       setState((current) => ({
         ...current,
-        message: batchRepairItems.length > supportedItems.length
-          ? t.batchQueued(supportedItems.length, batchRepairItems.length - supportedItems.length)
+        message: batchRepairJobs.length > supportedJobs.length
+          ? t.batchQueued(supportedJobs.length, batchRepairJobs.length - supportedJobs.length)
           : ''
       }));
       showBatchQueueNotice(t.batchProcessingNotice);
@@ -2517,7 +2634,7 @@ export default function FreeImageWorkspace({
     if (hasFullWorkspace) {
       let confirmedPricing;
       try {
-        confirmedPricing = await requestImagePricing({ size, quality, providerId });
+        confirmedPricing = await requestImagePricing({ size, quality, providerId, referenceCount: references.length });
       } catch {
         setState((current) => ({ ...current, message: t.failed }));
         return;
@@ -2631,7 +2748,29 @@ export default function FreeImageWorkspace({
   }
 
   return (
-    <div className="freeImageWorkspace">
+    <div className={`freeImageWorkspace freeImage${workspaceView[0].toUpperCase()}${workspaceView.slice(1)}View`}>
+      {thumbnailHoverPreview ? (
+        <div
+          className="freeImageThumbnailHoverPreview"
+          role="tooltip"
+          style={{
+            left: `${thumbnailHoverPreview.left}px`,
+            top: `${thumbnailHoverPreview.top}px`,
+            width: `${thumbnailHoverPreview.width}px`
+          }}
+        >
+          <img
+            src={thumbnailHoverPreview.imageUrl}
+            alt=""
+            style={{ height: `${thumbnailHoverPreview.height}px` }}
+            decoding="async"
+            draggable={false}
+          />
+          {thumbnailHoverPreview.details.length ? (
+            <div>{thumbnailHoverPreview.details.map((detail) => <span key={detail}>{detail}</span>)}</div>
+          ) : null}
+        </div>
+      ) : null}
       {batchQueueNotice ? (
         <div className="toastNotice freeImageBatchQueueToast" role="status" aria-live="polite">
           <LoaderCircle size={16} className="spin" />
@@ -2639,8 +2778,16 @@ export default function FreeImageWorkspace({
         </div>
       ) : null}
       <header className="freeImageHeader">
-        <div className="freeImageHeaderContent">
-          <h2>{t.title}</h2>
+        <div className="freeImageWorkspaceTabs freeImageHeaderTabs" role="tablist" aria-label={t.title}>
+          <button className={workspaceTab === 'control' && creationMode === 'single' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'control' && creationMode === 'single'} onClick={() => switchCreationMode('single')}>
+            <ImagePlus size={16} /> {t.singleCreate}
+          </button>
+          <button className={workspaceTab === 'control' && creationMode === 'batch-repair' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'control' && creationMode === 'batch-repair'} onClick={() => switchCreationMode('batch-repair')}>
+            <WandSparkles size={16} /> {language === 'zh' ? '批量生图' : 'Batch creation'}
+          </button>
+          <button className={workspaceTab === 'tasks' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'tasks'} onClick={() => setWorkspaceTab('tasks')}>
+            <ListTodo size={16} /> {t.taskList} <span>{activeQueueTaskCount}</span>
+          </button>
         </div>
         <div className="freeImageHeaderActions">
           {hasFullWorkspace && profile ? (
@@ -2658,19 +2805,7 @@ export default function FreeImageWorkspace({
         </div>
       </header>
 
-      <div className="freeImageWorkspaceTabs" role="tablist" aria-label={t.title}>
-        <button className={workspaceTab === 'control' && creationMode === 'single' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'control' && creationMode === 'single'} onClick={() => switchCreationMode('single')}>
-          <ImagePlus size={16} /> {t.singleCreate}
-        </button>
-        <button className={workspaceTab === 'control' && creationMode === 'batch-repair' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'control' && creationMode === 'batch-repair'} onClick={() => switchCreationMode('batch-repair')}>
-          <WandSparkles size={16} /> {t.batchRepair}
-        </button>
-        <button className={workspaceTab === 'tasks' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'tasks'} onClick={() => setWorkspaceTab('tasks')}>
-          <ListTodo size={16} /> {t.taskList} <span>{activeQueueTaskCount}</span>
-        </button>
-      </div>
-
-      <div className="freeImageMainGrid">
+      <div className={`freeImageMainGrid freeImageMainGrid-${workspaceView}`}>
         {workspaceTab === 'control' ? (
           <form className="freeImageComposer" onPaste={handleComposerPaste} onSubmit={creationMode === 'batch-repair' ? queueBatchRepair : handleSubmit}>
           {creationMode === 'single' ? <>
@@ -2700,11 +2835,15 @@ export default function FreeImageWorkspace({
             <div className={`freeImagePrimaryReferenceColumn ${referenceSwapId ? 'swapReady' : ''}`} onPointerUp={finishPrimaryReferenceSwap} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={handlePrimaryReferenceDrop}>
               <div className="freeImageReferenceHeading"><div><strong>{t.primaryImage}</strong></div></div>
               <div className="freeImagePrimaryReferenceSlot">
-                {primaryReference ? <article className={primaryReference.annotations.length ? 'marked' : ''}>
+                {primaryReference ? <article
+                  className={primaryReference.annotations.length ? 'marked' : ''}
+                  onMouseEnter={(event) => showThumbnailHoverPreview(event, primaryReference)}
+                  onMouseLeave={hideThumbnailHoverPreview}
+                >
                   <img src={primaryReference.markedImageUrl || primaryReference.thumbnailUrl || primaryReference.imageUrl} alt="" loading="lazy" decoding="async" />
-                  <span>{t.primaryImage}</span>
+                  <span>{t.primaryImageNumbered}</span>
                   <button className="edit" type="button" onClick={() => setEditingReferenceId(primaryReference.id)} title={t.editMarks}><Edit3 size={14} /></button>
-                  <button className="remove" type="button" onClick={() => removeReference(primaryReference)} aria-label={t.removeReference}><X size={13} /></button>
+                  <button className="remove" type="button" onMouseEnter={hideThumbnailHoverPreview} onFocus={hideThumbnailHoverPreview} onPointerDown={hideThumbnailHoverPreview} onClick={() => removeReference(primaryReference)} aria-label={t.removeReference}><X size={13} /></button>
                   {primaryReference.annotations.length ? <em>{primaryReference.annotations.length}</em> : null}
                 </article> : <button className="freeImagePrimaryReferenceEmpty" type="button" onClick={() => primaryReferenceUploadRef.current?.click()} disabled={isGenerating || uploadingReferences || !maxReferenceImages}><ImagePlus size={22} /><strong>{t.primaryImage}</strong><small>{referenceHintText}</small></button>}
               </div>
@@ -2713,11 +2852,17 @@ export default function FreeImageWorkspace({
               <div className="freeImageReferenceHeading"><div><strong>{t.supportingReferences}</strong>{modelConstraints.isMai || !maxReferenceImages ? <small>{referenceHintText}</small> : null}</div><span>{supportingReferences.length}/{maxSupportingReferences}</span></div>
               <div className="freeImageReferenceList">
                 {supportingReferences.map((reference, index) => (
-                  <article className={reference.annotations.length ? 'marked' : ''} key={reference.id} onPointerDown={(event) => beginReferenceSwap(event, reference.id)}>
+                  <article
+                    className={reference.annotations.length ? 'marked' : ''}
+                    key={reference.id}
+                    onPointerDown={(event) => beginReferenceSwap(event, reference.id)}
+                    onMouseEnter={(event) => showThumbnailHoverPreview(event, reference)}
+                    onMouseLeave={hideThumbnailHoverPreview}
+                  >
                     <img src={reference.markedImageUrl || reference.thumbnailUrl || reference.imageUrl} alt={reference.prompt || ''} draggable={false} loading="lazy" decoding="async" />
-                    <span>{index + 1}</span>
+                    <span>{t.imageNumber(index + 2)}</span>
                     <button className="edit" type="button" onClick={() => setEditingReferenceId(reference.id)} title={t.editMarks}><Edit3 size={14} /></button>
-                    <button className="remove" type="button" onClick={() => removeReference(reference)} aria-label={t.removeReference}><X size={13} /></button>
+                    <button className="remove" type="button" onMouseEnter={hideThumbnailHoverPreview} onFocus={hideThumbnailHoverPreview} onPointerDown={hideThumbnailHoverPreview} onClick={() => removeReference(reference)} aria-label={t.removeReference}><X size={13} /></button>
                     {reference.annotations.length ? <em>{reference.annotations.length}</em> : null}
                   </article>
                 ))}
@@ -2781,13 +2926,9 @@ export default function FreeImageWorkspace({
             <div><strong>{t.batchRepair}</strong><span>{t.batchUploadHint}</span></div>
             <div className="freeImageBatchModeActions">
               <button className="freeImageBatchClear" type="button" onClick={clearBatchRepair} disabled={!batchRepairImages.length || batchRepairUploading}><X size={14} /> {t.clearBatch}</button>
-              <label className="freeImageBatchToggle">
-                <input type="checkbox" checked={batchIndependentPrompts} onChange={toggleBatchIndependentPrompts} />
-                <span>{t.independentPrompts}</span>
-              </label>
             </div>
           </section>
-          <section className={`freeImageBatchWorkspace ${batchIndependentPrompts ? 'independent' : ''}`}>
+          <section className="freeImageBatchWorkspace independent">
             <div
               className={`freeImageBatchImagePanel ${batchRepairDragging ? 'dragActive' : ''}`}
               onDragEnter={(event) => { event.preventDefault(); setBatchRepairDragging(true); }}
@@ -2822,22 +2963,29 @@ export default function FreeImageWorkspace({
               </div>
               {batchRepairItems.length ? <div className="freeImageBatchRepairGrid">
                 {batchRepairItems.map((item, index) => (
-                  <article className={item.sizing.valid ? '' : 'unsupported'} key={item.id}>
+                  <article
+                    className={item.sizing.valid ? '' : 'unsupported'}
+                    key={item.id}
+                    onMouseEnter={(event) => showThumbnailHoverPreview(event, item, [
+                      `${t.batchSourceSize} ${item.width}×${item.height}`,
+                      item.sizing.valid
+                        ? `${t.batchOutputSize} ${item.sizing.auto ? t.auto : `${item.sizing.width}×${item.sizing.height}`}`
+                        : ''
+                    ])}
+                    onMouseLeave={hideThumbnailHoverPreview}
+                  >
                     <img src={item.thumbnailUrl || item.imageUrl} alt={item.sourceName || ''} />
                     <span className="freeImageBatchIndex">{index + 1}</span>
-                    <button type="button" onClick={() => removeBatchRepairImage(item.id)} aria-label={t.deleteTask} title={t.deleteTask}>
+                    <button type="button" onMouseEnter={hideThumbnailHoverPreview} onFocus={hideThumbnailHoverPreview} onPointerDown={hideThumbnailHoverPreview} onClick={() => removeBatchRepairImage(item.id)} aria-label={t.deleteTask} title={t.deleteTask}>
                       <X size={13} />
                     </button>
                     <footer>
                       <strong title={item.sourceName}>{item.sourceName}</strong>
-                      <small>{t.batchSourceSize} {item.width}×{item.height}</small>
-                      {item.sizing.valid ? (
-                        <small>{t.batchOutputSize} {item.sizing.auto ? t.auto : `${item.sizing.width}×${item.sizing.height}`}</small>
-                      ) : (
+                      {!item.sizing.valid ? (
                         <em>{item.referenceSupported
                           ? batchPreserveSourceSize ? t.providerSourceSizeUnsupported : t.providerOutputSizeUnsupported
                           : t.maiReferenceUploadFailed}</em>
-                      )}
+                      ) : null}
                     </footer>
                   </article>
                 ))}
@@ -2852,18 +3000,28 @@ export default function FreeImageWorkspace({
               onDrop={handleBatchPromptDrop}
               onPaste={handleBatchPromptPaste}
             >
-              <header><strong>{batchIndependentPrompts ? t.independentPrompts : t.sharedRepairPrompt}</strong><span>{batchIndependentPrompts ? `${batchPromptItems.filter((item) => item.text.trim()).length}/${batchRepairImages.length}` : ''}</span></header>
+              <header className="freeImageBatchPromptHeader">
+                <div>
+                  <strong>{t.independentPrompts}</strong>
+                  {batchRepairImages.length ? <small>{batchRepairImages.length === 1 ? t.batchPromptSingleMode : t.batchPromptPairMode(batchRepairImages.length)}</small> : null}
+                </div>
+                <div className="freeImageBatchPromptHeaderActions">
+                  {batchRepairImages.length ? <span>{t.batchPromptCount(batchPromptState.activeCount, batchPromptState.visibleCount)}</span> : null}
+                  {batchRepairImages.length === 1 ? <button type="button" onClick={addBatchPrompt} disabled={!batchPromptState.canAdd} title={t.addBatchPrompt} aria-label={t.addBatchPrompt}><Plus size={14} />{t.addBatchPrompt}</button> : null}
+                </div>
+              </header>
               <input ref={batchPromptUploadRef} className="freeImageReferenceInput" type="file" accept=".txt,text/plain" multiple onChange={(event) => addBatchPromptFiles(event.target.files)} />
               <button className="freeImageBatchPromptUpload" type="button" onClick={() => batchPromptUploadRef.current?.click()} disabled={!batchRepairImages.length}>
                 <FileText size={19} /><span><strong>{t.batchPromptUpload}</strong><small>{t.batchPromptHint}</small></span>
               </button>
-              {!batchRepairImages.length ? <div className="freeImageBatchPromptEmpty">{t.batchPromptEmpty}</div> : batchIndependentPrompts ? (
+              {!batchRepairImages.length ? <div className="freeImageBatchPromptEmpty">{t.batchPromptEmpty}</div> : (
                 <div className="freeImageBatchPromptList">
-                  {batchRepairImages.map((image, index) => {
-                    const item = batchPromptItems[index] || { id: `prompt-slot-${image.id}`, text: '' };
+                  {batchPromptItems.map((item, index) => {
+                    const promptLocked = batchRepairImages.length > 1 && index >= batchPromptState.activeCount;
+                    const promptCanRemove = batchRepairImages.length === 1 ? batchPromptItems.length > 1 : promptLocked;
                     return (
                     <article
-                      className={batchPromptDragIndex === index ? 'dragging' : ''}
+                      className={`${batchPromptDragIndex === index ? 'dragging' : ''} ${promptLocked ? 'locked' : ''} ${promptCanRemove ? 'removable' : ''}`}
                       key={item.id}
                       onDragOver={(event) => {
                         if (batchPromptDragIndex < 0) return;
@@ -2880,6 +3038,7 @@ export default function FreeImageWorkspace({
                       }}
                     >
                       <button
+                        className="freeImageBatchPromptHandle"
                         type="button"
                         draggable
                         onDragStart={(event) => {
@@ -2894,24 +3053,22 @@ export default function FreeImageWorkspace({
                       ><GripVertical size={16} /><span>{index + 1}</span></button>
                       <textarea
                         value={item.text}
+                        disabled={promptLocked}
                         onChange={(event) => updateBatchPrompt(index, event.target.value)}
                         onPaste={(event) => handleBatchPromptPaste(event, index)}
-                        placeholder={t.batchPromptPlaceholder(index + 1)}
+                        placeholder={promptLocked
+                          ? t.batchPromptLocked
+                          : batchRepairImages.length === 1
+                            ? t.batchSinglePromptPlaceholder(index + 1)
+                            : t.batchPromptPlaceholder(index + 1)}
+                        title={promptLocked ? t.batchPromptLocked : ''}
                         maxLength={6000}
                       />
+                      {promptCanRemove ? <button className="freeImageBatchPromptRemove" type="button" onClick={() => removeBatchPrompt(index)} title={t.removeBatchPrompt} aria-label={`${t.removeBatchPrompt} ${index + 1}`}><X size={13} /></button> : null}
                     </article>
                     );
                   })}
                 </div>
-              ) : (
-                <textarea
-                  className="freeImageBatchSharedPrompt"
-                  value={prompt}
-                  onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
-                  onPaste={handleBatchPromptPaste}
-                  placeholder={t.batchRepairPlaceholder}
-                  maxLength={6000}
-                />
               )}
             </div>
           </section>
@@ -3154,7 +3311,7 @@ export default function FreeImageWorkspace({
               type="submit"
               disabled={batchRepairSubmitting || batchRepairUploading || !hasFullWorkspace || !batchProviderSupported || !batchPromptsValid
                 || batchQueueAtLimit || batchPricingLoading || (!batchPreserveSourceSize && !sizeCheck.valid)
-                || Boolean(batchPricingError) || batchRepairItems.some((item) => item.sizing.valid && !batchPricingByKey[item.id])}
+                || Boolean(batchPricingError) || batchRepairJobs.some((job) => job.image.sizing.valid && !batchPricingByKey[job.key])}
               aria-busy={batchRepairSubmitting}
             >
               {batchRepairSubmitting || batchRepairUploading || batchPricingLoading ? <LoaderCircle size={19} className="spin" /> : <WandSparkles size={19} />}
@@ -3167,7 +3324,7 @@ export default function FreeImageWorkspace({
               onClick={(event) => queueBatchRepair(event, { stayOnPage: true })}
               disabled={batchRepairSubmitting || batchRepairUploading || !hasFullWorkspace || !batchProviderSupported || !batchPromptsValid
                 || batchQueueAtLimit || batchPricingLoading || (!batchPreserveSourceSize && !sizeCheck.valid)
-                || Boolean(batchPricingError) || batchRepairItems.some((item) => item.sizing.valid && !batchPricingByKey[item.id])}
+                || Boolean(batchPricingError) || batchRepairJobs.some((job) => job.image.sizing.valid && !batchPricingByKey[job.key])}
               title={batchQueueAtLimit ? t.queueFull : t.addBatchQueue}
             ><ListTodo size={18} />{batchQueueAtLimit ? t.queueFullButton : t.addBatchQueue}</button>
           </div>
@@ -3177,7 +3334,13 @@ export default function FreeImageWorkspace({
         ) : (
           <section className="freeImageTaskPanel">
             <header>
-              <div><strong>{t.taskList}</strong><span>{queueTasks.length}/{MAX_QUEUE_TASKS}</span></div>
+              <div className="freeImageTaskHeading"><strong>{t.taskList}</strong><span>{queueTasks.length}/{MAX_QUEUE_TASKS}</span></div>
+              <div className="freeImageTaskSummary" aria-label={language === 'zh' ? '任务概览' : 'Task overview'}>
+                <span><em>{language === 'zh' ? '进行中' : 'Active'}</em><strong>{queueTaskSummary.active}</strong></span>
+                <span><em>{language === 'zh' ? '已完成' : 'Completed'}</em><strong>{queueTaskSummary.completed}</strong></span>
+                <span><em>{language === 'zh' ? '失败/取消' : 'Failed'}</em><strong>{queueTaskSummary.failed}</strong></span>
+                <span><em>{language === 'zh' ? '全部' : 'Total'}</em><strong>{queueTaskSummary.total}</strong></span>
+              </div>
             </header>
             {queueTasks.length ? (
               <div className="freeImageTaskList">
@@ -3210,9 +3373,12 @@ export default function FreeImageWorkspace({
                       >
                         {activeTask ? <X size={15} /> : <Minus size={15} />}
                       </button>
-                      {task.results?.[0]?.imageUrl || task.sourceThumbnail ? (
-                        <img className="freeImageTaskThumbnail" src={task.results?.[0]?.thumbnailUrl || task.results?.[0]?.imageUrl || task.sourceThumbnail} alt="" loading="lazy" decoding="async" />
-                      ) : null}
+                      <div className="freeImageTaskVisual">
+                        {task.results?.[0]?.imageUrl || task.sourceThumbnail ? (
+                          <img className="freeImageTaskThumbnail" src={task.results?.[0]?.thumbnailUrl || task.results?.[0]?.imageUrl || task.sourceThumbnail} alt="" loading="lazy" decoding="async" />
+                        ) : <ImagePlus size={22} aria-hidden="true" />}
+                        <span>{task.taskMode === 'batch-repair' ? (language === 'zh' ? '批量' : 'Batch') : (language === 'zh' ? '单图' : 'Single')}</span>
+                      </div>
                       <div className="freeImageTaskBody">
                         <div className="freeImageTaskStatus">
                           <span>{task.status === 'queued'
