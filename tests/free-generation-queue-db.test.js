@@ -95,6 +95,7 @@ test('redo preserves the original prompt, references, provider, size, quality, a
     quality: 'high',
     count: 3,
     providerId: 'provider-redo',
+    stylePresetId: 'cinematic-photo',
     references: [{
       generationId: 'reference-generation-1',
       annotations: [{ type: 'rectangle', x1: 0.1, y1: 0.2, x2: 0.4, y2: 0.5 }]
@@ -110,12 +111,14 @@ test('redo preserves the original prompt, references, provider, size, quality, a
   assert.equal(redoRequest.quality, originalRequest.quality);
   assert.equal(redoRequest.count, originalRequest.count);
   assert.equal(redoRequest.providerId, originalRequest.providerId);
+  assert.equal(redoRequest.stylePresetId, originalRequest.stylePresetId);
   assert.deepEqual(redoRequest.references, originalRequest.references);
 
   const redo = queue.createFreeGenerationTask(user.id, redoRequest);
   const storedRedo = queue.getFreeGenerationTask(user.id, redo.id, { includeRequest: true });
   assert.equal(storedRedo.status, 'queued');
   assert.equal(storedRedo.request.prompt, originalRequest.prompt);
+  assert.equal(storedRedo.request.stylePresetId, originalRequest.stylePresetId);
   assert.deepEqual(storedRedo.request.references, originalRequest.references);
 });
 

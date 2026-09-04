@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getDb } from './local-db.js';
+import { normalizeImageStylePresetId } from '../../shared/image-style-presets.js';
 
 export const MAX_FREE_GENERATION_TASKS = 30;
 export const MAX_ACTIVE_FREE_GENERATION_TASKS = 20;
@@ -70,6 +71,7 @@ export function normalizeFreeGenerationTask(row, { includeRequest = false } = {}
     canvasParentNodeId: cleanText(storedRequest.canvasParentNodeId, 160),
     canvasTaskNodeId: cleanText(storedRequest.canvasTaskNodeId, 160),
     canvasDisplayPrompt: cleanText(storedRequest.canvasDisplayPrompt, 6000),
+    stylePresetId: normalizeImageStylePresetId(storedRequest.stylePresetId),
     canvasReferenceNodeIds: Array.isArray(storedRequest.canvasReferenceNodeIds)
       ? storedRequest.canvasReferenceNodeIds.map((value) => cleanText(value, 160)).filter(Boolean).slice(0, 9)
       : [],
@@ -114,6 +116,7 @@ function normalizedTaskRequest(request = {}) {
     throw error;
   }
   const taskMode = request.taskMode === 'batch-repair' ? 'batch-repair' : 'single';
+  const stylePresetId = taskMode === 'single' ? normalizeImageStylePresetId(request.stylePresetId) : '';
   const imageCount = taskMode === 'batch-repair'
     ? 1
     : Math.max(1, Math.min(4, Math.round(Number(request.count) || 1)));
@@ -163,6 +166,7 @@ function normalizedTaskRequest(request = {}) {
     canvasParentNodeId,
     canvasTaskNodeId,
     canvasDisplayPrompt,
+    stylePresetId,
     canvasReferenceNodeIds,
     canvasX,
     canvasY,
@@ -201,6 +205,7 @@ function normalizedTaskRequest(request = {}) {
     canvasParentNodeId,
     canvasTaskNodeId,
     canvasDisplayPrompt,
+    stylePresetId,
     canvasReferenceNodeIds,
     canvasX,
     canvasY,
@@ -372,6 +377,7 @@ export function buildFreeGenerationRedoRequest(userId, taskId, overrides = {}) {
     canvasParentNodeId: task.canvasParentNodeId,
     canvasTaskNodeId: cleanText(overrides.canvasTaskNodeId, 160),
     canvasDisplayPrompt: task.canvasDisplayPrompt,
+    stylePresetId: task.stylePresetId,
     canvasReferenceNodeIds: task.canvasReferenceNodeIds,
     canvasX: Number.isFinite(Number(overrides.canvasX)) ? Number(overrides.canvasX) : task.canvasX,
     canvasY: Number.isFinite(Number(overrides.canvasY)) ? Number(overrides.canvasY) : task.canvasY,

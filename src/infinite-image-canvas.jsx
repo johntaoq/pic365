@@ -370,8 +370,7 @@ function worldRect(nodes) {
 
 function loadMinimapPosition(storageKey = `${STORAGE_PREFIX}.minimap-position`) {
   try {
-    const stored = globalThis.localStorage?.getItem(storageKey)
-      || (storageKey === `${STORAGE_PREFIX}.minimap-position` ? '' : globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.minimap-position`));
+    const stored = globalThis.localStorage?.getItem(storageKey);
     const parsed = JSON.parse(stored || 'null');
     if (!Number.isFinite(parsed?.x) || !Number.isFinite(parsed?.y)) return null;
     return { x: Math.max(8, parsed.x), y: Math.max(8, parsed.y) };
@@ -420,7 +419,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const isSignedIn = isAuthenticatedSession(session);
   const hasFullWorkspace = isSignedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
   const guestStorageKey = `${STORAGE_PREFIX}:${profile?.id || session?.user?.id || 'guest'}`;
-  const minimapStorageKey = `${STORAGE_PREFIX}.minimap-position`;
+  const minimapStorageKey = `${STORAGE_PREFIX}.minimap-position.v2`;
 
   const [projects, setProjects] = useState([]);
   const [currentProjectId, setCurrentProjectId] = useState('');
@@ -483,6 +482,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const [copyingImageId, setCopyingImageId] = useState('');
   const [stageSize, setStageSize] = useState({ width: 900, height: 620 });
   const [selectionBox, setSelectionBox] = useState(null);
+  const [lockedDragNodeId, setLockedDragNodeId] = useState('');
   const [boxSelectMode, setBoxSelectMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.sidebar`) !== 'closed');
   const [sidebarTab, setSidebarTab] = useState(() => globalThis.localStorage?.getItem(`${STORAGE_PREFIX}.sidebar-tab`) === 'projects' ? 'projects' : 'recent');
@@ -634,7 +634,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     try {
       const serialized = JSON.stringify(minimapPosition);
       globalThis.localStorage?.setItem(minimapStorageKey, serialized);
-      globalThis.localStorage?.setItem(`${STORAGE_PREFIX}.minimap-position`, serialized);
     } catch { /* best effort */ }
   }, [minimapPosition, minimapStorageKey]);
   useEffect(() => {
@@ -1808,15 +1807,20 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   }
 
   function beginNodeDrag(event, node) {
-    if (projectReadOnly || event.button !== 0) return;
-    if (node.locked) {
-      event.stopPropagation();
-      setMessage(t.lockedPosition);
-      return;
-    }
+    if (projectReadOnly || event.button !== 0 || referencePickTargetId) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (node.locked) {
+      interactionRef.current = {
+        type: 'locked-node',
+        id: node.id,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false
+      };
+      return;
+    }
     const requestedIds = selectedIdSet.has(node.id) ? selectedIds : [node.id];
     const movingIds = canvasMovableNodeIds(nodesRef.current, requestedIds);
     if (!movingIds.length) return;
@@ -1844,6 +1848,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     event?.preventDefault?.();
     interactionRef.current = null;
     setSelectionBox(null);
+    setLockedDragNodeId('');
     setBoxSelectMode(false);
     setSelectedId('');
     setSelectedIds([]);
@@ -1934,6 +1939,14 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       setSelectionBox({ left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
       return;
     }
+    if (interaction.type === 'locked-node') {
+      if (!interaction.moved && Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY) > 3) {
+        interaction.moved = true;
+        setLockedDragNodeId(interaction.id);
+        setMessage(t.lockedPosition);
+      }
+      return;
+    }
     if (interaction.type === 'node' && !interaction.moved && Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY) > 3) interaction.moved = true;
     const dx = (event.clientX - interaction.startX) / viewport.zoom;
     const dy = (event.clientY - interaction.startY) / viewport.zoom;
@@ -1964,6 +1977,14 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       return;
     }
     if (interaction?.type === 'minimap') return;
+    if (interaction?.type === 'locked-node') {
+      setLockedDragNodeId('');
+      if (interaction.moved) {
+        suppressNodeClickRef.current = true;
+        globalThis.setTimeout?.(() => { suppressNodeClickRef.current = false; }, 0);
+      }
+      return;
+    }
     if (interaction?.type === 'node') {
       if (interaction.moved) {
         suppressNodeClickRef.current = true;
@@ -2644,15 +2665,15 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                 {referenceConnectionSource && referenceConnection?.point ? <path className="referenceLink referenceDraft" aria-hidden="true" focusable="false" d={canvasReferenceDraftPath(referenceConnectionSource, referenceConnection.point)} /> : null}
               </svg>
               {nodes.map((node) => <article
-                className={`infiniteCanvasNode ${node.type} ${selectedIdSet.has(node.id) ? 'selected' : ''} ${selectedIdSet.has(node.id) && !node.locked && !projectReadOnly ? 'selectedMovable' : ''} ${node.id === selectedId ? 'primarySelected' : ''} ${node.id === selectedId && node.type === 'image' ? 'primaryImageSelected' : ''} ${referencedSourceIds.has(node.id) ? 'referencedEntity' : ''} ${node.id === adoptedNodeId ? 'adopted' : ''} ${node.locked ? 'locked' : ''} ${node.id === referencePickTargetId ? 'referencePickTarget' : referencePickTargetId && node.type === 'image' ? 'referencePickCandidate' : ''} ${referencePickIds.has(node.id) ? 'referencePickLinked' : ''} ${node.id === referenceConnection?.targetId ? 'referenceConnectTarget' : ''}`}
-                data-node-id={node.id} tabIndex="0" aria-label={nodeLabel(node, t)} style={{ left: node.x, top: node.y }} key={node.id} onPointerDown={(event) => { if (!selectedIdSet.has(node.id) || event.target.closest?.('button, a, input, textarea, select, [contenteditable="true"]')) return; beginNodeDrag(event, node); }} onClick={(event) => { event.stopPropagation(); if (suppressNodeClickRef.current) { suppressNodeClickRef.current = false; return; } event.currentTarget.focus({ preventScroll: true }); setImageContextMenu(null); if (referencePickTargetId && node.type === 'image' && node.id !== referencePickTargetId) { setReferenceForTarget(referencePickTargetId, node, 'toggle'); return; } selectNode(node, event); }} onDoubleClick={() => { if (!referencePickTargetId && (node.type === 'image' || node.type === 'video')) setPreviewNode(node); }} onContextMenu={(event) => openImageContextMenu(event, node)} onKeyDown={(event) => {
+                className={`infiniteCanvasNode ${node.type} ${selectedIdSet.has(node.id) ? 'selected' : ''} ${!node.locked && !projectReadOnly ? 'draggableNode' : ''} ${node.id === selectedId ? 'primarySelected' : ''} ${node.id === selectedId && node.type === 'image' ? 'primaryImageSelected' : ''} ${referencedSourceIds.has(node.id) ? 'referencedEntity' : ''} ${node.id === adoptedNodeId ? 'adopted' : ''} ${node.locked ? 'locked' : ''} ${node.id === lockedDragNodeId ? 'lockedDragAttempt' : ''} ${node.id === referencePickTargetId ? 'referencePickTarget' : referencePickTargetId && node.type === 'image' ? 'referencePickCandidate' : ''} ${referencePickIds.has(node.id) ? 'referencePickLinked' : ''} ${node.id === referenceConnection?.targetId ? 'referenceConnectTarget' : ''}`}
+                data-node-id={node.id} tabIndex="0" aria-label={nodeLabel(node, t)} style={{ left: node.x, top: node.y }} key={node.id} onPointerDown={(event) => { if (event.target.closest?.('button, a, input, textarea, select, [contenteditable="true"]')) return; beginNodeDrag(event, node); }} onClick={(event) => { event.stopPropagation(); if (suppressNodeClickRef.current) { suppressNodeClickRef.current = false; return; } event.currentTarget.focus({ preventScroll: true }); setImageContextMenu(null); if (referencePickTargetId && node.type === 'image' && node.id !== referencePickTargetId) { setReferenceForTarget(referencePickTargetId, node, 'toggle'); return; } selectNode(node, event); }} onDoubleClick={() => { if (!referencePickTargetId && (node.type === 'image' || node.type === 'video')) setPreviewNode(node); }} onContextMenu={(event) => openImageContextMenu(event, node)} onKeyDown={(event) => {
                   if (node.type !== 'image' || (!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'c') return;
                   event.preventDefault();
                   event.stopPropagation();
                   void copyImageNode(node);
                 }}
               >
-                <header onPointerDown={(event) => beginNodeDrag(event, node)}>
+                <header>
                   <span>{node.type === 'idea' ? <Sparkles size={14} /> : node.type === 'task' ? <LoaderCircle className={ACTIVE_TASK_STATUSES.has(node.status) ? 'spin' : ''} size={14} /> : node.type === 'video' ? <Film size={14} /> : <ImagePlus size={14} />}{nodeLabel(node, t)}</span>
                   <span className="infiniteCanvasNodeBadges">
                     {node.id === selectedId && node.type === 'image' ? <i className="primaryImageBadge"><Sparkles size={11} />{t.primaryImage}</i> : null}{referencedSourceIds.has(node.id) ? <i className="referenceEntityBadge" title={t.addReference}><Link2 size={11} /></i> : null}{Number(node.batchSize || 1) > 1 ? <i className="batchIndex">{Number(node.variantIndex || 0) + 1}/{node.batchSize}</i> : null}{node.id === adoptedNodeId ? <i title={t.adopted}><CheckCircle2 size={13} /></i> : null}{node.favorite ? <i title={t.favorite}><Star size={13} /></i> : null}
@@ -2683,6 +2704,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                   {node.type === 'task' && ACTIVE_TASK_STATUSES.has(node.status) ? <button className="nodePrimaryAction" type="button" onClick={(event) => { event.stopPropagation(); void cancelTask(node); }}><StopCircle size={13} /><span>{t.cancelTask}</span></button> : null}
                   {node.type === 'task' && ['failed', 'cancelled', 'interrupted'].includes(node.status) ? <button className="nodePrimaryAction" type="button" disabled={submitting} onClick={(event) => { event.stopPropagation(); void retryTask(node); }}><RefreshCw size={13} /><span>{t.retryTask}</span></button> : null}
                 </footer> : null}
+                {lockedDragNodeId === node.id ? <div className="infiniteCanvasLockedDragMask" aria-hidden="true"><span><LockKeyhole size={32} strokeWidth={2.4} /></span></div> : null}
               </article>)}
               {hoveredGenerationPosition && hoveredGenerationDetails ? <div
                 className="infiniteCanvasGenerationPopover"

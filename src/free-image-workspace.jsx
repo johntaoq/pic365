@@ -2,7 +2,10 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AtSign,
   Check,
+  ChevronDown,
+  CircleHelp,
   Copy,
+  Dices,
   Download,
   Edit3,
   Eye,
@@ -16,6 +19,7 @@ import {
   LoaderCircle,
   Maximize2,
   Minus,
+  Palette,
   Plus,
   RotateCcw,
   Search,
@@ -39,6 +43,12 @@ import {
   resolveSourceImageSizeForModel,
   validateImageSizeForModel
 } from '../shared/image-generation.js';
+import {
+  getImageStylePreset,
+  IMAGE_STYLE_CATEGORIES,
+  IMAGE_STYLE_PRESETS,
+  localizeImageStyleValue
+} from '../shared/image-style-presets.js';
 import {
   batchPromptLayout,
   createBatchPromptAssignments,
@@ -388,6 +398,30 @@ const copy = {
     zoomOut: '缩小',
     title: '灵感生图',
     prompt: '提示词',
+    styleTitle: '画面风格',
+    styleHint: '看图选择，生成时自动应用',
+    styleApplied: (name) => `已选「${name}」`,
+    styleRecommended: '推荐',
+    clearStyle: '不限定风格',
+    randomStyle: '随机盲盒',
+    chooseStyle: '选择风格',
+    styleButton: '风格',
+    closeStyle: '收起风格',
+    promptHelp: '提示词填写帮助',
+    promptHelpTitle: '按这个顺序描述',
+    promptHelpFormula: '主体 → 动作或场景 → 构图 → 风格与光线 → 细节要求',
+    promptHelpReference: '有参考图时，请用“图1、图2……”说明每张图负责什么；母版自动对应图1。',
+    promptHelpExampleLabel: '可以这样写',
+    promptHelpExample: '透明玻璃香水瓶放在浅色石材台面，近景居中，柔和侧光，高级商业摄影，背景干净。',
+    promptHelpPrimaryExample: '保持图1商品外观、颜色和文字不变，将商品放在浅色石材台面，近景居中，柔和侧光，高级商业摄影。',
+    promptHelpReferenceExample: '保持图1商品外观不变，参考图2的场景和光线，制作居中的高级商业产品照。',
+    promptModifiers: '推荐短句',
+    clearPrompt: '清空提示词',
+    addPromptModifier: '添加常用短句',
+    promptModifierPlaceholder: '输入修饰短句',
+    savePromptModifier: '保存短句',
+    removePromptModifier: '删除自定义短句',
+    promptModifierLimit: '最多保存 12 条自定义短句。',
     promptFormatExampleLabel: '提示词写法示例',
     promptFormatExample: '母版（图1 / 参考图1）：保留商品主体和构图。\n图2（参考图2）：仅参考服装款式。\n图3（参考图3）：仅参考背景和光线。\n修改要求：把图1人物的服装替换为图2款式，并采用图3的背景氛围。',
     placeholder: '输入画面主体、构图、风格、光线、文字和需要修改的内容。输入 @ 可引用历史生图。',
@@ -474,7 +508,7 @@ const copy = {
     singleCreate: '单图创作',
     batchRepair: '批量改图',
     batchUpload: '上传 / 拖入图片',
-    batchUploadHint: '最多 10 张；单图可配多条提示词，多图自动按序号 1 对 1',
+    batchUploadHint: '最多 10 张；单图可配多条提示词，多图可逐图填写或共用一条',
     batchPromptUpload: '上传 / 粘贴提示词',
     batchPromptHint: '支持 TXT 文件或粘贴多行文字，按回车自动拆分，最多 10 条',
     batchPromptFile: '选择 TXT 文件',
@@ -484,6 +518,13 @@ const copy = {
     batchPromptOverflowLocked: (active, overflow) => `当前 ${active} 张图片启用前 ${active} 条，另有 ${overflow} 条已保留并锁定，可拖动换位。`,
     batchPromptSingleMode: '当前 1 张图：每条提示词生成 1 张结果，最多 10 条。',
     batchPromptPairMode: (count) => `当前 ${count} 张图：图片与提示词按序号 1 对 1。`,
+    batchPromptSharedMode: (count) => `当前 ${count} 张图：全部图片共用同一条提示词。`,
+    batchPromptPaired: '逐图填写',
+    batchPromptShared: '统一提示词',
+    batchPromptSharedHint: 'TXT 文件或直接粘贴一条要求，将应用到全部图片。',
+    batchPromptSharedPlaceholder: '所有图片共用的修改提示词',
+    batchPromptSharedCount: (count) => `应用 ${count} 张`,
+    batchAllImages: '全部',
     batchPromptCount: (active, total) => `启用 ${active}/${total}`,
     addBatchPrompt: '增加提示词',
     removeBatchPrompt: '删除提示词',
@@ -512,6 +553,30 @@ const copy = {
   en: {
     title: 'Image Studio',
     prompt: 'Prompt',
+    styleTitle: 'Visual style',
+    styleHint: 'Choose by preview; applied automatically',
+    styleApplied: (name) => `Selected: ${name}`,
+    styleRecommended: 'Pick',
+    clearStyle: 'No preset',
+    randomStyle: 'Pick for me',
+    chooseStyle: 'Choose style',
+    styleButton: 'Style',
+    closeStyle: 'Close styles',
+    promptHelp: 'Prompt writing help',
+    promptHelpTitle: 'Describe in this order',
+    promptHelpFormula: 'Subject → action or scene → composition → style and lighting → details',
+    promptHelpReference: 'When using references, explain what Image 1, Image 2, and so on should contribute. The primary image is always Image 1.',
+    promptHelpExampleLabel: 'Example',
+    promptHelpExample: 'A transparent glass perfume bottle on pale stone, centered close-up composition, soft side lighting, premium commercial photography, clean background.',
+    promptHelpPrimaryExample: 'Keep the product appearance, colors, and text in Image 1 unchanged; place it on pale stone with a centered close-up composition and soft side lighting.',
+    promptHelpReferenceExample: 'Keep the product in Image 1 unchanged, use the scene and lighting from Image 2, and create a centered premium commercial product photo.',
+    promptModifiers: 'Quick phrases',
+    clearPrompt: 'Clear prompt',
+    addPromptModifier: 'Add saved phrase',
+    promptModifierPlaceholder: 'Enter a modifier phrase',
+    savePromptModifier: 'Save phrase',
+    removePromptModifier: 'Remove saved phrase',
+    promptModifierLimit: 'Save up to 12 custom phrases.',
     promptFormatExampleLabel: 'Prompt format example',
     promptFormatExample: 'Master (Image 1 / Reference 1): Preserve the product subject and composition.\nImage 2 (Reference 2): Use only the clothing style.\nImage 3 (Reference 3): Use only the background and lighting.\nEdit request: Replace the clothing in Image 1 with the style from Image 2, and use the background atmosphere from Image 3.',
     placeholder: 'Describe the subject, composition, style, lighting, text, and edits. Type @ to reference a previous generation.',
@@ -633,7 +698,7 @@ const copy = {
     singleCreate: 'Single image',
     batchRepair: 'Batch edit',
     batchUpload: 'Upload / drop images',
-    batchUploadHint: 'Up to 10 images; one image can use many prompts, while multiple images pair by order',
+    batchUploadHint: 'Up to 10 images; one image can use many prompts, while multiple images can use paired or shared prompts',
     batchPromptUpload: 'Upload / paste prompts',
     batchPromptHint: 'Use a TXT file or paste multiple lines. New lines become separate prompts, up to 10.',
     batchPromptFile: 'Choose TXT file',
@@ -643,6 +708,13 @@ const copy = {
     batchPromptOverflowLocked: (active, overflow) => `${active} images enable the first ${active} prompts. ${overflow} extra prompt${overflow === 1 ? '' : 's'} are retained and locked; drag to reorder them.`,
     batchPromptSingleMode: 'One image: each prompt creates one result, up to 10 prompts.',
     batchPromptPairMode: (count) => `${count} images: images and prompts are paired one-to-one by order.`,
+    batchPromptSharedMode: (count) => `${count} images: one prompt is applied to every image.`,
+    batchPromptPaired: 'One-to-one',
+    batchPromptShared: 'Shared prompt',
+    batchPromptSharedHint: 'Upload a TXT file or paste one instruction to apply it to every image.',
+    batchPromptSharedPlaceholder: 'One edit prompt for every image',
+    batchPromptSharedCount: (count) => `Applies to ${count}`,
+    batchAllImages: 'All',
     batchPromptCount: (active, total) => `${active}/${total} active`,
     addBatchPrompt: 'Add prompt',
     removeBatchPrompt: 'Remove prompt',
@@ -669,6 +741,35 @@ const copy = {
     providerReferenceUnsupported: 'The selected image provider does not support reference-image repair.'
   }
 };
+
+const PROMPT_MODIFIER_STORAGE_KEY = 'pic365-free-image-prompt-modifiers-v1';
+const MAX_CUSTOM_PROMPT_MODIFIERS = 12;
+const DEFAULT_PROMPT_MODIFIERS = Object.freeze({
+  zh: Object.freeze(['主体突出', '背景干净', '构图高级', '光线自然', '细节清晰', '色彩协调']),
+  en: Object.freeze(['clear focal subject', 'clean background', 'refined composition', 'natural lighting', 'crisp details', 'balanced colors'])
+});
+
+function normalizePromptModifier(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+}
+
+function loadCustomPromptModifiers() {
+  try {
+    const stored = JSON.parse(globalThis.localStorage?.getItem(PROMPT_MODIFIER_STORAGE_KEY) || '[]');
+    if (!Array.isArray(stored)) return [];
+    return [...new Set(stored.map(normalizePromptModifier).filter(Boolean))].slice(0, MAX_CUSTOM_PROMPT_MODIFIERS);
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomPromptModifiers(items) {
+  try {
+    globalThis.localStorage?.setItem(PROMPT_MODIFIER_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Local preferences are optional when storage is unavailable.
+  }
+}
 
 function sizeErrorText(result, t) {
   if (!result || result.valid) return '';
@@ -724,6 +825,7 @@ export default function FreeImageWorkspace({
   cases = [],
   categoryOptions = [],
   category = 'All',
+  styleCases = [],
   onCategoryChange,
   onOpenCase,
   onBrowseCases,
@@ -742,6 +844,7 @@ export default function FreeImageWorkspace({
   const batchRepairUploadRef = useRef(null);
   const batchPromptUploadRef = useRef(null);
   const referenceSwapRef = useRef('');
+  const promptHelpRef = useRef(null);
   const [referenceDragging, setReferenceDragging] = useState(false);
   const [referenceSwapId, setReferenceSwapId] = useState('');
   const [referenceSourceMenuOpen, setReferenceSourceMenuOpen] = useState(false);
@@ -757,6 +860,13 @@ export default function FreeImageWorkspace({
   const [batchImageSourceMenuOpen, setBatchImageSourceMenuOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [promptOptimized, setPromptOptimized] = useState(false);
+  const [customPromptModifiers, setCustomPromptModifiers] = useState(loadCustomPromptModifiers);
+  const [promptModifierDraft, setPromptModifierDraft] = useState('');
+  const [promptModifierEditorOpen, setPromptModifierEditorOpen] = useState(false);
+  const [styleCategory, setStyleCategory] = useState('recommended');
+  const [stylePresetId, setStylePresetId] = useState('');
+  const [stylePickerOpen, setStylePickerOpen] = useState(false);
+  const [promptHelpOpen, setPromptHelpOpen] = useState(false);
   const [sizeMode, setSizeMode] = useState('custom');
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
@@ -780,6 +890,7 @@ export default function FreeImageWorkspace({
   const [creationMode, setCreationMode] = useState('single');
   const [batchRepairImages, setBatchRepairImages] = useState([]);
   const [batchPromptItems, setBatchPromptItems] = useState([]);
+  const [batchPromptMode, setBatchPromptMode] = useState('paired');
   const [batchPreserveSourceSize, setBatchPreserveSourceSize] = useState(true);
   const [batchRepairUploading, setBatchRepairUploading] = useState(false);
   const [batchRepairSubmitting, setBatchRepairSubmitting] = useState(false);
@@ -815,6 +926,17 @@ export default function FreeImageWorkspace({
   const visibleHistory = history.filter((item) => item.status === 'succeeded' && item.imageUrl);
   const selectedEditorReference = references.find((item) => item.id === editingReferenceId) || null;
   const selectedProvider = providers.find((item) => item.id === providerId) || null;
+  const selectedStylePreset = getImageStylePreset(stylePresetId);
+  const styleCaseById = useMemo(
+    () => new Map((styleCases.length ? styleCases : cases).map((item) => [Number(item.id), item])),
+    [cases, styleCases]
+  );
+  const visibleStylePresets = useMemo(
+    () => styleCategory === 'recommended'
+      ? IMAGE_STYLE_PRESETS.filter((item) => item.featured)
+      : IMAGE_STYLE_PRESETS.filter((item) => item.category === styleCategory),
+    [styleCategory]
+  );
   const sizeTemplate = providerId ? sizeTemplatesByProvider[providerId] || '' : '';
   const modelConstraints = useMemo(
     () => getImageModelConstraints(selectedProvider?.model),
@@ -831,6 +953,21 @@ export default function FreeImageWorkspace({
   const ratioPresetOptions = modelSizeTemplate.ratios;
   const commonSizeOptions = modelSizeTemplate.sizes;
   const ratioOptions = modelSizeTemplate.ratios;
+
+  useEffect(() => {
+    if (!promptHelpOpen) return undefined;
+    function closePromptHelp(event) {
+      if (event.type === 'keydown' && event.key !== 'Escape') return;
+      if (event.type === 'pointerdown' && promptHelpRef.current?.contains(event.target)) return;
+      setPromptHelpOpen(false);
+    }
+    globalThis.document?.addEventListener('pointerdown', closePromptHelp);
+    globalThis.document?.addEventListener('keydown', closePromptHelp);
+    return () => {
+      globalThis.document?.removeEventListener('pointerdown', closePromptHelp);
+      globalThis.document?.removeEventListener('keydown', closePromptHelp);
+    };
+  }, [promptHelpOpen]);
 
   function showThumbnailHoverPreview(event, item, details = []) {
     const image = event.currentTarget?.querySelector?.('img') || event.currentTarget;
@@ -853,9 +990,33 @@ export default function FreeImageWorkspace({
     setThumbnailHoverPreview(null);
   }
 
+  function toggleStylePreset(nextId) {
+    setStylePresetId((current) => current === nextId ? '' : nextId);
+    setStylePickerOpen(false);
+  }
+
+  function chooseRandomStyle() {
+    const candidates = visibleStylePresets.length ? visibleStylePresets : IMAGE_STYLE_PRESETS;
+    const alternatives = candidates.filter((item) => item.id !== stylePresetId);
+    const pool = alternatives.length ? alternatives : candidates;
+    if (!pool.length) return;
+    setStylePresetId(pool[Math.floor(Math.random() * pool.length)].id);
+    setStylePickerOpen(false);
+  }
+
   useEffect(() => {
     setThumbnailHoverPreview(null);
+    setStylePickerOpen(false);
   }, [creationMode, workspaceTab]);
+
+  useEffect(() => {
+    if (!stylePickerOpen) return undefined;
+    const closeStylePicker = (event) => {
+      if (event.key === 'Escape') setStylePickerOpen(false);
+    };
+    globalThis.addEventListener?.('keydown', closeStylePicker);
+    return () => globalThis.removeEventListener?.('keydown', closeStylePicker);
+  }, [stylePickerOpen]);
 
   useEffect(() => {
     if (!previewImage) return undefined;
@@ -925,8 +1086,11 @@ export default function FreeImageWorkspace({
       : { valid: false, error: 'INVALID_REFERENCE_IMAGE_FORMAT' };
     return { ...item, referenceSupported, sizing };
   }), [batchPreserveSourceSize, batchRepairImages, modelConstraints, selectedProvider?.model, sizeCheck]);
-  const batchPromptState = batchPromptLayout(batchRepairItems.length, batchPromptItems.length);
-  const batchRepairJobs = useMemo(() => createBatchPromptAssignments(batchRepairItems, batchPromptItems)
+  const batchPromptState = batchPromptLayout(batchRepairItems.length, batchPromptItems.length, batchPromptMode);
+  const batchPromptRows = batchRepairItems.length > 1 && batchPromptMode === 'shared'
+    ? batchPromptItems.slice(0, 1)
+    : batchPromptItems;
+  const batchRepairJobs = useMemo(() => createBatchPromptAssignments(batchRepairItems, batchPromptItems, batchPromptMode)
     .map(({ image, imageIndex, promptItem, promptIndex }) => ({
       key: `${image.id}:${promptItem?.id || `prompt-${promptIndex}`}`,
       image,
@@ -934,7 +1098,7 @@ export default function FreeImageWorkspace({
       promptIndex,
       promptItem,
       prompt: String(promptItem?.text || '').trim()
-    })), [batchPromptItems, batchRepairItems]);
+    })), [batchPromptItems, batchPromptMode, batchRepairItems]);
   const batchPricingRequests = useMemo(() => batchRepairJobs
     .filter((job) => job.image.sizing.valid)
     .map((job) => ({ key: job.key, size: job.image.sizing.size, quality, count: 1, referenceCount: 1, providerId })),
@@ -1332,6 +1496,47 @@ export default function FreeImageWorkspace({
     setPrompt(value);
     setPromptOptimized(false);
     setMention(mentionAtCursor(value, cursor));
+  }
+
+  function appendPromptModifier(value) {
+    const modifier = normalizePromptModifier(value);
+    if (!modifier) return;
+    setPrompt((current) => {
+      const existing = String(current || '');
+      if (existing.includes(modifier)) return existing;
+      const trimmed = existing.trimEnd();
+      if (!trimmed) return modifier;
+      const separator = /[\s，,。.!！?？;；:]$/.test(trimmed) ? '' : language === 'zh' ? '，' : ', ';
+      return `${trimmed}${separator}${modifier}`;
+    });
+    setPromptOptimized(false);
+    setMention(null);
+    globalThis.requestAnimationFrame?.(() => textareaRef.current?.focus());
+  }
+
+  function savePromptModifier() {
+    const modifier = normalizePromptModifier(promptModifierDraft);
+    if (!modifier) return;
+    const defaults = DEFAULT_PROMPT_MODIFIERS[language] || DEFAULT_PROMPT_MODIFIERS.en;
+    if (defaults.includes(modifier) || customPromptModifiers.includes(modifier)) {
+      setPromptModifierDraft('');
+      setPromptModifierEditorOpen(false);
+      appendPromptModifier(modifier);
+      return;
+    }
+    if (customPromptModifiers.length >= MAX_CUSTOM_PROMPT_MODIFIERS) return;
+    const next = [...customPromptModifiers, modifier];
+    setCustomPromptModifiers(next);
+    saveCustomPromptModifiers(next);
+    setPromptModifierDraft('');
+    setPromptModifierEditorOpen(false);
+    appendPromptModifier(modifier);
+  }
+
+  function removePromptModifier(value) {
+    const next = customPromptModifiers.filter((item) => item !== value);
+    setCustomPromptModifiers(next);
+    saveCustomPromptModifiers(next);
   }
 
   function setRatio(presetId) {
@@ -1878,6 +2083,11 @@ export default function FreeImageWorkspace({
     if (!files.length) return;
     try {
       const contents = await Promise.all(files.map((file) => file.text()));
+      if (batchRepairImages.length > 1 && batchPromptMode === 'shared') {
+        const sharedText = contents.join('\n').trim().slice(0, 6000);
+        if (sharedText) updateBatchPrompt(0, sharedText);
+        return;
+      }
       const parsed = parseBatchPromptLines(contents.join('\n'));
       applyBatchPromptLines(parsed.lines, { truncated: parsed.truncated });
     } catch {
@@ -1901,6 +2111,10 @@ export default function FreeImageWorkspace({
     }
     const textValue = event.dataTransfer?.getData('text/plain') || '';
     if (textValue.trim()) {
+      if (batchRepairImages.length > 1 && batchPromptMode === 'shared') {
+        updateBatchPrompt(0, textValue.trim());
+        return;
+      }
       const parsed = parseBatchPromptLines(textValue);
       applyBatchPromptLines(parsed.lines, { truncated: parsed.truncated });
     }
@@ -1908,6 +2122,13 @@ export default function FreeImageWorkspace({
 
   function handleBatchPromptPaste(event, startIndex = 0) {
     const textValue = event.clipboardData?.getData('text/plain') || '';
+    if (batchRepairImages.length > 1 && batchPromptMode === 'shared') {
+      if (event.target?.tagName === 'TEXTAREA' || !textValue.trim()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      updateBatchPrompt(0, textValue.trim());
+      return;
+    }
     const parsed = parseBatchPromptLines(textValue);
     if (parsed.lines.length <= 1) return;
     event.preventDefault();
@@ -1936,13 +2157,14 @@ export default function FreeImageWorkspace({
   }
 
   function updateBatchPrompt(index, value) {
-    if (batchRepairImages.length > 1 && index >= batchPromptState.activeCount) return;
+    if (batchRepairImages.length > 1 && batchPromptMode === 'paired' && index >= batchPromptState.activeCount) return;
     setBatchPromptItems((current) => resizeBatchPromptItems(current, batchRepairImages.length).map((item, itemIndex) => (
       itemIndex === index ? { ...item, text: String(value || '').slice(0, 6000) } : item
     )));
   }
 
   function moveBatchPrompt(fromIndex, toIndex) {
+    if (batchPromptMode === 'shared') return;
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
     setBatchPromptItems((current) => {
       const next = resizeBatchPromptItems(current, batchRepairImages.length);
@@ -1952,6 +2174,13 @@ export default function FreeImageWorkspace({
       return next;
     });
     setBatchPromptDragIndex(toIndex);
+  }
+
+  function changeBatchPromptMode(nextMode) {
+    if (!['paired', 'shared'].includes(nextMode) || nextMode === batchPromptMode) return;
+    setBatchPromptMode(nextMode);
+    setBatchPromptDragIndex(-1);
+    setState((current) => ({ ...current, message: '' }));
   }
 
   function switchCreationMode(nextMode) {
@@ -2260,6 +2489,7 @@ export default function FreeImageWorkspace({
           ? { assetId: reference.assetId, annotations: reference.annotations }
           : { generationId: reference.generationId || reference.id, annotations: reference.annotations }),
       providerId,
+      stylePresetId,
       clientTaskId: taskId
     };
     try {
@@ -2659,6 +2889,7 @@ export default function FreeImageWorkspace({
           quality: hasFullWorkspace ? quality : 'low',
           count: requestedCount,
           providerId,
+          stylePresetId,
           references: hasFullWorkspace
             ? references.map((reference) => reference.source === 'upload'
               ? {
@@ -2748,7 +2979,7 @@ export default function FreeImageWorkspace({
   }
 
   return (
-    <div className={`freeImageWorkspace freeImage${workspaceView[0].toUpperCase()}${workspaceView.slice(1)}View`}>
+    <div className={`freeImageWorkspace freeImage${workspaceView[0].toUpperCase()}${workspaceView.slice(1)}View ${stylePickerOpen && workspaceView === 'single' ? 'freeImageStyleOpen' : ''}`}>
       {thumbnailHoverPreview ? (
         <div
           className="freeImageThumbnailHoverPreview"
@@ -2880,7 +3111,27 @@ export default function FreeImageWorkspace({
             </div>
           </section>
           <div className="freeImagePromptHeader">
-            <label htmlFor="free-image-prompt">{t.prompt}</label>
+            <div className="freeImagePromptTitle" ref={promptHelpRef}>
+              <label htmlFor="free-image-prompt">{t.prompt}</label>
+              <button
+                className="freeImagePromptHelpButton"
+                type="button"
+                aria-label={t.promptHelp}
+                aria-expanded={promptHelpOpen}
+                aria-controls="free-image-prompt-help"
+                title={t.promptHelp}
+                onClick={() => setPromptHelpOpen((current) => !current)}
+              >
+                <CircleHelp size={17} aria-hidden="true" />
+              </button>
+              {promptHelpOpen ? <div className="freeImagePromptHelpPopover" id="free-image-prompt-help" role="note">
+                <strong>{t.promptHelpTitle}</strong>
+                <p>{t.promptHelpFormula}</p>
+                {primaryReference ? <p>{t.promptHelpReference}</p> : null}
+                <span>{t.promptHelpExampleLabel}</span>
+                <em>{supportingReferences.length ? t.promptHelpReferenceExample : primaryReference ? t.promptHelpPrimaryExample : t.promptHelpExample}</em>
+              </div> : null}
+            </div>
             <button className="freeImageMagicButton" type="button" onClick={optimizePrompt} disabled={optimizing || isGenerating}>
               {optimizing ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
               <span>{optimizing ? t.optimizing : t.optimize}</span>
@@ -2893,33 +3144,99 @@ export default function FreeImageWorkspace({
                 <span>{localEditLockedRule}</span>
               </div>
             ) : null}
-            <textarea
-              ref={textareaRef}
-              id="free-image-prompt"
-              className={promptOptimized ? 'optimized' : ''}
-              value={prompt}
-              onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
-              onClick={(event) => setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart))}
-              onKeyUp={(event) => {
-                if (event.key === 'Escape') setMention(null);
-                else setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart));
-              }}
-              placeholder={maxReferenceImages ? t.placeholder : t.placeholderNoReferences}
-              maxLength={6000}
-              disabled={isGenerating}
-            />
-            {primaryReference ? <div className="freeImagePromptFormatExample" role="note"><strong>{t.promptFormatExampleLabel}</strong><span>{t.promptFormatExample}</span></div> : null}
-            {mention && maxReferenceImages ? (
-              <div className="freeImageMentionMenu">
-                <strong><AtSign size={15} /> {t.history}</strong>
-                {mentionMatches.length ? mentionMatches.map((item) => (
-                  <button type="button" onClick={() => useImageAsReference(item, { fromMention: true })} key={item.id}>
-                    <img src={item.thumbnailUrl || item.imageUrl} alt="" loading="lazy" decoding="async" />
-                    {item.prompt ? <span>{compactPrompt(item.prompt)}</span> : null}
+            <div className="freeImagePromptInputFrame">
+              <textarea
+                ref={textareaRef}
+                id="free-image-prompt"
+                className={promptOptimized ? 'optimized' : ''}
+                value={prompt}
+                onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
+                onClick={(event) => setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart))}
+                onKeyUp={(event) => {
+                  if (event.key === 'Escape') setMention(null);
+                  else setMention(mentionAtCursor(event.currentTarget.value, event.currentTarget.selectionStart));
+                }}
+                placeholder={maxReferenceImages ? t.placeholder : t.placeholderNoReferences}
+                maxLength={6000}
+                disabled={isGenerating}
+              />
+              <div className="freeImagePromptTools">
+                <div className="freeImagePromptModifiers" role="group" aria-label={t.promptModifiers}>
+                  <button
+                    className="freeImagePromptClear"
+                    type="button"
+                    onClick={() => {
+                      updatePrompt('', 0);
+                      globalThis.requestAnimationFrame?.(() => textareaRef.current?.focus());
+                    }}
+                    disabled={isGenerating || !prompt}
+                    aria-label={t.clearPrompt}
+                    title={t.clearPrompt}
+                  ><Trash2 size={14} /></button>
+                  {(DEFAULT_PROMPT_MODIFIERS[language] || DEFAULT_PROMPT_MODIFIERS.en).map((item) => (
+                    <button type="button" onClick={() => appendPromptModifier(item)} disabled={isGenerating} key={item}>{item}</button>
+                  ))}
+                  {customPromptModifiers.map((item) => <span className="freeImagePromptModifierCustom" key={item}>
+                    <button type="button" onClick={() => appendPromptModifier(item)} disabled={isGenerating}>{item}</button>
+                    <button type="button" onClick={() => removePromptModifier(item)} aria-label={`${t.removePromptModifier}：${item}`} title={t.removePromptModifier}><X size={11} /></button>
+                  </span>)}
+                  {promptModifierEditorOpen ? <span className="freeImagePromptModifierEditor">
+                    <input
+                      type="text"
+                      value={promptModifierDraft}
+                      maxLength={40}
+                      autoFocus
+                      placeholder={t.promptModifierPlaceholder}
+                      aria-label={t.promptModifierPlaceholder}
+                      onChange={(event) => setPromptModifierDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          savePromptModifier();
+                        } else if (event.key === 'Escape') {
+                          setPromptModifierDraft('');
+                          setPromptModifierEditorOpen(false);
+                        }
+                      }}
+                    />
+                    <button type="button" onClick={savePromptModifier} disabled={!normalizePromptModifier(promptModifierDraft)} aria-label={t.savePromptModifier} title={t.savePromptModifier}><Check size={12} /></button>
+                  </span> : <button
+                    className="freeImagePromptModifierAdd"
+                    type="button"
+                    disabled={isGenerating || customPromptModifiers.length >= MAX_CUSTOM_PROMPT_MODIFIERS}
+                    onClick={() => setPromptModifierEditorOpen(true)}
+                    title={customPromptModifiers.length >= MAX_CUSTOM_PROMPT_MODIFIERS ? t.promptModifierLimit : t.addPromptModifier}
+                  ><Plus size={12} />{t.addPromptModifier}</button>}
+                </div>
+                <div className="freeImagePromptFooter">
+                  <button
+                    className={`freeImagePromptStyleTrigger ${stylePickerOpen ? 'active' : ''} ${selectedStylePreset ? 'selected' : ''}`}
+                    type="button"
+                    aria-label={selectedStylePreset ? `${t.styleButton}：${localizeImageStyleValue(selectedStylePreset.label, language)}` : t.styleButton}
+                    aria-expanded={stylePickerOpen}
+                    aria-controls="free-image-style-panel"
+                    title={selectedStylePreset ? `${t.styleButton}：${localizeImageStyleValue(selectedStylePreset.label, language)}` : t.styleButton}
+                    onClick={() => setStylePickerOpen((current) => !current)}
+                  >
+                    <Palette size={16} />
+                    <span>{t.styleButton}</span>
+                    <ChevronDown size={14} aria-hidden="true" />
                   </button>
-                )) : <em>{t.noHistory}</em>}
+                  {selectedStylePreset ? <button className="freeImagePromptStyleClear" type="button" onClick={() => setStylePresetId('')} aria-label={t.clearStyle} title={t.clearStyle}><X size={13} /></button> : null}
+                </div>
               </div>
-            ) : null}
+              {mention && maxReferenceImages ? (
+                <div className="freeImageMentionMenu">
+                  <strong><AtSign size={15} /> {t.history}</strong>
+                  {mentionMatches.length ? mentionMatches.map((item) => (
+                    <button type="button" onClick={() => useImageAsReference(item, { fromMention: true })} key={item.id}>
+                      <img src={item.thumbnailUrl || item.imageUrl} alt="" loading="lazy" decoding="async" />
+                      {item.prompt ? <span>{compactPrompt(item.prompt)}</span> : null}
+                    </button>
+                  )) : <em>{t.noHistory}</em>}
+                </div>
+              ) : null}
+            </div>
           </div>
           </> : <>
           <section className="freeImageBatchModeBar">
@@ -3003,21 +3320,32 @@ export default function FreeImageWorkspace({
               <header className="freeImageBatchPromptHeader">
                 <div>
                   <strong>{t.independentPrompts}</strong>
-                  {batchRepairImages.length ? <small>{batchRepairImages.length === 1 ? t.batchPromptSingleMode : t.batchPromptPairMode(batchRepairImages.length)}</small> : null}
+                  {batchRepairImages.length ? <small>{batchRepairImages.length === 1
+                    ? t.batchPromptSingleMode
+                    : batchPromptMode === 'shared'
+                      ? t.batchPromptSharedMode(batchRepairImages.length)
+                      : t.batchPromptPairMode(batchRepairImages.length)}</small> : null}
                 </div>
                 <div className="freeImageBatchPromptHeaderActions">
-                  {batchRepairImages.length ? <span>{t.batchPromptCount(batchPromptState.activeCount, batchPromptState.visibleCount)}</span> : null}
+                  {batchRepairImages.length ? <span>{batchRepairImages.length > 1 && batchPromptMode === 'shared'
+                    ? t.batchPromptSharedCount(batchRepairImages.length)
+                    : t.batchPromptCount(batchPromptState.activeCount, batchPromptState.visibleCount)}</span> : null}
                   {batchRepairImages.length === 1 ? <button type="button" onClick={addBatchPrompt} disabled={!batchPromptState.canAdd} title={t.addBatchPrompt} aria-label={t.addBatchPrompt}><Plus size={14} />{t.addBatchPrompt}</button> : null}
                 </div>
               </header>
+              {batchRepairImages.length > 1 ? <div className="freeImageBatchPromptModes" role="radiogroup" aria-label={t.independentPrompts}>
+                <button className={batchPromptMode === 'paired' ? 'active' : ''} type="button" role="radio" aria-checked={batchPromptMode === 'paired'} onClick={() => changeBatchPromptMode('paired')}><i>{batchPromptMode === 'paired' ? <Check size={13} /> : null}</i>{t.batchPromptPaired}</button>
+                <button className={batchPromptMode === 'shared' ? 'active' : ''} type="button" role="radio" aria-checked={batchPromptMode === 'shared'} onClick={() => changeBatchPromptMode('shared')}><i>{batchPromptMode === 'shared' ? <Check size={13} /> : null}</i>{t.batchPromptShared}</button>
+              </div> : null}
               <input ref={batchPromptUploadRef} className="freeImageReferenceInput" type="file" accept=".txt,text/plain" multiple onChange={(event) => addBatchPromptFiles(event.target.files)} />
               <button className="freeImageBatchPromptUpload" type="button" onClick={() => batchPromptUploadRef.current?.click()} disabled={!batchRepairImages.length}>
-                <FileText size={19} /><span><strong>{t.batchPromptUpload}</strong><small>{t.batchPromptHint}</small></span>
+                <FileText size={19} /><span><strong>{t.batchPromptUpload}</strong><small>{batchRepairImages.length > 1 && batchPromptMode === 'shared' ? t.batchPromptSharedHint : t.batchPromptHint}</small></span>
               </button>
               {!batchRepairImages.length ? <div className="freeImageBatchPromptEmpty">{t.batchPromptEmpty}</div> : (
                 <div className="freeImageBatchPromptList">
-                  {batchPromptItems.map((item, index) => {
-                    const promptLocked = batchRepairImages.length > 1 && index >= batchPromptState.activeCount;
+                  {batchPromptRows.map((item, index) => {
+                    const sharedPrompt = batchRepairImages.length > 1 && batchPromptMode === 'shared';
+                    const promptLocked = !sharedPrompt && batchRepairImages.length > 1 && index >= batchPromptState.activeCount;
                     const promptCanRemove = batchRepairImages.length === 1 ? batchPromptItems.length > 1 : promptLocked;
                     return (
                     <article
@@ -3037,7 +3365,7 @@ export default function FreeImageWorkspace({
                         setBatchPromptDragIndex(-1);
                       }}
                     >
-                      <button
+                      {sharedPrompt ? <span className="freeImageBatchPromptHandle shared"><Images size={16} /><span>{t.batchAllImages}</span></span> : <button
                         className="freeImageBatchPromptHandle"
                         type="button"
                         draggable
@@ -3050,7 +3378,7 @@ export default function FreeImageWorkspace({
                         }}
                         onDragEnd={() => setBatchPromptDragIndex(-1)}
                         aria-label={language === 'zh' ? `拖动提示词 ${index + 1}` : `Drag prompt ${index + 1}`}
-                      ><GripVertical size={16} /><span>{index + 1}</span></button>
+                      ><GripVertical size={16} /><span>{index + 1}</span></button>}
                       <textarea
                         value={item.text}
                         disabled={promptLocked}
@@ -3058,7 +3386,9 @@ export default function FreeImageWorkspace({
                         onPaste={(event) => handleBatchPromptPaste(event, index)}
                         placeholder={promptLocked
                           ? t.batchPromptLocked
-                          : batchRepairImages.length === 1
+                          : sharedPrompt
+                            ? t.batchPromptSharedPlaceholder
+                            : batchRepairImages.length === 1
                             ? t.batchSinglePromptPlaceholder(index + 1)
                             : t.batchPromptPlaceholder(index + 1)}
                         title={promptLocked ? t.batchPromptLocked : ''}
@@ -3427,6 +3757,52 @@ export default function FreeImageWorkspace({
             ) : <div className="freeImageTaskEmpty"><ListTodo size={30} /><span>{t.queueEmpty}</span></div>}
           </section>
         )}
+
+        {stylePickerOpen && workspaceTab === 'control' && creationMode === 'single' ? <section id="free-image-style-panel" className="freeImageStylePopover" aria-label={t.styleTitle}>
+          <header>
+            <div>
+              <strong>{t.styleTitle}</strong>
+              <span>{selectedStylePreset
+                ? t.styleApplied(localizeImageStyleValue(selectedStylePreset.label, language))
+                : t.styleHint}</span>
+            </div>
+            <div className="freeImageStyleActions">
+              <button type="button" onClick={chooseRandomStyle}><Dices size={14} />{t.randomStyle}</button>
+              <button type="button" onClick={() => setStylePickerOpen(false)}>{t.closeStyle}</button>
+            </div>
+          </header>
+          <div className="freeImageStyleCategories" role="tablist" aria-label={t.styleTitle}>
+            {IMAGE_STYLE_CATEGORIES.map((item) => <button
+              className={styleCategory === item.id ? 'active' : ''}
+              type="button"
+              role="tab"
+              aria-selected={styleCategory === item.id}
+              onClick={() => setStyleCategory(item.id)}
+              key={item.id}
+            >{localizeImageStyleValue(item.label, language)}</button>)}
+          </div>
+          <div className="freeImageStyleCards">
+            {visibleStylePresets.map((item) => {
+              const preview = styleCaseById.get(item.previewCaseId);
+              const previewUrl = item.previewAsset || preview?.thumbnail || preview?.image || '';
+              const selected = stylePresetId === item.id;
+              return <button
+                className={selected ? 'selected' : ''}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleStylePreset(item.id)}
+                title={localizeImageStyleValue(item.description, language)}
+                key={item.id}
+              >
+                {previewUrl ? <img src={previewUrl} alt="" loading="lazy" decoding="async" /> : <span className="freeImageStyleFallback" aria-hidden="true" />}
+                <span className="freeImageStyleCardShade" aria-hidden="true" />
+                <strong>{localizeImageStyleValue(item.label, language)}</strong>
+                {item.featured ? <em>{t.styleRecommended}</em> : null}
+                {selected ? <i><Check size={14} /></i> : null}
+              </button>;
+            })}
+          </div>
+        </section> : null}
 
         <section className={`freeImageResults ${isGenerating ? 'generating' : ''}`}>
           <div className="freeImageSectionTitle">

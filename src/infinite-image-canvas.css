@@ -1228,10 +1228,18 @@
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.2), 0 0 28px rgba(45, 212, 191, 0.28), 0 20px 58px rgba(0, 0, 0, 0.5);
 }
 
-.infiniteCanvasNode.selectedMovable,
-.infiniteCanvasNode.selectedMovable > :not(button):not(a) { cursor: grab; }
-.infiniteCanvasNode.selectedMovable:active,
-.infiniteCanvasNode.selectedMovable:active > :not(button):not(a) { cursor: grabbing; }
+.infiniteCanvasNode.draggableNode,
+.infiniteCanvasNode.draggableNode > header,
+.infiniteCanvasNode.draggableNode > p,
+.infiniteCanvasNode.draggableNode .infiniteCanvasNodeImage,
+.infiniteCanvasNode.draggableNode .infiniteCanvasIdeaBody,
+.infiniteCanvasNode.draggableNode .infiniteCanvasTaskBody { cursor: grab; }
+.infiniteCanvasNode.draggableNode:active,
+.infiniteCanvasNode.draggableNode:active > header,
+.infiniteCanvasNode.draggableNode:active > p,
+.infiniteCanvasNode.draggableNode:active .infiniteCanvasNodeImage,
+.infiniteCanvasNode.draggableNode:active .infiniteCanvasIdeaBody,
+.infiniteCanvasNode.draggableNode:active .infiniteCanvasTaskBody { cursor: grabbing; }
 
 .infiniteCanvasNode.primarySelected { border-color: #67e8f9; outline-color: rgba(103, 232, 249, 0.62); box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25), 0 0 34px rgba(34, 211, 238, 0.38), 0 22px 62px rgba(0, 0, 0, 0.54); }
 
@@ -1268,6 +1276,45 @@
 .infiniteCanvasNode.locked > header { border-bottom-color: rgba(125, 211, 252, 0.28); }
 .infiniteCanvasNode.locked,
 .infiniteCanvasNode.locked > header { cursor: not-allowed; }
+
+.infiniteCanvasNode.lockedDragAttempt {
+  z-index: 10;
+}
+
+.infiniteCanvasLockedDragMask {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 94, 110, 0.92);
+  border-radius: inherit;
+  background: rgba(184, 24, 45, 0.62);
+  box-shadow: inset 0 0 34px rgba(91, 7, 20, 0.46);
+  pointer-events: none;
+  animation: infiniteCanvasLockedPulse 280ms ease-out;
+}
+
+.infiniteCanvasLockedDragMask > span {
+  display: grid;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+  border: 4px solid #facc15;
+  border-radius: 50%;
+  background: rgba(69, 10, 20, 0.8);
+  box-shadow: 0 0 0 5px rgba(250, 204, 21, 0.14), 0 12px 28px rgba(0, 0, 0, 0.34);
+  color: #fde047;
+}
+
+@keyframes infiniteCanvasLockedPulse {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infiniteCanvasLockedDragMask { animation: none; }
+}
 
 .infiniteCanvasNode > header {
   display: flex;
@@ -1780,7 +1827,8 @@
   position: absolute;
   z-index: 60;
   right: 14px;
-  bottom: 210px;
+  top: 62px;
+  bottom: auto;
   width: 184px;
   height: 146px;
   display: grid;
@@ -1816,9 +1864,9 @@
 .infiniteCanvasMinimapHandle:hover { color: #bff8e6; background: rgba(121, 239, 202, 0.06); }
 .infiniteCanvasMinimapMap { min-height: 0; cursor: crosshair; }
 .infiniteCanvasMinimap svg { display: block; width: 100%; height: 100%; }
-.infiniteCanvasMinimap rect { fill: rgba(114, 237, 200, 0.22); stroke: rgba(114, 237, 200, 0.55); stroke-width: 8; vector-effect: non-scaling-stroke; }
-.infiniteCanvasMinimap rect.selected { fill: rgba(250, 204, 21, 0.32); stroke: rgba(250, 204, 21, 0.9); }
-.infiniteCanvasMinimap rect.viewport { fill: rgba(96, 165, 250, 0.08); stroke: #60a5fa; stroke-width: 10; }
+.infiniteCanvasMinimap rect { fill: rgba(114, 237, 200, 0.22); stroke: rgba(114, 237, 200, 0.55); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.infiniteCanvasMinimap rect.selected { fill: rgba(250, 204, 21, 0.32); stroke: rgba(250, 204, 21, 0.9); stroke-width: 2.2; }
+.infiniteCanvasMinimap rect.viewport { fill: rgba(96, 165, 250, 0.08); stroke: #60a5fa; stroke-width: 1; }
 
 .infiniteCanvasEmpty {
   position: absolute;
@@ -3145,6 +3193,7 @@
     transform-origin: left top;
   }
   .infiniteCanvasSearchPanel { top: 128px; }
+  .infiniteCanvasMinimap { top: 128px; right: 8px; }
   .infiniteCanvasReferencePickBanner { top: 132px; }
 }
 

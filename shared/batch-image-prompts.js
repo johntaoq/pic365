@@ -17,7 +17,7 @@ export function parseBatchPromptLines(value, maximum = MAX_BATCH_IMAGE_PROMPTS) 
   };
 }
 
-export function batchPromptLayout(imageCount, promptCount) {
+export function batchPromptLayout(imageCount, promptCount, mode = 'paired') {
   const images = boundedCount(imageCount);
   const prompts = boundedCount(promptCount);
   if (!images) {
@@ -32,6 +32,14 @@ export function batchPromptLayout(imageCount, promptCount) {
       canAdd: visibleCount < MAX_BATCH_IMAGE_PROMPTS
     };
   }
+  if (mode === 'shared') {
+    return {
+      activeCount: images,
+      visibleCount: 1,
+      minimumCount: 1,
+      canAdd: false
+    };
+  }
   const visibleCount = Math.max(images, prompts);
   return {
     activeCount: images,
@@ -41,7 +49,7 @@ export function batchPromptLayout(imageCount, promptCount) {
   };
 }
 
-export function createBatchPromptAssignments(images = [], prompts = []) {
+export function createBatchPromptAssignments(images = [], prompts = [], mode = 'paired') {
   const sourceImages = Array.isArray(images) ? images.slice(0, MAX_BATCH_IMAGE_PROMPTS) : [];
   const promptItems = Array.isArray(prompts) ? prompts.slice(0, MAX_BATCH_IMAGE_PROMPTS) : [];
   if (!sourceImages.length) return [];
@@ -51,6 +59,14 @@ export function createBatchPromptAssignments(images = [], prompts = []) {
       imageIndex: 0,
       promptItem,
       promptIndex
+    }));
+  }
+  if (mode === 'shared') {
+    return sourceImages.map((image, imageIndex) => ({
+      image,
+      imageIndex,
+      promptItem: promptItems[0],
+      promptIndex: 0
     }));
   }
   return sourceImages.map((image, imageIndex) => ({

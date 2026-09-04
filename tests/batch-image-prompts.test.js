@@ -26,6 +26,25 @@ test('multiple images use one-to-one prompts while retaining overflow rows', () 
   });
 });
 
+test('multiple images can share one prompt while still creating one job per image', () => {
+  assert.deepEqual(batchPromptLayout(3, 7, 'shared'), {
+    activeCount: 3,
+    visibleCount: 1,
+    minimumCount: 1,
+    canAdd: false
+  });
+  const images = [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }];
+  const prompts = [{ id: 'shared-prompt' }, { id: 'retained-prompt' }];
+  assert.deepEqual(
+    createBatchPromptAssignments(images, prompts, 'shared').map(({ image, promptItem, promptIndex }) => [image.id, promptItem.id, promptIndex]),
+    [
+      ['image-1', 'shared-prompt', 0],
+      ['image-2', 'shared-prompt', 0],
+      ['image-3', 'shared-prompt', 0]
+    ]
+  );
+});
+
 test('multiline prompts keep the first ten non-empty lines', () => {
   const parsed = parseBatchPromptLines(Array.from({ length: 12 }, (_, index) => `提示词 ${index + 1}`).join('\n'));
   assert.equal(parsed.lines.length, 10);

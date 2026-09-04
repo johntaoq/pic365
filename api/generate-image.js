@@ -37,6 +37,7 @@ import {
   validateImageSizeForModel
 } from '../shared/image-generation.js';
 import { applyImagePromotion, getImageGenerationPricing } from '../shared/image-pricing.js';
+import { buildStyledImagePrompt, normalizeImageStylePresetId } from '../shared/image-style-presets.js';
 import { GUEST_FREE_GENERATION_LIMIT, guestGenerationRemaining } from '../shared/guest-generation.js';
 
 const MAX_PROMPT_LENGTH = 6000;
@@ -262,6 +263,8 @@ export default async function handler(req, res) {
 
   const prompt = String(body.prompt || '').trim();
   if (!prompt || prompt.length > MAX_PROMPT_LENGTH) return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
+  const stylePresetId = normalizeImageStylePresetId(body.stylePresetId);
+  const styledPrompt = buildStyledImagePrompt(prompt, stylePresetId);
 
   if (!auth.user || !auth.profile) {
     const guestProviderConfig = getImageProviderConfig();
@@ -293,7 +296,7 @@ export default async function handler(req, res) {
       });
     }
     try {
-      const providerResult = await generateProviderImage({ prompt, size: '1024x1024', quality: 'low', providerConfig: guestProviderConfig, signal: requestController.signal });
+      const providerResult = await generateProviderImage({ prompt: styledPrompt, size: '1024x1024', quality: 'low', providerConfig: guestProviderConfig, signal: requestController.signal });
       const watermarkedResult = await ensureFreeImageWatermark(providerResult);
       setGuestGenerationCookie(req, res, claim.count);
       const guestImage = {
@@ -307,7 +310,8 @@ export default async function handler(req, res) {
         creditsCharged: 0,
         watermarked: true,
         watermark: watermarkedResult.watermark,
-        prompt
+        prompt,
+        stylePresetId
       };
       return json(res, 200, {
         ok: true,
@@ -381,7 +385,7 @@ export default async function handler(req, res) {
   );
   const taskMode = body.taskMode === 'batch-repair' ? 'batch-repair' : 'single';
   const providerPrompt = buildReferencePrompt(
-    taskMode === 'batch-repair' ? batchRepairProviderPrompt(prompt) : prompt,
+    taskMode === 'batch-repair' ? batchRepairProviderPrompt(prompt) : styledPrompt,
     references,
     { includeNumberedMap: taskMode !== 'batch-repair' && !String(body.canvasProjectId || '').trim() }
   );
@@ -419,7 +423,8 @@ export default async function handler(req, res) {
           chargedCredits: pricing.credits,
           promotionName: pricing.promotion?.active ? pricing.promotion.name : '',
           promotionPayPercent: pricing.promotion?.active ? pricing.promotion.payPercent : 100,
-          promotionUpdatedAt: pricing.promotion?.active ? pricing.promotion.updatedAt : null
+          promotionUpdatedAt: pricing.promotion?.active ? pricing.promotion.updatedAt : null,
+          stylePresetId: taskMode === 'single' ? stylePresetId : ''
         }
       }));
     }
@@ -533,6 +538,7 @@ export default async function handler(req, res) {
     partial: failures.length > 0,
     errors: [...new Set(failures.map((failure) => failure.error))],
     referencesUsed: references.length,
+    stylePresetId: taskMode === 'single' ? stylePresetId : '',
     unitCredits: pricing.credits,
     creditsCharged,
     pricing: {

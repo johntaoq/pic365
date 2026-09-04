@@ -90,8 +90,11 @@ test('server-side guest usage allows three images and trusts proxy real IP over 
 
 test('guest generation returns a visible compact image with a verified www.pic365.org watermark', async () => {
   const source = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: '#244466' } }).png().toBuffer();
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
     assert.equal(String(url), 'https://provider.example/v1/images/generations');
+    const providerRequest = JSON.parse(options.body);
+    assert.match(providerRequest.prompt, /Natural editorial photography/);
+    assert.match(providerRequest.prompt, /Do not override the user request/);
     return new Response(JSON.stringify({ data: [{ b64_json: source.toString('base64') }] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -100,13 +103,15 @@ test('guest generation returns a visible compact image with a verified www.pic36
   const result = await invokePost({
     'x-real-ip': '203.0.113.8',
     'user-agent': 'pic365-guest-watermark-test'
-  }, { prompt: 'a blue product photo' });
+  }, { prompt: 'a blue product photo', stylePresetId: 'natural-photo' });
 
   assert.equal(result.statusCode, 200);
   assert.equal(result.payload.guest, true);
   assert.equal(result.payload.watermarked, true);
   assert.equal(result.payload.watermark.text, 'www.pic365.org');
   assert.equal(result.payload.contentType, 'image/webp');
+  assert.equal(result.payload.prompt, 'a blue product photo');
+  assert.equal(result.payload.stylePresetId, 'natural-photo');
   assert.match(result.payload.image, /^data:image\/webp;base64,/);
   const bytes = Buffer.from(result.payload.image.split(',')[1], 'base64');
   const metadata = await sharp(bytes).metadata();

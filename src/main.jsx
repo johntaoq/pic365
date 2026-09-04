@@ -5469,6 +5469,7 @@ function App() {
           session={session}
           profile={profile}
           cases={creationCases}
+          styleCases={siteData?.cases || []}
           categoryOptions={creationCategoryOptions}
           category={creationCategory}
           onCategoryChange={setCreationCategory}
