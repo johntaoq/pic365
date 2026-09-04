@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, ImagePlus, LoaderCircle, Send, Trash2, X } from 'lucide-react';
 import { clampFloatingPosition, clampFloatingSize, normalizeFloatingPosition } from '../shared/floating-position.js';
+import foxAvatarUrl from './assets/chat-companion/pic265-fox-avatar.jpg';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -51,21 +52,8 @@ function storePanelSize(size) {
   }
 }
 
-function CatHead({ small = false }) {
-  return (
-    <svg className={`chatCompanionCat ${small ? 'small' : ''}`} viewBox="0 0 96 96" aria-hidden="true">
-      <path className="catEar" d="M20 35 19 12l22 15M76 35l1-23-22 15" />
-      <path className="catFace" d="M18 43c0-18 13-29 30-29s30 11 30 29v17c0 17-13 27-30 27S18 77 18 60Z" />
-      <path className="catPatch" d="M48 17c12 0 23 8 27 19-11 2-21-1-28-9-7 8-17 11-28 9 4-11 15-19 29-19Z" />
-      <g className="catEyes">
-        <path d="M31 48c4-4 9-4 13 0" />
-        <path d="M52 48c4-4 9-4 13 0" />
-      </g>
-      <path className="catNose" d="m45 58 3 3 3-3" />
-      <path className="catMouth" d="M48 61c-1 5-5 6-9 4m9-4c1 5 5 6 9 4" />
-      <path className="catWhiskers" d="M35 61 15 57m20 10-19 4m45-10 20-4M61 67l19 4" />
-    </svg>
-  );
+function FoxHead({ small = false }) {
+  return <img className={`chatCompanionFox ${small ? 'small' : ''}`} src={foxAvatarUrl} alt="" draggable="false" />;
 }
 
 function fileToAttachment(file) {
@@ -147,10 +135,10 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
   const resizeRef = useRef(null);
   const suppressOrbClickRef = useRef(false);
   const t = useMemo(() => language === 'zh' ? {
-    name: 'Pic365 小猫精灵',
+    name: 'Pic265精灵',
     subtitle: '能看图，也能回答问题',
-    wake: '唤醒聊天精灵',
-    welcome: '你好呀，我是 Pic365 小猫精灵。你可以问我问题，也可以发图片让我帮你看看。',
+    wake: '唤醒 Pic265精灵',
+    welcome: '你好呀，我是 Pic265精灵。你可以问我问题，也可以发图片让我帮你看看。',
     input: '输入问题，或粘贴图片…',
     clear: '清空聊天记录',
     copyAll: '复制全部聊天记录',
@@ -158,19 +146,19 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     deleteOne: '删除这条消息',
     copied: '已复制',
     userLabel: '用户',
-    assistantLabel: '小猫精灵',
+    assistantLabel: 'Pic265精灵',
     attach: '添加图片',
     send: '发送',
     signIn: '登录后开始聊天',
     recharge: '去充值',
     context: '最多携带最近 24 条消息',
     imageLimit: '最多 3 张，单张不超过 5 MB',
-    thinking: '小猫正在思考…',
+    thinking: 'Pic265精灵正在思考…',
     drag: '拖动调整位置',
     resize: '拖动调整精灵窗口大小',
     charged: (credits) => `本次 ${displayCredits(credits)} 积分`
   } : {
-    name: 'Pic365 Cat Assistant',
+    name: 'Pic265 Assistant',
     subtitle: 'Understands images and questions',
     wake: 'Open chat assistant',
     welcome: 'Hi! Ask me a question or send an image for help.',
@@ -181,7 +169,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     deleteOne: 'Delete this message',
     copied: 'Copied',
     userLabel: 'User',
-    assistantLabel: 'Cat assistant',
+    assistantLabel: 'Pic265 Assistant',
     attach: 'Add images',
     send: 'Send',
     signIn: 'Sign in to chat',
@@ -580,7 +568,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
             title={t.drag}
             onPointerDown={startDrag}
           >
-            <CatHead small />
+            <FoxHead small />
             <div><strong>{t.name}</strong><span>{provider?.name || t.subtitle}</span></div>
             <button type="button" onClick={copyAllMessages} disabled={!messages.length} title={t.copyAll} aria-label={t.copyAll}>{copiedId === 'all' ? <Check size={17} /> : <Copy size={17} />}</button>
             <button type="button" onClick={clearHistory} disabled={!isSignedIn || status === 'sending'} title={t.clear} aria-label={t.clear}><Trash2 size={17} /></button>
@@ -588,7 +576,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
           </header>
 
           <div className="chatCompanionTranscript" ref={transcriptRef}>
-            {!messages.length ? <div className="chatCompanionWelcome"><CatHead /><p>{t.welcome}</p></div> : null}
+            {!messages.length ? <div className="chatCompanionWelcome"><FoxHead /><p>{t.welcome}</p></div> : null}
             {messages.map((item) => (
               <article className={`chatCompanionMessage ${item.role}`} key={item.id}>
                 {item.attachments?.length ? <div className="chatCompanionMessageImages">{item.attachments.map((attachment, index) => attachment.dataUrl
@@ -660,7 +648,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
           title={`${t.wake} · ${t.drag}`}
         >
           <span className="chatCompanionGlow" />
-          <CatHead />
+          <FoxHead />
           <span className="chatCompanionPing" />
         </button>
       )}

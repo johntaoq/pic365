@@ -109,8 +109,8 @@ const copy = {
     moveToTrash: '移到回收站', moveToTrashConfirm: (name) => `确定将“${name || '未命名画布'}”移到回收站吗？`, trashEmpty: '回收站为空。',
     restoreFromTrash: '恢复画布', permanentDelete: '彻底删除', permanentDeleteConfirm: (name) => `确定彻底删除“${name || '未命名画布'}”吗？此操作无法恢复，但不会删除资产库和历史作品。`,
     saveFailed: '保存失败，正在保留本地改动', saveConflict: '其他页面已修改此画布，请重新载入后继续。', reload: '重新载入',
-    newIdea: '新建想法', history: '历史素材', historyEmpty: '还没有可加入画布的历史作品。', historyLoading: '正在读取历史素材…',
-    historyMore: '加载更多', searchHistory: '搜索历史提示词', addToCanvas: '加入画布', onCanvas: '已加入', upload: '上传图片', uploading: '正在上传…',
+    history: '历史素材', historyEmpty: '还没有可加入画布的历史作品。', historyLoading: '正在读取历史素材…',
+    historyMore: '加载更多', searchHistory: '搜索历史提示词', addToCanvas: '加入画布', onCanvas: '已加入', upload: '上传文件', uploading: '正在上传…',
     deleteHistory: '从最近作品移除', deleteHistoryFailed: '移除最近作品失败，请稍后重试。',
     arrange: '自动整理', fitView: '适应内容', clearCanvas: '清空画布', clearConfirm: '确定清空当前画布吗？素材库、历史生图和云端文件不会被删除。',
     removeConfirm: '确定将此节点移出画布吗？云端图片和历史记录不会被删除。', protectedRemoveConfirm: '这是已采用版本，确定仍要移出画布吗？', lockedCannotRemove: '实体已锁定，不能移出画布。请先解锁。', lockedSelectionCannotRemove: (count) => `所选内容中有 ${count} 个锁定实体，不能移出画布。请先解锁。`, lockedCanvasCannotClear: (count) => `画布中有 ${count} 个锁定实体，不能清空画布。请先解锁。`, lockedRefineUnavailable: '图片已锁定，解锁后才能进入灵感生图精修。', lockedPosition: '实体已锁定，画布位置不会改变。',
@@ -135,7 +135,7 @@ const copy = {
     branchPresets: ['更换为高级商业背景，保持主体完全不变', '扩展画面并保持原图风格与主体一致', '生成一个构图不同但主体一致的新方案', '优化光影、质感和商业摄影表现，其他内容不变'],
     zoomHint: '空白处拖动平移 · 滚轮缩放 · 选中实体后用手掌拖动', home: '首页', backStudio: '灵感生图', hideAssets: '隐藏素材栏', showAssets: '显示素材栏',
     ratio: '比例', saveSizeTemplate: '保存为此服务的默认尺寸', confirmAction: '确认', cancelAction: '取消', minimapMove: '拖动导航框',
-    folderUpload: '文件夹', assetLibrary: '资源库', referenceTray: '参考图', referenceHint: '系统已自动判断参考用途，需要时可展开修改。', referencePromptHint: '提示词称呼：当前选中图是“母版 / 参考图1 / 图1”；右侧图片依次为“参考图2 / 图2、参考图3 / 图3……”。不要使用文件名表示图片角色。', addReference: '加入参考', addReferenceImages: '添加参考图', removeReference: '移出参考', referenceLimit: '参考图数量已达到当前模型上限。', referenceTooMany: '参考图数量超过当前模型上限，请移除后再生成。', noAssets: '资源库中还没有可用图片。', assetSearch: '搜索资源库图片', addAssetReference: '加入画布并设为参考', assetAdd: '添加', assetRemove: '移除', closeLibrary: '关闭资源库', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`,
+    assetLibrary: '资源库', referenceTray: '参考图', referenceHint: '系统已自动判断参考用途，需要时可展开修改。', referencePromptHint: '提示词称呼：当前选中图是“母版 / 参考图1 / 图1”；右侧图片依次为“参考图2 / 图2、参考图3 / 图3……”。不要使用文件名表示图片角色。', addReference: '加入参考', addReferenceImages: '添加参考图', removeReference: '移出参考', referenceLimit: '参考图数量已达到当前模型上限。', referenceTooMany: '参考图数量超过当前模型上限，请移除后再生成。', noAssets: '资源库中还没有可用图片。', assetSearch: '搜索资源库图片', addAssetReference: '加入画布并设为参考', assetAdd: '添加', assetRemove: '移除', closeLibrary: '关闭资源库', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`,
     roleGeneral: '普通', roleSubject: '主体', roleStyle: '风格', roleComposition: '构图', roleColor: '色彩', dropReference: '松开后加入画布和参考图', primaryImage: '母版', primaryImageNumbered: '母版 · 图1', imageNumber: (number) => `图${number}`, dragToReference: '拖动链条连接到目标图片', dropIntoReference: '松开后设为目标图片的参考', pasteReferenceDone: '剪贴板图片已加入参考图。', referenceTo: (name) => `引用到 ${name}`, removeReferenceFrom: (name) => `取消对 ${name} 的引用`, referenceCount: (count, limit) => `参考 ${count}/${limit}`, batchReference: '批量引用', finishBatchReference: '完成引用', batchReferenceHint: (name) => `正在为 ${name} 选择参考图：点击其他图片添加或移除，按 Esc 结束`, referenceDetails: '参考图管理', connectReference: '拖到目标图片建立引用', assetReferenceTo: (name) => `引用到 ${name}`
   },
   en: {
@@ -147,8 +147,8 @@ const copy = {
     projectCount: (count) => `${count} projects`, projectNodes: (count) => `${count || 0} items`, currentProjectLabel: 'Current', refreshProjects: 'Refresh canvases',
     moveToTrash: 'Move to trash', moveToTrashConfirm: (name) => `Move “${name || 'Untitled canvas'}” to trash?`, trashEmpty: 'Trash is empty.',
     restoreFromTrash: 'Restore canvas', permanentDelete: 'Delete forever', permanentDeleteConfirm: (name) => `Permanently delete “${name || 'Untitled canvas'}”? This cannot be undone, but library assets and generation history will remain.`,
-    saveConflict: 'This canvas changed elsewhere. Reload it before continuing.', reload: 'Reload', newIdea: 'New idea', history: 'History', historyEmpty: 'No previous images are available yet.',
-    historyLoading: 'Loading history…', historyMore: 'Load more', searchHistory: 'Search history prompts', addToCanvas: 'Add to canvas', onCanvas: 'Added', upload: 'Upload image', uploading: 'Uploading…',
+    saveConflict: 'This canvas changed elsewhere. Reload it before continuing.', reload: 'Reload', history: 'History', historyEmpty: 'No previous images are available yet.',
+    historyLoading: 'Loading history…', historyMore: 'Load more', searchHistory: 'Search history prompts', addToCanvas: 'Add to canvas', onCanvas: 'Added', upload: 'Upload files', uploading: 'Uploading…',
     deleteHistory: 'Remove from recent images', deleteHistoryFailed: 'Could not remove this recent image. Try again.',
     arrange: 'Auto arrange', fitView: 'Fit content', clearCanvas: 'Clear canvas', clearConfirm: 'Clear this canvas? Cloud assets and generation history will remain.',
     removeConfirm: 'Remove this node from the canvas? The cloud image and history remain.', protectedRemoveConfirm: 'This is an adopted version. Remove it from the canvas anyway?', lockedCannotRemove: 'This entity is locked and cannot be removed. Unlock it first.', lockedSelectionCannotRemove: (count) => `${count} selected locked entit${count === 1 ? 'y' : 'ies'} cannot be removed. Unlock them first.`, lockedCanvasCannotClear: (count) => `${count} locked entit${count === 1 ? 'y' : 'ies'} prevent clearing this canvas. Unlock them first.`, lockedRefineUnavailable: 'Unlock this image before refining it in Image Studio.', lockedPosition: 'This entity is locked and will stay in its canvas position.',
@@ -173,7 +173,7 @@ const copy = {
     branchPresets: ['Replace the background with a premium commercial scene while preserving the subject', 'Extend the canvas while preserving the original style and subject', 'Create a different composition with the same subject', 'Improve lighting, texture, and commercial polish without changing other content'],
     zoomHint: 'Drag empty space to pan · wheel to zoom · select an entity, then drag with the hand cursor', home: 'Home', backStudio: 'Image Studio', hideAssets: 'Hide assets', showAssets: 'Show assets',
     ratio: 'Ratio', saveSizeTemplate: 'Save as the default size for this service', confirmAction: 'Confirm', cancelAction: 'Cancel', minimapMove: 'Drag minimap',
-    folderUpload: 'Folder', assetLibrary: 'Library', referenceTray: 'References', referenceHint: 'Reference roles are inferred automatically and can be adjusted here.', referencePromptHint: 'Prompt names: the selected image is “Master / Reference 1 / Image 1”; images on the right continue as “Reference 2 / Image 2, Reference 3 / Image 3…”. Do not use filenames as image roles.', addReference: 'Add reference', addReferenceImages: 'Add references', removeReference: 'Remove reference', referenceLimit: 'This model has reached its reference-image limit.', referenceTooMany: 'Too many reference images for this model. Remove some before generating.', noAssets: 'No usable images are available in the library.', assetSearch: 'Search library images', addAssetReference: 'Add to canvas as reference', assetAdd: 'Add', assetRemove: 'Remove', closeLibrary: 'Close library', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`,
+    assetLibrary: 'Library', referenceTray: 'References', referenceHint: 'Reference roles are inferred automatically and can be adjusted here.', referencePromptHint: 'Prompt names: the selected image is “Master / Reference 1 / Image 1”; images on the right continue as “Reference 2 / Image 2, Reference 3 / Image 3…”. Do not use filenames as image roles.', addReference: 'Add reference', addReferenceImages: 'Add references', removeReference: 'Remove reference', referenceLimit: 'This model has reached its reference-image limit.', referenceTooMany: 'Too many reference images for this model. Remove some before generating.', noAssets: 'No usable images are available in the library.', assetSearch: 'Search library images', addAssetReference: 'Add to canvas as reference', assetAdd: 'Add', assetRemove: 'Remove', closeLibrary: 'Close library', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`,
     roleGeneral: 'General', roleSubject: 'Subject', roleStyle: 'Style', roleComposition: 'Composition', roleColor: 'Color', dropReference: 'Drop to add to canvas and references', primaryImage: 'Master', primaryImageNumbered: 'Master · Image 1', imageNumber: (number) => `Image ${number}`, dragToReference: 'Drag the link handle to a target image', dropIntoReference: 'Drop to reference the target image', pasteReferenceDone: 'Clipboard image added as a reference.', referenceTo: (name) => `Reference to ${name}`, removeReferenceFrom: (name) => `Remove reference from ${name}`, referenceCount: (count, limit) => `${count}/${limit} references`, batchReference: 'Pick references', finishBatchReference: 'Done', batchReferenceHint: (name) => `Picking references for ${name}: click images to add or remove; press Esc to finish`, referenceDetails: 'Manage references', connectReference: 'Drag to a target image to create a reference', assetReferenceTo: (name) => `Reference to ${name}`
   }
 };
@@ -393,7 +393,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const stageRef = useRef(null);
   const referenceTrayRef = useRef(null);
   const uploadRef = useRef(null);
-  const folderUploadRef = useRef(null);
   const interactionRef = useRef(null);
   const saveTimerRef = useRef(null);
   const saveRetryTimerRef = useRef(null);
@@ -1436,18 +1435,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     return { x: nextX, y: nextY };
   }
 
-  function addIdeaNode() {
-    if (projectReadOnly) return;
-    rememberCanvasState();
-    const position = nextOpenPosition(canvasCenter());
-    const node = createCanvasIdeaNode({ id: randomId('idea'), x: position.x, y: position.y });
-    setNodes((current) => [...current, node]);
-    setSelectedId(node.id);
-    setSelectedIds([node.id]);
-    setPrompt('');
-    setMessage('');
-  }
-
   function selectNode(node, event) {
     const additive = Boolean(event?.shiftKey);
     if (additive) {
@@ -1582,7 +1569,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       setUploading(false);
       setUploadProgress(0);
       if (uploadRef.current) uploadRef.current.value = '';
-      if (folderUploadRef.current) folderUploadRef.current.value = '';
     }
     return imported.length > 0 && !failedFile;
   }
@@ -2544,7 +2530,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     : null;
 
   return (
-    <section className={`infiniteCanvasPage ${theme === 'light' ? 'themeLight' : 'themeDark'} ${projectReadOnly ? 'projectArchived' : ''}`} data-theme={theme} aria-label={t.title}>
+    <section className={`infiniteCanvasPage ${theme === 'light' ? 'themeLight' : theme === 'black' ? 'themeBlack' : 'themeDark'} ${projectReadOnly ? 'projectArchived' : ''}`} data-theme={theme} aria-label={t.title}>
       <div className={`infiniteCanvasLayout ${sidebarOpen ? '' : 'sidebarCollapsed'}`} aria-busy={projectLoading}>
         {projectDock}
         {sidebarOpen ? <aside className="infiniteCanvasSidebar">
@@ -2553,11 +2539,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
             <button type="button" onClick={() => setSidebarOpen(false)} title={t.hideAssets} aria-label={t.hideAssets}><PanelLeftClose size={16} /></button>
           </header>
           <div className="infiniteCanvasSidebarActions">
-            <button type="button" onClick={addIdeaNode} disabled={projectReadOnly}><Plus size={16} /> {t.newIdea}</button>
             <button type="button" onClick={() => uploadRef.current?.click()} disabled={projectReadOnly || uploading}>{uploading ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} {uploading ? `${t.uploading} ${uploadProgress}%` : t.upload}</button>
-            <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void handleUpload(event.target.files, { asReferences: referenceSelected, preservePrimary: referenceSelected })} />
-            <button type="button" onClick={() => folderUploadRef.current?.click()} disabled={projectReadOnly || uploading || modelConstraints.maxReferenceImages === 0}><FolderOpen size={16} /> {t.folderUpload}</button>
-            <input ref={folderUploadRef} type="file" accept="image/jpeg,image/png,image/webp" multiple directory="" webkitdirectory="" hidden onChange={(event) => void handleUpload(event.target.files, { asReferences: true, preservePrimary: referenceSelected })} />
+            <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(event) => void handleUpload(event.target.files, { asReferences: referenceSelected, preservePrimary: referenceSelected })} />
             <button type="button" onClick={() => { setAssetPickerSelectedIds([]); setAssetPickerOpen(true); }} disabled={projectReadOnly || !isSignedIn || modelConstraints.maxReferenceImages === 0}><Images size={16} /> {t.assetLibrary}</button>
           </div>
           <div className="infiniteCanvasUploadSupport"><span>{t.dropUpload}</span>{failedUpload ? <button type="button" onClick={() => void handleUpload([failedUpload])} disabled={uploading}><RefreshCw size={13} />{t.retryUpload}</button> : null}</div>

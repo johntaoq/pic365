@@ -27,6 +27,7 @@ import {
   Cat,
   ChevronDown,
   Check,
+  Circle,
   Coins,
   Copy,
   CreditCard,
@@ -39,6 +40,7 @@ import {
   LoaderCircle,
   LogIn,
   LogOut,
+  Moon,
   PackageCheck,
   Plus,
   RefreshCw,
@@ -47,7 +49,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  SunMoon,
+  Sun,
   Tags,
   TrendingUp,
   Trash2,
@@ -744,12 +746,25 @@ const PAGE_HASHES = {
 const PUBLIC_PAGES = new Set(['home', 'cases', 'templates', 'cooperation']);
 
 const SITE_THEME_STORAGE_KEY = 'pic365.site-theme.v1';
+const SITE_THEME_VALUES = new Set(['light', 'dark', 'black']);
+const LANGUAGE_STORAGE_KEY = 'language';
+const LANGUAGE_VALUES = new Set(['zh', 'en']);
+
+function loadLanguage() {
+  try {
+    const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return LANGUAGE_VALUES.has(storedLanguage) ? storedLanguage : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
 
 function loadSiteTheme() {
   try {
-    return localStorage.getItem(SITE_THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+    const storedTheme = localStorage.getItem(SITE_THEME_STORAGE_KEY);
+    return SITE_THEME_VALUES.has(storedTheme) ? storedTheme : 'black';
   } catch {
-    return 'dark';
+    return 'black';
   }
 }
 
@@ -1401,48 +1416,15 @@ function useDropdownDismiss(open, setOpen) {
   return ref;
 }
 
-function LanguageSwitch({ language, setLanguage, combinedLabel = false }) {
-  const [open, setOpen] = useState(false);
-  const ref = useDropdownDismiss(open, setOpen);
-  const languageOptions = [
-    { value: 'en', label: 'English', short: 'EN' },
-    { value: 'zh', label: '中文', short: '中文' }
-  ];
-  const activeLanguage = languageOptions.find((option) => option.value === language) || languageOptions[0];
-
+function LanguageSwitch({ language, setLanguage }) {
+  const nextLanguage = language === 'zh' ? 'en' : 'zh';
+  const label = language === 'zh' ? 'EN' : '中文';
+  const accessibleLabel = language === 'zh' ? 'Switch to English' : '切换到中文';
   return (
-    <div className="dropdownControl languageSwitch" ref={ref}>
-      <button
-        className={cx('dropdownTrigger', open && 'open')}
-        type="button"
-        aria-label="Language"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-      <span>{combinedLabel ? '中文 / En' : activeLanguage.short}</span>
-        <ChevronDown size={15} />
+    <div className="languageSwitch">
+      <button className="languageToggleButton" type="button" aria-label={accessibleLabel} title={accessibleLabel} onClick={() => setLanguage(nextLanguage)}>
+        {label}
       </button>
-      {open ? (
-        <div className="dropdownMenu languageMenu" role="menu">
-          {languageOptions.map((option) => (
-            <button
-              className={cx(option.value === language && 'active')}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option.value === language}
-              onClick={() => {
-                setLanguage(option.value);
-                setOpen(false);
-              }}
-              key={option.value}
-            >
-              <span>{option.label}</span>
-              <strong>{option.short}</strong>
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -2347,6 +2329,74 @@ function AdminRankList({ rows, type, language }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ThemePicker({ language, siteTheme, setSiteTheme }) {
+  const [open, setOpen] = useState(false);
+  const ref = useDropdownDismiss(open, setOpen);
+  const labels = language === 'zh'
+    ? {
+        title: '主题',
+        current: (name) => `主题：${name}`,
+        light: '亮色',
+        dark: '暗色',
+        black: '纯黑'
+      }
+    : {
+        title: 'Theme',
+        current: (name) => `Theme: ${name}`,
+        light: 'Light',
+        dark: 'Dark',
+        black: 'Pure black'
+      };
+  const options = [
+    { value: 'light', label: labels.light, icon: Sun },
+    { value: 'dark', label: labels.dark, icon: Moon },
+    { value: 'black', label: labels.black, icon: Circle }
+  ];
+  const activeTheme = options.find((option) => option.value === siteTheme) || options[1];
+  const ActiveIcon = activeTheme.icon;
+
+  return (
+    <div className="dropdownControl themePicker" ref={ref}>
+      <button
+        className={cx('themePickerTrigger', open && 'open', `theme-${activeTheme.value}`)}
+        type="button"
+        aria-label={labels.current(activeTheme.label)}
+        title={labels.current(activeTheme.label)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ActiveIcon className="themePickerCurrentIcon" size={18} fill={activeTheme.value === 'black' ? 'currentColor' : 'none'} />
+        <ChevronDown size={13} />
+      </button>
+      {open ? (
+        <div className="dropdownMenu themePickerMenu" role="menu" aria-label={labels.title}>
+          {options.map((option) => {
+            const OptionIcon = option.icon;
+            return (
+              <button
+                className={cx(option.value === siteTheme && 'active')}
+                type="button"
+                role="menuitemradio"
+                aria-checked={option.value === siteTheme}
+                onClick={() => {
+                  setSiteTheme(option.value);
+                  setOpen(false);
+                }}
+                key={option.value}
+              >
+                <OptionIcon size={17} fill={option.value === 'black' ? 'currentColor' : 'none'} />
+                <span>{option.label}</span>
+                <i className={`themePickerSwatch theme-${option.value}`} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4649,10 +4699,6 @@ function PublicNavigation({
   const labels = language === 'zh'
     ? { solutions: '解决方案', cases: '范例', templates: '模板', cooperation: '合作', api: 'API', workspace: '进入工作台' }
     : { solutions: 'Solutions', cases: 'Examples', templates: 'Templates', cooperation: 'Cooperation', api: 'API', workspace: 'Open workspace' };
-  const themeLabel = siteTheme === 'light'
-    ? (language === 'zh' ? '切换深色风格' : 'Switch to dark theme')
-    : (language === 'zh' ? '切换白色风格' : 'Switch to light theme');
-
   return <div className="homeNavShell homeWrap">
     <nav className="homeNav" aria-label={language === 'zh' ? '首页导航' : 'Homepage navigation'}>
       <button className="homeBrand" type="button" onClick={onHome} aria-label="Pic365">
@@ -4666,9 +4712,9 @@ function PublicNavigation({
         {menuSettings.effective.api ? <button type="button" onClick={onApi}>{labels.api}</button> : null}
       </div>
       <div className="homeNavActions">
-        <LanguageSwitch language={language} setLanguage={setLanguage} combinedLabel />
+        <LanguageSwitch language={language} setLanguage={setLanguage} />
         <NotificationBell language={language} session={session} profile={profile} onProfileChange={onProfileChange} onSignIn={onSignIn} />
-        <button className="siteThemeToggle" type="button" aria-pressed={siteTheme === 'light'} aria-label={themeLabel} title={themeLabel} onClick={() => setSiteTheme((current) => current === 'light' ? 'dark' : 'light')}><SunMoon size={20} /></button>
+        <ThemePicker language={language} siteTheme={siteTheme} setSiteTheme={setSiteTheme} />
         <UserMenu language={language} session={session} profile={profile} onSignIn={onSignIn} onSignOut={onSignOut} onAccount={onAccount} onFavorites={onFavorites} onBilling={onBilling} />
         <button className="homePrimaryButton homeWorkspaceButton" type="button" onClick={onWorkspace}>{labels.workspace}<ArrowUpRight size={16} /></button>
       </div>
@@ -4682,7 +4728,7 @@ function App() {
   const [styleLibrary, setStyleLibrary] = useState(EMPTY_STYLE_LIBRARY);
   const [caseIndexLoading, setCaseIndexLoading] = useState(true);
   const [visibleCaseCount, setVisibleCaseCount] = useState(GALLERY_INITIAL_COUNT);
-  const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'zh');
+  const [language, setLanguage] = useState(loadLanguage);
   const [siteTheme, setSiteTheme] = useState(loadSiteTheme);
   const [activePage, setActivePage] = useState(() => pageFromHash(window.location.hash));
   const [workspaceMode, setWorkspaceMode] = useState('single');
@@ -4761,7 +4807,7 @@ function App() {
   }
 
   useEffect(() => {
-    localStorage.setItem('language', language);
+    try { localStorage.setItem(LANGUAGE_STORAGE_KEY, language); } catch { /* best effort */ }
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
   }, [language]);
 
@@ -4769,7 +4815,7 @@ function App() {
     try { localStorage.setItem(SITE_THEME_STORAGE_KEY, siteTheme); } catch { /* best effort */ }
     document.documentElement.dataset.theme = siteTheme;
     document.body.dataset.theme = siteTheme;
-    document.documentElement.style.colorScheme = siteTheme;
+    document.documentElement.style.colorScheme = siteTheme === 'light' ? 'light' : 'dark';
   }, [siteTheme]);
 
   useEffect(() => {
@@ -5248,7 +5294,7 @@ function App() {
   />;
 
   return (
-    <main className={cx('siteApp', isPublicPage && 'sitePublicPage', activePage === 'home' && 'siteHomepageActive', activePage === 'canvas' && 'siteWorkspaceCanvas', siteTheme === 'light' && 'siteThemeLight')} data-theme={siteTheme}>
+    <main className={cx('siteApp', isPublicPage && 'sitePublicPage', activePage === 'home' && 'siteHomepageActive', activePage === 'canvas' && 'siteWorkspaceCanvas', siteTheme === 'light' && 'siteThemeLight', siteTheme === 'dark' && 'siteThemeDark', siteTheme === 'black' && 'siteThemeBlack')} data-theme={siteTheme}>
       {isPublicPage && activePage !== 'home' ? publicNavigation : null}
       {!isPublicPage ? <header className={cx('topbar', 'workspaceTopbar', `topbarPage-${activePage}`)}>
         <div className="workspaceHomeCluster">
@@ -5305,6 +5351,7 @@ function App() {
               </button>
             ) : null}
           </nav>
+          <ThemePicker language={language} siteTheme={siteTheme} setSiteTheme={setSiteTheme} />
           <UserMenu
             language={language}
             session={session}

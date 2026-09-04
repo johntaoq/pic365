@@ -19,9 +19,12 @@
 .homeNavLinks button { border: 0; padding: 10px 15px; border-radius: 11px; color: #56667e; background: transparent; font-size: 14px; font-weight: 750; cursor: pointer; white-space: nowrap; }
 .homeNavLinks button:hover, .homeNavLinks button.active { color: #236e63; background: #e1f3ee; box-shadow: inset 0 -2px #55bdaa; }
 .homeNavActions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
-.homeNavActions :is(.dropdownTrigger, .notificationTrigger, .siteThemeToggle, .userTrigger) { border-color: #d3dfe8; background: #f4f8fb; color: #40566e; box-shadow: none; }
-.homeNavActions :is(.dropdownTrigger, .notificationTrigger, .siteThemeToggle, .userTrigger):hover,
-.homeNavActions :is(.dropdownTrigger, .notificationTrigger, .siteThemeToggle, .userTrigger).open { border-color: #9ed8cc; background: #e8f6f2; color: #17685a; }
+.homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger) { border-color: #d3dfe8; background: #f4f8fb; color: #40566e; box-shadow: none; }
+.homeNavActions .languageToggleButton { color: #40566e; }
+.homeNavActions .languageToggleButton:hover,
+.homeNavActions .languageToggleButton:focus-visible { background: transparent; color: #138271; text-decoration: underline; text-underline-offset: 4px; }
+.homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger):hover,
+.homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger).open { border-color: #9ed8cc; background: #e8f6f2; color: #17685a; }
 .homeNavActions :is(.dropdownTrigger, .userTrigger) svg { color: #4d8290; }
 .homeNavActions .userTriggerName { color: #30445a; }
 .homeNavActions .avatarBadge { border-color: #c9d9e5; background: #e5f4f7; color: #0d7780; }
@@ -178,10 +181,12 @@
   .homeNavShell { padding-top: 10px; }
   .homeNav { align-items: flex-start; border-radius: 17px; }
   .homeBrand { width: 98px; }
-  .homeNavActions { display: grid; flex: 1 1 100%; grid-template-columns: auto 36px 36px minmax(42px, 1fr) auto; width: 100%; justify-content: stretch; }
-  .homeNavActions :is(.languageSwitch, .notificationMenu, .siteThemeToggle, .userMenu, .accountButton) { grid-column: auto; grid-row: auto; justify-self: stretch; margin-left: 0; }
+  .homeNavActions { display: grid; flex: 1 1 100%; grid-template-columns: auto 36px 42px minmax(42px, 1fr) auto; width: 100%; justify-content: stretch; }
+  .homeNavActions :is(.languageSwitch, .notificationMenu, .themePicker, .userMenu, .accountButton) { grid-column: auto; grid-row: auto; justify-self: stretch; margin-left: 0; }
+  .homeNavActions .languageToggleButton { width: 44px; min-width: 44px; min-height: 36px; padding-inline: 4px; font-size: 11px; }
   .homeNavActions .dropdownTrigger { min-width: 64px; padding-inline: 7px; font-size: 11px; }
-  .homeNavActions :is(.notificationTrigger, .siteThemeToggle, .userTrigger) { width: 36px; min-width: 36px; height: 36px; min-height: 36px; }
+  .homeNavActions :is(.notificationTrigger, .userTrigger) { width: 36px; min-width: 36px; height: 36px; min-height: 36px; }
+  .homeNavActions .themePickerTrigger { width: 42px; min-width: 42px; height: 36px; min-height: 36px; }
   .homeNavActions .accountButton { min-width: 0; padding-inline: 8px; font-size: 11px; }
   .homeNavActions .homePrimaryButton { min-height: 36px; padding-inline: 9px; font-size: 11px; }
   .homeNavLinks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -218,3 +223,131 @@
   .homeCtaCard p { width: 100%; }
   .homeFooter .homeWrap { flex-direction: column; }
 }
+
+/* Dark homepage theme. */
+.siteThemeDark .homeLanding {
+  --home-ink: #f7fbff;
+  --home-muted: #9cabc0;
+  --home-line: #243349;
+  --home-green: #74e3bf;
+  color: #f7fbff;
+  background: linear-gradient(180deg, #07101c 0%, #0a1321 32%, #070d18 100%);
+}
+.siteThemeDark .homeNav { border-color: rgba(124, 229, 200, .22); background: rgba(8, 16, 29, .93); box-shadow: 0 18px 54px rgba(0,0,0,.42); }
+.siteThemeDark .homeNavLinks { background: #101a2a; }
+.siteThemeDark .homeNavLinks button { color: #aebbd0; }
+.siteThemeDark .homeNavLinks button:hover,
+.siteThemeDark .homeNavLinks button.active { color: #effff9; background: rgba(83, 222, 177, .13); box-shadow: inset 0 -2px #65dcb8; }
+.siteThemeDark .homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger) { border-color: #26374d; background: #0f1929; color: #eef6ff; }
+.siteThemeDark .homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger):hover,
+.siteThemeDark .homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger).open { border-color: #68dcb9; background: rgba(83, 222, 177, .13); color: #9ff0d4; }
+.siteThemeDark .homeNavActions .languageToggleButton { color: #c5d2e3; }
+.siteThemeDark .homeNavActions .languageToggleButton:hover,
+.siteThemeDark .homeNavActions .languageToggleButton:focus-visible { color: #8ff0cf; }
+.siteThemeDark .homeNavActions .userTriggerName { color: #f4f8ff; }
+.siteThemeDark .homeNavActions .avatarBadge { border-color: #2e4652; background: #132936; color: #8ee8d0; }
+.siteThemeDark .homeHero::before { background: radial-gradient(circle, rgba(44, 204, 159, .18), rgba(43, 105, 172, .08) 48%, transparent 70%); }
+.siteThemeDark .homeHero::after { background: radial-gradient(circle, rgba(112, 91, 211, .14), transparent 70%); }
+.siteThemeDark :is(.homeHero h1, .homeSectionHead h2, .homeAudienceCard h3, .homeCaseBody h3, .homeWhyPanel h3, .homeWhyPanel blockquote) { color: #f7fbff; }
+.siteThemeDark .homeHero h1 em { background: linear-gradient(110deg, #caffec, #65e6b8 52%, #79a9ff); background-clip: text; -webkit-background-clip: text; }
+.siteThemeDark :is(.homeHeroCopy > p, .homeSectionHead > p, .homeAudienceCard > p, .homeCaseBody > p, .homeFeature span, .homePrinciples p, .homeFooter) { color: #99a9bd; }
+.siteThemeDark .homeEyebrow { border-color: rgba(105, 223, 188, .3); background: rgba(73, 198, 161, .1); color: #93efcf; }
+.siteThemeDark .homeEyebrow i { background: #69dfbc; box-shadow: 0 0 0 5px rgba(105, 223, 188, .12); }
+.siteThemeDark .homePrimaryButton { color: #06251c; background: linear-gradient(135deg, #9cf0d2, #8abcf7); box-shadow: 0 12px 30px rgba(48, 177, 151, .2); }
+.siteThemeDark .homeSecondaryButton,
+.siteThemeDark .homeGhostButton { border-color: #2b3a4e; background: #101a28; color: #dce6f2; }
+.siteThemeDark :is(.homePrinciples, .homeAudienceCard, .homeCase, .homeWhyPanel, .homeWindow, .homeWorkflowVisual figure) { border-color: #243349; background: #0d1725; box-shadow: 0 20px 54px rgba(0,0,0,.34); }
+.siteThemeDark .homeAudienceCard.commerce { background: linear-gradient(150deg, #0d1b23, #101a2a); }
+.siteThemeDark .homeAudienceCard.story { background: linear-gradient(150deg, #111827, #17142a); }
+.siteThemeDark .homeSection.tint { border-block-color: #223146; background: #09111d; }
+.siteThemeDark .homeAudienceLabel,
+.siteThemeDark .homeAudienceCard li,
+.siteThemeDark .homeFeature { background: rgba(83, 222, 177, .1); color: #9cebd2; }
+.siteThemeDark .homeFeature b { color: #f7fbff; }
+.siteThemeDark .homeShot,
+.siteThemeDark .homeCaseImage { border-color: #25364b; background: #0b1421; }
+.siteThemeDark .homeWorkflowCopy,
+.siteThemeDark .homeCtaCard { background: linear-gradient(145deg, #0b1422, #102539); box-shadow: 0 28px 70px rgba(0,0,0,.42); }
+.siteThemeDark .homeStep > b { color: #08251d; background: linear-gradient(135deg, #9be9cf, #8dbafa); }
+.siteThemeDark .homeWindowBar { border-bottom-color: #26374b; background: #111c2b; }
+.siteThemeDark .homeFooter { border-top-color: #223146; }
+
+/* Pure-black homepage theme. */
+.siteThemeBlack .homeLanding {
+  --home-ink: #ffffff;
+  --home-muted: #a2ada7;
+  --home-line: #1b2a22;
+  --home-green: #42f59b;
+  color: #ffffff;
+  background: #000000;
+}
+.siteThemeBlack .homeNav {
+  border-color: rgba(72, 255, 155, 0.22);
+  background: rgba(2, 2, 2, 0.96);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.72);
+}
+.siteThemeBlack .homeNavLinks { background: #080808; }
+.siteThemeBlack .homeNavLinks button { color: #b3bdb8; }
+.siteThemeBlack .homeNavLinks button:hover,
+.siteThemeBlack .homeNavLinks button.active { color: #ffffff; background: rgba(72, 255, 155, 0.12); box-shadow: inset 0 -2px #48ff9b; }
+.siteThemeBlack .homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger) { border-color: #202a25; background: #080808; color: #ffffff; }
+.siteThemeBlack .homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger):hover,
+.siteThemeBlack .homeNavActions :is(.dropdownTrigger, .notificationTrigger, .themePickerTrigger, .userTrigger).open { border-color: #48ff9b; background: rgba(72, 255, 155, 0.12); color: #75ffb2; }
+.siteThemeBlack .homeNavActions .themePickerTrigger { border-color: rgba(72, 255, 155, 0.38); color: #58ff9f; }
+.siteThemeBlack .homeNavActions .languageToggleButton { color: #ffffff; }
+.siteThemeBlack .homeNavActions .languageToggleButton:hover,
+.siteThemeBlack .homeNavActions .languageToggleButton:focus-visible { color: #75ffb2; }
+.siteThemeBlack .homeNavActions .avatarBadge { border-color: rgba(72, 255, 155, 0.28); background: #0b1610; color: #62ffa8; }
+.siteThemeBlack .homeNavActions .userTriggerName { color: #ffffff; }
+.siteThemeBlack .homeHero::before { background: radial-gradient(circle, rgba(40, 255, 137, 0.14), transparent 68%); }
+.siteThemeBlack .homeHero::after { background: radial-gradient(circle, rgba(31, 117, 73, 0.1), transparent 70%); }
+.siteThemeBlack .homeHero h1,
+.siteThemeBlack .homeSectionHead h2,
+.siteThemeBlack .homeAudienceCard h3,
+.siteThemeBlack .homeCaseBody h3,
+.siteThemeBlack .homeWhyPanel h3,
+.siteThemeBlack .homeWhyPanel blockquote { color: #ffffff; }
+.siteThemeBlack .homeHero h1 em { background: linear-gradient(110deg, #dffff0, #51ff9f 58%, #1edb78); background-clip: text; -webkit-background-clip: text; }
+.siteThemeBlack :is(.homeHeroCopy > p, .homeSectionHead > p, .homeAudienceCard > p, .homeCaseBody > p, .homeFeature span, .homePrinciples p, .homeFooter) { color: #9da7a2; }
+.siteThemeBlack .homeEyebrow { border-color: rgba(72, 255, 155, 0.28); background: rgba(72, 255, 155, 0.08); color: #63ffab; }
+.siteThemeBlack .homeEyebrow i { background: #48ff9b; box-shadow: 0 0 0 5px rgba(72, 255, 155, 0.12); }
+.siteThemeBlack .homePrimaryButton {
+  border: 1px solid #76f3a2;
+  border-radius: 15px;
+  color: #00180a;
+  background: #76f3a2;
+  box-shadow: 0 10px 30px rgba(72, 255, 155, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  font-weight: 900;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.siteThemeBlack .homePrimaryButton:hover {
+  border-color: #8affb2;
+  color: #00180a;
+  background: #8affb2;
+  box-shadow: 0 13px 34px rgba(72, 255, 155, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  transform: translateY(-1px);
+}
+.siteThemeBlack .homePrimaryButton:focus-visible { outline: 3px solid rgba(118, 243, 162, 0.32); outline-offset: 3px; }
+.siteThemeBlack .homePrimaryButton svg { color: currentColor; stroke: currentColor; }
+.siteThemeBlack .homeSecondaryButton,
+.siteThemeBlack .homeGhostButton { border-color: #243129; background: #080808; color: #e5ebe8; }
+.siteThemeBlack :is(.homePrinciples, .homeAudienceCard, .homeCase, .homeWhyPanel, .homeWindow, .homeWorkflowVisual figure) {
+  border-color: #1b2a22;
+  background: #060606;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.6);
+}
+.siteThemeBlack .homeAudienceCard.commerce,
+.siteThemeBlack .homeAudienceCard.story,
+.siteThemeBlack .homeWhyPanel.quote { background: #070907; }
+.siteThemeBlack .homeSection.tint { border-block-color: #17231c; background: #030403; }
+.siteThemeBlack .homeAudienceLabel,
+.siteThemeBlack .homeAudienceCard li,
+.siteThemeBlack .homeFeature { background: rgba(72, 255, 155, 0.08); color: #71ffb1; }
+.siteThemeBlack .homeFeature b { color: #ffffff; }
+.siteThemeBlack .homeShot,
+.siteThemeBlack .homeCaseImage { border-color: #1b2a22; background: #080808; }
+.siteThemeBlack .homeWorkflowCopy,
+.siteThemeBlack .homeCtaCard { background: linear-gradient(145deg, #030303, #07110b); box-shadow: 0 28px 70px rgba(0, 0, 0, 0.72); }
+.siteThemeBlack .homeStep > b { color: #00180a; background: #48ff9b; }
+.siteThemeBlack .homeWindowBar { border-bottom-color: #17231c; background: #080808; }
+.siteThemeBlack .homeFooter { border-top-color: #17231c; }
