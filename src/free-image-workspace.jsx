@@ -437,7 +437,9 @@ const copy = {
     referenceTooLarge: '每张参考图不能超过 7 MB。',
     maiReferenceUploadFailed: 'MAI 参考图仅支持 JPEG 或 PNG。',
     referenceUnsupported: 'MAI-Image-2 不支持参考图编辑。',
-    maiReferenceHint: 'MAI-Image-2.5 最多使用 1 张 JPEG 或 PNG 参考图',
+    maiReferenceHint: (count) => count >= 5
+      ? '最多 1 张主图 + 4 张其他参考图（共 5 张，仅 JPEG/PNG）'
+      : `最多使用 ${count} 张 JPEG 或 PNG 图片`,
     geminiReferenceHint: '香蕉模型支持 JPEG、PNG、WebP；Pic365 最多使用 9 张参考图',
     addReference: '作为参考',
     editMarks: '标记区域',
@@ -468,7 +470,9 @@ const copy = {
     sizeAspect: '宽高比需在 1:3～3:1 之间。',
     maiAutoSize: 'MAI 模型不支持 Auto 尺寸，请选择具体宽高。',
     maiSizeSide: 'MAI 图片宽高均需至少 768 像素。',
-    maiSizePixels: 'MAI 图片总像素不得超过 1,048,576。',
+    maiSizePixels: (maxPixels) => maxPixels
+      ? `MAI 图片总像素不得超过 ${Number(maxPixels).toLocaleString('zh-CN')}。`
+      : '图片总像素超过当前 MAI 模型支持的上限。',
     geminiResolution: '输出分辨率',
     geminiSizeSide: '香蕉模型画布边长需在 512～4096 之间。',
     geminiSizePixels: '香蕉模型画布像素不能超过 4096×4096。',
@@ -592,7 +596,9 @@ const copy = {
     referenceTooLarge: 'Each reference image must be no larger than 7 MB.',
     maiReferenceUploadFailed: 'MAI references must be JPEG or PNG.',
     referenceUnsupported: 'MAI-Image-2 does not support reference-image editing.',
-    maiReferenceHint: 'MAI-Image-2.5 accepts one JPEG or PNG reference image',
+    maiReferenceHint: (count) => count >= 5
+      ? 'Up to 1 primary + 4 supporting images (5 total, JPEG/PNG only)'
+      : `Up to ${count} JPEG or PNG image${count === 1 ? '' : 's'}`,
     geminiReferenceHint: 'Gemini image accepts JPEG, PNG, and WebP; Pic365 allows up to 9 references',
     addReference: 'Use as reference',
     editMarks: 'Mark regions',
@@ -623,7 +629,9 @@ const copy = {
     sizeAspect: 'Aspect ratio must stay between 1:3 and 3:1.',
     maiAutoSize: 'MAI models require explicit dimensions; Auto is not supported.',
     maiSizeSide: 'MAI image width and height must each be at least 768 pixels.',
-    maiSizePixels: 'MAI images may not exceed 1,048,576 total pixels.',
+    maiSizePixels: (maxPixels) => maxPixels
+      ? `MAI images may not exceed ${Number(maxPixels).toLocaleString('en-US')} total pixels.`
+      : 'The image exceeds this MAI model\'s total-pixel limit.',
     geminiResolution: 'Output resolution',
     geminiSizeSide: 'Gemini image canvas sides must stay between 512 and 4096.',
     geminiSizePixels: 'Gemini image canvas may not exceed 4096×4096.',
@@ -776,7 +784,7 @@ function sizeErrorText(result, t) {
   if (result.error === 'STEP') return t.sizeStep;
   if (result.error === 'AUTO_SIZE_UNSUPPORTED') return t.maiAutoSize;
   if (result.error === 'MAI_MIN_SIDE') return t.maiSizeSide;
-  if (result.error === 'MAI_MAX_PIXELS') return t.maiSizePixels;
+  if (result.error === 'MAI_MAX_PIXELS') return t.maiSizePixels(result.constraints?.maxPixels);
   if (result.error === 'GEMINI_MIN_SIDE' || result.error === 'GEMINI_MAX_SIDE') return t.geminiSizeSide;
   if (result.error === 'GEMINI_MAX_PIXELS') return t.geminiSizePixels;
   if (result.error === 'GEMINI_ASPECT_RATIO') return t.geminiAspect;
@@ -786,10 +794,10 @@ function sizeErrorText(result, t) {
   return t.invalidSize;
 }
 
-function generationFailureText(payload, t) {
+function generationFailureText(payload, t, maxReferenceImages = 1) {
   const code = typeof payload === 'string' ? payload : payload?.error;
   if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.referenceUnsupported;
-  if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maxReferences(1);
+  if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maxReferences(maxReferenceImages);
   if (code === 'REFERENCE_IMAGE_TOO_LARGE') return t.referenceTooLarge;
   if (code === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceUploadFailed;
   if (code === 'INVALID_SIZE' && payload?.reason) return sizeErrorText({ valid: false, error: payload.reason }, t);
@@ -801,12 +809,12 @@ function generationFailureText(payload, t) {
   return t.failed;
 }
 
-function taskFailureText(task, t) {
+function taskFailureText(task, t, maxReferenceImages) {
   if (task?.error === 'PROVIDER_SOURCE_SIZE_UNSUPPORTED') return t.providerSourceSizeUnsupported;
   if (task?.error === 'PROVIDER_OUTPUT_SIZE_UNSUPPORTED') return t.providerOutputSizeUnsupported;
   if (task?.error === 'INVALID_REFERENCE_IMAGE_FORMAT') return t.maiReferenceUploadFailed;
   if (task?.error === 'PROVIDER_REFERENCE_UNSUPPORTED') return t.providerReferenceUnsupported;
-  return generationFailureText({ error: task?.error }, t);
+  return generationFailureText({ error: task?.error }, t, maxReferenceImages);
 }
 
 function billingMessage(profile, t, code = '') {
@@ -1054,7 +1062,7 @@ export default function FreeImageWorkspace({
     : modelConstraints.isGeminiImage
       ? t.geminiReferenceHint
     : modelConstraints.isMai
-      ? t.maiReferenceHint
+      ? t.maiReferenceHint(maxReferenceImages)
       : t.referenceHint;
   const referenceLimitMessage = maxReferenceImages === 0
     ? t.referenceUnsupported
@@ -2397,7 +2405,7 @@ export default function FreeImageWorkspace({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) {
         clearBatchQueueNotice();
-        setState((current) => ({ ...current, message: ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT'].includes(payload.error) ? t.queueFull : generationFailureText(payload, t) }));
+        setState((current) => ({ ...current, message: ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT'].includes(payload.error) ? t.queueFull : generationFailureText(payload, t, maxReferenceImages) }));
         return;
       }
       setQueueTasks((current) => [
@@ -2500,7 +2508,7 @@ export default function FreeImageWorkspace({
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) {
-        setState((current) => ({ ...current, message: ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT'].includes(payload.error) ? t.queueFull : generationFailureText(payload, t) }));
+        setState((current) => ({ ...current, message: ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT'].includes(payload.error) ? t.queueFull : generationFailureText(payload, t, maxReferenceImages) }));
         return;
       }
       setQueueTasks((current) => [...current.filter((item) => item.id !== payload.task.id), payload.task]);
@@ -2929,7 +2937,7 @@ export default function FreeImageWorkspace({
           return;
         }
         const error = new Error(payload.error || 'GENERATION_FAILED');
-        error.userMessage = generationFailureText(payload, t);
+        error.userMessage = generationFailureText(payload, t, maxReferenceImages);
         throw error;
       }
 
@@ -2973,7 +2981,7 @@ export default function FreeImageWorkspace({
       setState((current) => ({
         ...current,
         status: 'error',
-        message: isImageGenerationTimeout(error) ? t.timeout : error?.userMessage || generationFailureText(error?.message, t)
+        message: isImageGenerationTimeout(error) ? t.timeout : error?.userMessage || generationFailureText(error?.message, t, maxReferenceImages)
       }));
     }
   }
@@ -3728,7 +3736,7 @@ export default function FreeImageWorkspace({
                         </div>
                         <p>{task.taskMode === 'batch-repair' ? imageTaskSourceLabel(task, language) : compactPrompt(task.canvasDisplayPrompt || task.prompt, 120)}</p>
                         {task.taskMode === 'batch-repair' ? <small>{compactPrompt(task.prompt, 90)}</small> : null}
-                        {task.status === 'failed' && task.error ? <small className="freeImageTaskError">{taskFailureText(task, t)}</small> : null}
+                        {task.status === 'failed' && task.error ? <small className="freeImageTaskError">{taskFailureText(task, t, maxReferenceImages)}</small> : null}
                       </div>
                       {!activeTask || task.results?.length ? (
                         <div className="freeImageTaskActions">

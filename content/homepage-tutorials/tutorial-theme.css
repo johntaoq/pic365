@@ -1,0 +1,16 @@
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="light"] body { --bg:#f4f7fa!important; --panel:#fff!important; --panel2:#f7f9fb!important; --card:#fff!important; --line:#d3dee8!important; --text:#26384d!important; --muted:#687c92!important; --green:#0d9488!important; --green-ink:#fff!important; color:#26384d!important; background:radial-gradient(circle at 15% 0%,#dff4ee 0,transparent 34%),#f4f7fa!important; }
+html[data-theme="light"] .top { border-color:#d3dee8!important; background:rgba(255,255,255,.92)!important; }
+html[data-theme="light"] :is(.lead,.sectionHead p,.stepCopy p,.copy p,.contextCard p,.mediaCard span,.resultCard span,.tip,.tipCard,.preflight p,.templateNote,.cta p,.facts p,.note p,.qualityCard p,.warning) { color:#63778d!important; }
+html[data-theme="light"] :is(.mediaCard,.resultCard,.stepPanel,.promptBox,.tipCard,.contextCard,.preflight article,.card,.facts,.step,.prompt,.screen,.frame,.note,.tip,.cta,.qualityCard,.branch,.empty) { border-color:#d3dee8!important; color:#30445a!important; background:#fff!important; box-shadow:0 16px 38px rgba(55,78,103,.1)!important; }
+html[data-theme="light"] :is(blockquote,.where,.ruleChips span,.audienceList span,.proof span) { border-color:#d3dee8!important; color:#40566e!important; background:#f5f8fa!important; }
+html[data-theme="light"] :is(h1,h2,h3,strong,.brand,.copy strong) { color:#26384d; }
+html[data-theme="light"] :is(.proof b,.meta b,.tip b,.facts b) { color:#26384d!important; }
+html[data-theme="light"] h1 em { color:#0d9488!important; }
+html[data-theme="light"] :is(.secondary,.steps button,.stepTabs button,.back) { border-color:#d3dee8!important; color:#40566e!important; background:#fff!important; }
+html[data-theme="light"] :is(.primary,.steps button.active,.stepTabs button.active,.autoBadge) { border-color:#0d9488!important; color:#fff!important; background:#0d9488!important; }
+html[data-theme="light"] footer { border-color:#dce5ec!important; color:#718196!important; }
+html[data-theme="black"] { color-scheme:dark; }
+html[data-theme="black"] body { --bg:#000!important; --panel:#070907!important; --panel2:#080b09!important; --card:#070907!important; --line:#1b2a22!important; --green:#76f3a2!important; background:#000!important; }
+html[data-theme="black"] .top { border-color:#1b2a22!important; background:rgba(0,0,0,.94)!important; }
+html[data-theme="black"] :is(.mediaCard,.resultCard,.stepPanel,.promptBox,.tipCard,.contextCard,.preflight article,.card,.facts,.step,.prompt,.screen,.frame,.note,.tip,.cta,.qualityCard,.branch,.empty) { border-color:#1b2a22!important; background:#060606!important; }

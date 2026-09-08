@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "slug": "09-poem-teaching-illustration",
+  "enabled": true,
+  "featured": true,
+  "order": 9,
+  "category": "教学插画",
+  "title": "一首古诗，生成整套课堂插画",
+  "subtitle": "诗意、课件背景和读物封面一次准备齐全",
+  "duration": "4分钟",
+  "entry": {
+    "page": "灵感生图",
+    "mode": "单图创作",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "输入诗文和画面重点，再按课件、封面或知识卡用途选择尺寸。"
+  },
+  "steps": [
+    {
+      "title": "让 Pic365 精灵整理课堂文案",
+      "number": 1,
+      "image": "steps/step-01.webp"
+    },
+    {
+      "title": "拆出诗文中的画面重点",
+      "number": 2,
+      "image": "steps/step-02.webp"
+    },
+    {
+      "title": "生成横版课件背景",
+      "number": 3,
+      "image": "steps/step-03.webp"
+    },
+    {
+      "title": "切换竖版读物封面",
+      "number": 4,
+      "image": "steps/step-04.webp"
+    },
+    {
+      "title": "补充人物教学场景",
+      "number": 5,
+      "image": "steps/step-05.webp"
+    }
+  ],
+  "results": [
+    {
+      "label": "精灵课堂文案配合生成的课件",
+      "file": "results/result-spirit-slide.webp"
+    },
+    {
+      "label": "《登鹳雀楼》横版课件背景",
+      "file": "results/result-horizontal.webp"
+    },
+    {
+      "label": "《望庐山瀑布》竖版封面",
+      "file": "results/result-vertical.webp"
+    },
+    {
+      "label": "李白杜甫人物教学场景",
+      "file": "results/result-character.webp"
+    }
+  ],
+  "status": "published",
+  "durationMinutes": 4,
+  "problem": "同一首古诗需要横版课件、竖版封面和人物知识卡，重复制作耗时，也容易让画面与诗意脱节。",
+  "audience": [
+    "语文教师",
+    "出版编辑",
+    "知识内容创作者",
+    "教育机构"
+  ],
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以准备诗文和提示词；保存或提交任务时按页面提示登录。",
+    "unavailable": "功能暂时不可用时保存诗文、尺寸和提示词，稍后重试。"
+  },
+  "inputs": [
+    {
+      "label": "古诗与教学重点",
+      "file": "source/poem-source.webp",
+      "purpose": "提供诗文、景物、情绪和课堂用途"
+    }
+  ],
+  "prompt": "《登鹳雀楼》课堂插画：盛唐边塞山水，黄河奔流进入远方，夕阳依山而落，鹳雀楼高耸，登楼远眺的诗人背影。中国传统青绿山水与淡彩工笔结合，留出课件标题安全区，无任何文字、印章、水印或现代元素。",
+  "tips": [
+    "把诗句中的景物与动作逐项变成可见画面。",
+    "古诗正文、作者和朝代应人工校对并后期排版。",
+    "横版课件和竖版封面分别生成。",
+    "保存到教学素材分类前再次核对用途和尺寸。"
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/teaching-set.webp"
+  }
+}

@@ -9,6 +9,7 @@ import {
 } from '../../shared/image-pricing.js';
 import { normalizeRechargeConfig } from '../../shared/recharge-config.js';
 import { inferSiteNoticeFormat } from '../../shared/site-notice.js';
+import { creditLedgerCategory, creditLedgerModule, CREDIT_LEDGER_CATEGORIES } from '../../shared/credit-ledger.js';
 import {
   ADMIN_PERMISSIONS,
   isAdministrativeRole,
@@ -2903,6 +2904,7 @@ export function getUserProfile(userId) {
 
 function billingLedgerType(source) {
   const value = String(source || 'generation');
+  if (/voice|speech|tts|audio_generation|audio-generation/i.test(value)) return 'ai_voice';
   if (value.startsWith('storage')) return 'storage';
   if (value.startsWith('chat')) return 'ai_chat';
   if (value.startsWith('ai_') || value.includes('magic') || value.includes('brief')) return 'ai_tool';
@@ -3507,6 +3509,229 @@ export function listCreditLedger(userId, limit = 30) {
     ORDER BY l.created_at DESC
     LIMIT ?
   `).all(userId, Math.max(1, Math.min(Number(limit) || 30, 500)));
+}
+
+function creditLedgerCategorySql(alias = 'l') {
+  const type = `LOWER(COALESCE(${alias}.type, ''))`;
+  const source = `LOWER(COALESCE(${alias}.source, ''))`;
+  return `CASE
+    WHEN ${type} = 'ai_voice' OR ${source} LIKE '%voice%' OR ${source} LIKE '%speech%' OR ${source} LIKE '%tts%' OR ${source} LIKE '%audio_generation%' THEN 'ai_voice'
+    WHEN ${type} = 'ai_video' OR ${source} LIKE '%video%' THEN 'ai_video'
+    WHEN ${type} = 'ai_chat' OR ${source} LIKE '%chat%' THEN 'ai_chat'
+    WHEN ${type} = 'ai_tool' OR ${source} LIKE '%ai_magic%' OR ${source} LIKE '%brief%' OR ${source} LIKE '%optimize%' THEN 'ai_tool'
+    WHEN ${type} = 'storage' OR ${source} LIKE '%storage%' THEN 'storage'
+    WHEN ${type} = 'purchase' OR ${source} LIKE '%checkout%' OR ${source} LIKE '%purchase%' OR ${source} LIKE '%recharge%' THEN 'recharge'
+    WHEN ${type} = 'redemption' OR ${source} IN ('paid_code', 'free_code') OR ${source} LIKE '%redemption%' THEN 'redemption'
+    WHEN ${type} IN ('signup_bonus', 'grant') OR ${source} LIKE '%bonus%' OR ${source} LIKE '%gift%' OR ${source} LIKE '%grant%' THEN 'grant'
+    WHEN ${type} = 'adjustment' OR ${source} = 'admin_adjustment' THEN 'adjustment'
+    WHEN ${type} = 'group_transfer' OR ${source} LIKE '%group_funding%' OR ${source} LIKE '%group_transfer%' THEN 'group'
+    WHEN ${type} = 'refund' OR ${source} LIKE '%refund%' OR ${source} LIKE '%release%' OR ${source} LIKE '%recovery%' THEN 'refund'
+    WHEN ${type} = 'generation' OR ${source} LIKE '%generation%' OR ${source} LIKE '%image%' THEN 'ai_image'
+    ELSE 'other'
+  END`;
+}
+
+function normalizedLedgerDetails(row, { includePrompt = false, includeAdminFields = false } = {}) {
+  const ledgerMetadata = parseJsonObject(row.metadata);
+  const reservationMetadata = parseJsonObject(row.reservation_metadata);
+  const metadata = { ...reservationMetadata, ...ledgerMetadata };
+  const category = creditLedgerCategory(row.type, row.source);
+  const billingScope = row.billing_scope || (metadata.groupId ? 'group' : 'personal');
+  const taskStatus = category === 'refund' ? 'refunded' : (row.generation_status
+    || row.free_task_status
+    || row.video_task_status
+    || row.ecommerce_task_status
+    || row.payment_status
+    || row.reservation_status
+    || 'settled');
+  const detail = {
+    model: row.generation_model || metadata.model || '',
+    providerId: metadata.providerId || '',
+    providerName: row.generation_provider || metadata.providerName || '',
+    size: row.generation_size || row.video_size || metadata.size || '',
+    quality: row.generation_quality || metadata.quality || metadata.billedQuality || '',
+    imageCount: Number(metadata.imageCount || metadata.count || 0) || null,
+    referenceCount: Number(metadata.referenceCount || 0) || null,
+    seconds: Number(row.video_seconds || metadata.seconds || 0) || null,
+    voice: metadata.voice || metadata.voiceName || '',
+    language: metadata.language || '',
+    audioDurationSeconds: Number(metadata.audioDurationSeconds || metadata.durationSeconds || 0) || null,
+    inputTokens: Number(metadata.inputTokens || metadata.input_tokens || 0) || null,
+    outputTokens: Number(metadata.outputTokens || metadata.output_tokens || 0) || null,
+    billingMonth: row.storage_billing_month || metadata.billingMonth || '',
+    usageDate: row.storage_usage_date || metadata.usageDate || '',
+    previousBilledBytes: row.previous_billed_bytes == null ? null : Number(row.previous_billed_bytes),
+    billedPeakBytes: row.billed_peak_bytes == null ? null : Number(row.billed_peak_bytes),
+    incrementalBytes: row.incremental_bytes == null ? null : Number(row.incremental_bytes),
+    unitPriceCentsPerGb: row.unit_price_cents_per_gb == null ? null : Number(row.unit_price_cents_per_gb),
+    amountCents: row.payment_amount_cents == null ? (metadata.faceValueCents == null ? null : Number(metadata.faceValueCents)) : Number(row.payment_amount_cents),
+    currency: row.payment_currency || '',
+    productId: row.payment_product_id || metadata.productId || '',
+    projectId: row.generation_project_id || metadata.projectId || '',
+    slotId: row.generation_slot_id || metadata.slotId || '',
+    caseId: Number(row.reservation_case_id || metadata.caseId || 0) || null,
+    promotionName: metadata.promotionName || '',
+    reasonCode: metadata.reasonCode || metadata.reason || '',
+    details: includeAdminFields ? (metadata.details || '') : '',
+    errorCode: row.generation_error_code || row.video_error_code || row.ecommerce_error_code || metadata.errorCode || '',
+    prompt: includePrompt ? String(row.reservation_prompt || row.generation_prompt || '').slice(0, 12_000) : ''
+  };
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userEmail: row.user_email || '',
+    userName: row.user_name || '',
+    userAdminNote: includeAdminFields ? (row.user_admin_note || '') : '',
+    amount: Number(row.amount || 0),
+    type: row.type || '',
+    source: row.source || '',
+    category,
+    module: creditLedgerModule(category, metadata),
+    referenceId: row.reference_id || '',
+    createdAt: row.created_at || '',
+    taskStatus,
+    billingScope,
+    payerName: billingScope === 'group' ? (row.group_name || '集团账户') : (row.user_name || row.user_email || ''),
+    requesterEmail: includeAdminFields ? (row.requester_email || '') : '',
+    balanceBefore: billingScope === 'group' ? null : Number(row.audit_balance_before ?? row.storage_balance_before ?? row.derived_balance_before),
+    balanceAfter: billingScope === 'group' ? null : Number(row.audit_balance_after ?? row.storage_balance_after ?? row.derived_balance_after),
+    detail
+  };
+}
+
+export function listCreditLedgerPage({
+  userId = '',
+  includeAllUsers = false,
+  includePrompt = false,
+  search = '',
+  category = 'all',
+  direction = 'all',
+  startAt = '',
+  endAt = '',
+  page = 1,
+  pageSize = 30
+} = {}) {
+  if (!includeAllUsers && !userId) throw Object.assign(new Error('USER_REQUIRED'), { code: 'USER_REQUIRED' });
+  const normalizedCategory = CREDIT_LEDGER_CATEGORIES.includes(category) ? category : 'all';
+  const normalizedDirection = ['all', 'income', 'expense'].includes(direction) ? direction : 'all';
+  const normalizedPage = Math.max(1, Math.floor(Number(page) || 1));
+  const normalizedPageSize = Math.max(10, Math.min(100, Math.floor(Number(pageSize) || 30)));
+  const where = [];
+  const params = [];
+  if (!includeAllUsers) {
+    where.push('l.user_id = ?');
+    params.push(userId);
+  }
+  if (startAt) { where.push('l.created_at >= ?'); params.push(String(startAt)); }
+  if (endAt) { where.push('l.created_at < ?'); params.push(String(endAt)); }
+  if (normalizedDirection === 'income') where.push('l.amount > 0');
+  if (normalizedDirection === 'expense') where.push('l.amount < 0');
+  if (normalizedCategory !== 'all') {
+    where.push(`${creditLedgerCategorySql('l')} = ?`);
+    params.push(normalizedCategory);
+  }
+  const normalizedSearch = String(search || '').trim().slice(0, 160);
+  if (normalizedSearch) {
+    const pattern = `%${normalizedSearch.replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
+    where.push(`(u.email LIKE ? ESCAPE '\\' OR u.full_name LIKE ? ESCAPE '\\' OR u.admin_note LIKE ? ESCAPE '\\' OR l.reference_id LIKE ? ESCAPE '\\' OR l.source LIKE ? ESCAPE '\\')`);
+    params.push(pattern, pattern, pattern, pattern, pattern);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const db = getDb();
+  const platformAmountCondition = includeAllUsers ? `${creditLedgerCategorySql('l')} != 'group'` : '1 = 1';
+  const totals = db.prepare(`
+    SELECT COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN ${platformAmountCondition} AND l.amount > 0 THEN l.amount ELSE 0 END), 0) AS income,
+      COALESCE(SUM(CASE WHEN ${platformAmountCondition} AND l.amount < 0 THEN ABS(l.amount) ELSE 0 END), 0) AS expense,
+      COALESCE(SUM(CASE WHEN ${creditLedgerCategorySql('l')} = 'refund' THEN l.amount ELSE 0 END), 0) AS refunds,
+      COALESCE(SUM(CASE WHEN ${platformAmountCondition} THEN l.amount ELSE 0 END), 0) AS net
+    FROM credit_ledger l JOIN users u ON u.id = l.user_id ${whereSql}
+  `).get(...params);
+  const rows = db.prepare(`
+    WITH ledger_window AS (
+      SELECT l.*,
+        SUM(l.amount) OVER (
+          PARTITION BY l.user_id ORDER BY l.created_at DESC, l.id DESC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) AS newer_amount
+      FROM credit_ledger l
+    ),
+    ledger_base AS (
+      SELECT l.*, u.email AS user_email, u.full_name AS user_name, u.admin_note AS user_admin_note,
+        u.credit_balance AS current_balance
+      FROM ledger_window l JOIN users u ON u.id = l.user_id ${whereSql}
+    )
+    SELECT base.*,
+      base.current_balance - COALESCE(base.newer_amount, 0) AS derived_balance_after,
+      base.current_balance - COALESCE(base.newer_amount, 0) - base.amount AS derived_balance_before,
+      reservation.id AS reservation_id, reservation.status AS reservation_status,
+      reservation.billing_scope, reservation.group_id, reservation.metadata_json AS reservation_metadata,
+      reservation.prompt AS reservation_prompt, reservation.case_id AS reservation_case_id,
+      generation.status AS generation_status, generation.model AS generation_model,
+      generation.size AS generation_size, generation.quality AS generation_quality,
+      generation.provider AS generation_provider, generation.prompt AS generation_prompt,
+      generation.project_id AS generation_project_id, generation.slot_id AS generation_slot_id,
+      generation.error_code AS generation_error_code,
+      free_task.status AS free_task_status,
+      video_task.status AS video_task_status, video_task.seconds AS video_seconds,
+      video_task.size AS video_size, video_task.error_code AS video_error_code,
+      ecommerce_task.status AS ecommerce_task_status, ecommerce_task.error_code AS ecommerce_error_code,
+      payment.status AS payment_status, payment.amount_cents AS payment_amount_cents,
+      payment.currency AS payment_currency, payment.product_id AS payment_product_id,
+      storage.billing_month AS storage_billing_month, storage.usage_date AS storage_usage_date,
+      storage.previous_billed_bytes, storage.billed_peak_bytes, storage.incremental_bytes,
+      storage.unit_price_cents_per_gb, storage.balance_before AS storage_balance_before,
+      storage.balance_after AS storage_balance_after,
+      audit.balance_before AS audit_balance_before, audit.balance_after AS audit_balance_after,
+      group_account.name AS group_name,
+      requester.email AS requester_email
+    FROM ledger_base base
+    LEFT JOIN credit_reservations reservation
+      ON reservation.id = base.reference_id
+      OR json_extract(reservation.metadata_json, '$.externalReferenceId') = base.reference_id
+    LEFT JOIN generations generation
+      ON generation.reservation_id = reservation.id OR generation.id = base.reference_id
+    LEFT JOIN free_generation_tasks free_task ON free_task.id = base.reference_id
+    LEFT JOIN video_generation_tasks video_task ON video_task.id = base.reference_id
+    LEFT JOIN ecommerce_generation_tasks ecommerce_task
+      ON ecommerce_task.generation_id = generation.id OR ecommerce_task.id = base.reference_id
+    LEFT JOIN payment_orders payment ON payment.id = base.reference_id
+    LEFT JOIN storage_billing_charges storage ON storage.ledger_id = base.id
+    LEFT JOIN audit_events audit ON audit.credit_ledger_id = base.id AND audit.balance_after IS NOT NULL
+    LEFT JOIN groups group_account
+      ON group_account.id = COALESCE(reservation.group_id, json_extract(base.metadata, '$.groupId'))
+    LEFT JOIN users requester
+      ON requester.id = COALESCE(json_extract(base.metadata, '$.actorUserId'), json_extract(base.metadata, '$.adminUserId'))
+    ORDER BY base.created_at DESC, base.id DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, normalizedPageSize, (normalizedPage - 1) * normalizedPageSize);
+  const allowPrompt = Boolean(includePrompt && getPromptLoggingConfig().enabled);
+  return {
+    items: rows.map((row) => normalizedLedgerDetails(row, {
+      includePrompt: allowPrompt,
+      includeAdminFields: includeAllUsers
+    })),
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      total: Number(totals?.total || 0),
+      pages: Math.max(1, Math.ceil(Number(totals?.total || 0) / normalizedPageSize))
+    },
+    summary: {
+      income: Number(totals?.income || 0),
+      expense: Number(totals?.expense || 0),
+      refunds: Number(totals?.refunds || 0),
+      net: Number(totals?.net || 0),
+      currentBalanceTotal: includeAllUsers
+        ? Number(db.prepare(`
+            SELECT
+              (SELECT COALESCE(SUM(credit_balance), 0) FROM users WHERE status = 'active')
+              + (SELECT COALESCE(SUM(balance_centi), 0) / 100.0 FROM groups) AS value
+          `).get()?.value || 0)
+        : Number(getUserProfile(userId)?.creditBalance || 0)
+    },
+    promptVisible: allowPrompt
+  };
 }
 
 export function chargeAiToolCredit(userId, { source = 'ai_magic', amount = 1, metadata = {}, referenceId = null } = {}) {

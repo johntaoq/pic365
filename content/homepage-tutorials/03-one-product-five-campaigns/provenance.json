@@ -1,0 +1,29 @@
+{
+  "publicUseApproved": true,
+  "published": true,
+  "sourceType": "new-real-pic365-batch-run",
+  "taskBatchId": "repair-3478b484-43db-4fbb-8b77-7fcffd8c17af",
+  "sourceAssetId": "b84c30d8-b272-44a1-84bb-d7b563e11418",
+  "sourceProjectId": "dc8a6d59-3018-4f92-a010-a4aa7c093a7b",
+  "generations": {
+    "minimal": "83b45384-11c5-457d-ae83-f4f54e315fe9",
+    "office": "456db3de-4620-42a8-959f-088f2d22222c",
+    "luxury": "f2b6b314-454d-4ce5-8d6c-9d32b98630a3",
+    "festival": "3f6259f0-55d6-4ee2-9b21-8d7466a90653",
+    "social": "42e09f3f-135d-4e54-9c26-cd31df2ccb66"
+  },
+  "screenshots": [
+    "screens/01-batch-entry.png",
+    "screens/02-source-uploaded.png",
+    "screens/03-five-prompts.png",
+    "screens/04-task-list.png",
+    "screens/05-task-complete.png",
+    "screens/06-results.png"
+  ],
+  "qualityReview": "approved",
+  "notes": [
+    "五条任务均在本次教程制作过程中真实提交并成功完成。",
+    "界面截图均来自本次真实任务操作，不使用虚构 UI。",
+    "源商品图已由项目负责人确认可公开展示。"
+  ]
+}

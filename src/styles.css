@@ -2883,6 +2883,50 @@ body[data-theme="light"] {
   gap: 10px;
 }
 
+.guideButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid rgba(121, 239, 202, 0.28);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: rgba(121, 239, 202, 0.07);
+  color: #c8f8e7;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.guideButton:hover,
+.guideButton:focus-visible {
+  border-color: rgba(121, 239, 202, 0.6);
+  background: rgba(121, 239, 202, 0.15);
+  color: #ffffff;
+  outline: none;
+}
+
+.siteThemeLight .guideButton {
+  border-color: #c7ddd7;
+  background: #eef8f5;
+  color: #17685a;
+}
+
+.siteThemeLight .guideButton:hover,
+.siteThemeLight .guideButton:focus-visible {
+  border-color: #75c9b7;
+  background: #dff2ec;
+  color: #0e6558;
+}
+
+.siteThemeBlack .guideButton {
+  border-color: rgba(72, 255, 155, 0.38);
+  background: #080808;
+  color: #75ffb2;
+}
+
 .workspaceHomeCluster {
   display: inline-flex;
   flex: 0 0 auto;
@@ -8066,6 +8110,105 @@ body[data-theme="light"] {
 .accountForm input:focus {
   border-color: rgba(103, 232, 249, 0.72);
   box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.1);
+}
+
+.accountAvatarPicker {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(3, 7, 15, 0.36);
+}
+
+.accountAvatarPickerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.accountAvatarPickerHeader > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.accountAvatarPickerHeader span,
+.accountAvatarPresetTitle {
+  color: #eaf3ff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.accountAvatarPickerHeader small {
+  color: #93a4bc;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.accountAvatarActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.accountForm .accountAvatarActions button {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.accountAvatarFileInput {
+  display: none;
+}
+
+.accountAvatarPresets {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.accountForm .accountAvatarPreset {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 11px;
+  padding: 0;
+  background: #101925;
+}
+
+.accountAvatarPreset img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.accountForm .accountAvatarPreset:hover {
+  border-color: rgba(120, 255, 185, 0.68);
+  transform: translateY(-1px);
+}
+
+.accountForm .accountAvatarPreset.selected {
+  border: 2px solid #78ffb9;
+  box-shadow: 0 0 0 2px rgba(120, 255, 185, 0.15);
+}
+
+.accountAvatarPreset > svg {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  padding: 3px;
+  background: #78ffb9;
+  color: #07120c;
+  stroke-width: 3;
 }
 
 .accountEmail strong {
@@ -17930,6 +18073,13 @@ body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
 .siteThemeLight .adminAdjustForm label { color: #40566e; }
 .siteThemeLight .authIcon,
 .siteThemeLight .accountAvatar { border-color: #c5ddd7; background: #e5f5f0; color: #116657; }
+.siteThemeLight .accountAvatarPicker { border-color: #d8e1ea; background: #f7f9fb; }
+.siteThemeLight .accountAvatarPickerHeader span,
+.siteThemeLight .accountAvatarPresetTitle { color: #26384d; }
+.siteThemeLight .accountAvatarPickerHeader small { color: #6d8095; }
+.siteThemeLight .accountForm .accountAvatarPreset { border-color: #d4dee8; background: #eef3f7; }
+.siteThemeLight .accountForm .accountAvatarPreset:hover,
+.siteThemeLight .accountForm .accountAvatarPreset.selected { border-color: #0d9488; }
 .siteThemeLight .authMessage { border-color: #ecd399; background: #fff8df; color: #765000; }
 .siteThemeLight .authMessage.sent { border-color: #b8d9d1; background: #eaf7f3; color: #116657; }
 .siteThemeLight .authMessage.error { border-color: #efc0c7; background: #fff0f2; color: #b83249; }
@@ -20106,6 +20256,31 @@ body[data-theme="black"] {
 
 .siteThemeBlack .accountButton::after { display: none; }
 
+.siteThemeBlack .accountAvatarPicker { border-color: rgba(72, 255, 155, 0.18); background: #050505; }
+.siteThemeBlack .accountForm .accountAvatarPreset { border-color: rgba(255, 255, 255, 0.14); background: #080808; }
+.siteThemeBlack .accountForm .accountAvatarPreset:hover,
+.siteThemeBlack .accountForm .accountAvatarPreset.selected { border-color: #48ff9b; }
+
+@media (max-width: 640px) {
+  .accountAvatarPickerHeader {
+    display: grid;
+  }
+
+  .accountAvatarActions {
+    justify-content: flex-start;
+  }
+
+  .accountAvatarPresets {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 390px) {
+  .accountAvatarPresets {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .siteThemeBlack .mediaAssetSignedOut > button {
   border: 1px solid var(--black-primary-bg);
   border-radius: 15px;
@@ -20157,10 +20332,641 @@ body[data-theme="black"] *::-webkit-scrollbar-thumb {
 }
 
 @media (max-width: 640px) {
-  .workspaceTopbar { grid-template-columns: minmax(0, 1fr) 42px auto; }
+  .workspaceTopbar { grid-template-columns: minmax(0, 1fr) 38px 42px auto; }
   .workspaceTopbar .workspaceHomeCluster { grid-column: 1; }
-  .workspaceTopbar .themePicker { grid-column: 2; }
+  .workspaceTopbar .workspaceGuideButton { grid-column: 2; }
+  .workspaceTopbar .themePicker { grid-column: 3; }
   .workspaceTopbar .accountButton,
-  .workspaceTopbar .userMenu { grid-column: 3; }
+  .workspaceTopbar .userMenu { grid-column: 4; }
+  .workspaceGuideButton { width: 38px; min-width: 38px; min-height: 38px; padding: 0; }
+  .workspaceGuideButton span { display: none; }
   .themePickerMenu { position: fixed; top: 58px; right: 12px; max-width: calc(100vw - 24px); }
+}
+
+/* Operations admin: compact, consistent reading hierarchy across every module. */
+.adminWorkspace {
+  --admin-label-size: 12px;
+  --admin-control-size: 13px;
+  --admin-meta-size: 10px;
+  --admin-body-size: 12px;
+}
+
+.adminWorkspace :is(
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea
+) {
+  font: inherit;
+  font-size: var(--admin-control-size);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.adminWorkspace :is(select option, select optgroup) {
+  font-size: var(--admin-control-size);
+}
+
+.adminWorkspace :is(
+  .adminProviderForm label > span,
+  .adminProviderPricingGrid label > span,
+  .adminRechargeBaseGrid > label,
+  .adminRechargeCustomGrid > label,
+  .adminPaymentGatewayGrid > label,
+  .adminPromotionForm > label,
+  .adminChatProviderGrid label > span,
+  .adminChatPricingGrid label > span,
+  .adminSystemGroupFields label,
+  .adminSystemChannelSections legend,
+  .adminStorageBillingGrid > label > span,
+  .adminStorageBillingGrid > div > span,
+  .governanceSwitchGrid label,
+  .governanceSwitchGrid label > span,
+  .registrationDomainGrid label,
+  .registrationDomainGrid label > span,
+  .registrationPolicyToggle,
+  .redemptionCodeForm label > span,
+  .adminNotificationGrid label > span,
+  .adminNotificationBody > span,
+  .adminLowCreditThreshold > span
+) {
+  font-size: var(--admin-label-size);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.adminWorkspace :is(
+  .adminProviderAction,
+  .adminProviderRowAction,
+  .tableAction,
+  .adminWorkspaceToolbar > button,
+  .adminCustomRange > button,
+  .adminNotificationExample button,
+  button.secondary
+) {
+  font-size: 12px;
+}
+
+.adminWorkspace :is(
+  .adminProviderList article span,
+  .adminProviderPricingEditor > header span,
+  .adminChatPricing header span,
+  .adminChatPricingGrid small,
+  .adminChatPricingMeta,
+  .adminChannelTable td small,
+  .adminSystemGroupList button small,
+  .adminSystemChannelGrid small,
+  .adminSystemChannelSections legend small,
+  .adminSystemGroupEditor footer,
+  .adminSectionHeading p,
+  .adminAccountBlock p
+) {
+  font-size: var(--admin-meta-size);
+  line-height: 1.4;
+}
+
+.adminWorkspace :is(
+  .adminProviderList article strong,
+  .adminChannelTable td strong,
+  .adminSystemGroupList button strong,
+  .adminSystemChannelGrid strong
+) {
+  font-size: var(--admin-control-size);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.adminWorkspace :is(.adminChannelTable td, .adminProviderPricingPreview > div) {
+  font-size: var(--admin-body-size);
+}
+
+.adminWorkspace .adminSystemChannelGrid > label {
+  font-size: var(--admin-body-size);
+  line-height: 1.3;
+}
+
+.adminWorkspace .adminSystemChannelGrid > p,
+.adminWorkspace .adminProviderPricingPreview > strong {
+  font-size: var(--admin-body-size);
+}
+
+@media (max-width: 640px) {
+  .adminWorkspace {
+    --admin-control-size: 13px;
+    --admin-body-size: 12px;
+  }
+}
+
+/* Shared immutable credit ledger for administrators and account holders. */
+.creditLedgerPanel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid rgba(126, 158, 196, 0.18);
+  border-radius: 14px;
+  padding: 16px;
+  background: rgba(5, 11, 24, 0.52);
+}
+
+.userCreditLedger {
+  margin-top: 20px;
+}
+
+.creditLedgerHeading,
+.creditLedgerHeading > div,
+.creditLedgerHeadingActions,
+.creditLedgerPagination,
+.creditLedgerPagination > div,
+.creditLedgerDetail > header,
+.creditLedgerDetail > footer {
+  display: flex;
+  align-items: center;
+}
+
+.creditLedgerHeading {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.creditLedgerHeading > div {
+  align-items: flex-start;
+  display: grid;
+  gap: 5px;
+}
+
+.creditLedgerHeadingActions {
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.creditLedgerHeading h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #edf7ff;
+  font-size: 16px;
+}
+
+.creditLedgerHeading p {
+  margin: 0;
+  color: #8fa2bc;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.creditLedgerRefresh,
+.creditLedgerFilters .actions button,
+.creditLedgerTable button.detail,
+.creditLedgerPagination button,
+.creditLedgerDetail button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid rgba(126, 158, 196, 0.2);
+  border-radius: 8px;
+  padding: 0 11px;
+  background: rgba(13, 22, 39, 0.72);
+  color: #cbd7e8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.creditLedgerRefresh:disabled,
+.creditLedgerPagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.creditLedgerSummary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.creditLedgerSummary > div {
+  display: grid;
+  gap: 5px;
+  min-height: 72px;
+  border: 1px solid rgba(126, 158, 196, 0.14);
+  border-radius: 10px;
+  padding: 10px 11px;
+  background: rgba(3, 8, 20, 0.4);
+}
+
+.creditLedgerSummary span {
+  color: #8295af;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.creditLedgerSummary strong {
+  align-self: end;
+  color: #e7f1ff;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.creditLedgerSummary .positive strong { color: #8fffd5; }
+.creditLedgerSummary .negative strong { color: #ffadba; }
+.creditLedgerSummary .refund strong { color: #9adfff; }
+.creditLedgerSummary .balance strong { color: #ffe48b; }
+
+.creditLedgerFilters {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.3fr) repeat(4, minmax(122px, 0.72fr)) auto;
+  align-items: end;
+  gap: 9px;
+}
+
+.userCreditLedger .creditLedgerFilters {
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
+}
+
+.creditLedgerFilters label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.creditLedgerFilters label > span {
+  color: #8fa2bc;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.creditLedgerFilters :is(input, select),
+.creditLedgerFilters .search > div {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 158, 196, 0.2);
+  border-radius: 9px;
+  background: rgba(8, 13, 28, 0.72);
+  color: #edf5ff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.creditLedgerFilters :is(input, select) {
+  padding: 0 10px;
+}
+
+.creditLedgerFilters .search > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding-left: 10px;
+  color: #7d91ac;
+}
+
+.creditLedgerFilters .search input {
+  min-height: 36px;
+  border: 0;
+  padding-left: 0;
+  background: transparent;
+}
+
+.creditLedgerFilters .actions {
+  display: flex;
+  gap: 7px;
+}
+
+.creditLedgerFilters .actions button.primary {
+  border-color: rgba(141, 244, 204, 0.4);
+  background: rgba(141, 244, 204, 0.14);
+  color: #d8fff0;
+}
+
+.creditLedgerTableWrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(126, 158, 196, 0.15);
+  border-radius: 11px;
+}
+
+.creditLedgerTable {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.creditLedgerTable th {
+  border-bottom: 1px solid rgba(126, 158, 196, 0.16);
+  padding: 9px 10px;
+  background: rgba(103, 232, 249, 0.055);
+  color: #8295af;
+  font-size: 10px;
+  font-weight: 900;
+  text-align: left;
+}
+
+.creditLedgerTable td {
+  border-bottom: 1px solid rgba(126, 158, 196, 0.09);
+  padding: 10px;
+  color: #cbd7e8;
+  font-size: 11px;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.creditLedgerTable tbody tr:last-child td { border-bottom: 0; }
+.creditLedgerTable tbody tr:hover { background: rgba(103, 232, 249, 0.035); }
+.creditLedgerTable td > strong,
+.creditLedgerTable td > small { display: block; }
+.creditLedgerTable td > strong { color: #e7f1ff; font-size: 12px; }
+.creditLedgerTable td > strong svg { margin-left: 5px; vertical-align: -2px; color: #9adfff; }
+.creditLedgerTable td > small { margin-top: 3px; color: #768aa5; font-size: 9px; }
+.creditLedgerTable td > b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.creditLedgerTable .positive { color: #8fffd5; }
+.creditLedgerTable .negative { color: #ffadba; }
+
+.creditLedgerTable .status {
+  display: inline-flex;
+  border: 1px solid rgba(126, 158, 196, 0.17);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(126, 158, 196, 0.06);
+  color: #9eafc5;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.creditLedgerTable .status:is(.is-succeeded, .is-completed, .is-settled, .is-paid) {
+  border-color: rgba(141, 244, 204, 0.28);
+  background: rgba(141, 244, 204, 0.08);
+  color: #9ef1d4;
+}
+
+.creditLedgerTable .status:is(.is-refunded, .is-released) {
+  border-color: rgba(103, 232, 249, 0.28);
+  background: rgba(103, 232, 249, 0.08);
+  color: #aeefff;
+}
+
+.creditLedgerTable .status:is(.is-failed, .is-cancelled) {
+  border-color: rgba(255, 112, 132, 0.28);
+  background: rgba(255, 112, 132, 0.07);
+  color: #ffadba;
+}
+
+.creditLedgerTable button.detail { min-height: 30px; padding: 0 9px; }
+
+.creditLedgerPagination {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #8194ad;
+  font-size: 11px;
+}
+
+.creditLedgerPagination > span { white-space: nowrap; }
+
+.creditLedgerPagination nav,
+.creditLedgerPageNumbers,
+.creditLedgerPageSize {
+  display: flex;
+  align-items: center;
+}
+
+.creditLedgerPagination nav,
+.creditLedgerPageNumbers { gap: 5px; }
+
+.creditLedgerPagination button {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+}
+
+.creditLedgerPagination button.active {
+  border-color: rgba(141, 244, 204, 0.52);
+  background: rgba(141, 244, 204, 0.16);
+  box-shadow: inset 0 -2px 0 #8df4cc;
+  color: #e8fff6;
+}
+
+.creditLedgerPageJump {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 158, 196, 0.2);
+  border-radius: 8px;
+  background: rgba(13, 22, 39, 0.72);
+  color: #cbd7e8;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.creditLedgerPageJump > span { pointer-events: none; }
+
+.creditLedgerPageJump select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.creditLedgerPageSize {
+  min-height: 36px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 158, 196, 0.2);
+  border-radius: 9px;
+  background: rgba(13, 22, 39, 0.72);
+}
+
+.creditLedgerPageSize > span {
+  padding-left: 11px;
+  color: #9aacc3;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.creditLedgerPageSize select {
+  min-height: 34px;
+  border: 0;
+  outline: 0;
+  padding: 0 27px 0 7px;
+  background: transparent;
+  color: #e7f1ff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.creditLedgerState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  margin: 0;
+  color: #91a5bf;
+  font-size: 12px;
+}
+
+.creditLedgerState.error { color: #ffadba; }
+
+.creditLedgerDetailBackdrop {
+  position: fixed;
+  z-index: 180;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(1, 5, 13, 0.76);
+  backdrop-filter: blur(8px);
+}
+
+.creditLedgerDetail {
+  display: grid;
+  gap: 14px;
+  width: min(760px, 100%);
+  max-height: min(820px, calc(100vh - 36px));
+  overflow: auto;
+  border: 1px solid rgba(103, 232, 249, 0.24);
+  border-radius: 16px;
+  padding: 16px;
+  background: #091224;
+  color: #e7f1ff;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+}
+
+.creditLedgerDetail > header,
+.creditLedgerDetail > footer { justify-content: space-between; gap: 12px; }
+.creditLedgerDetail > header > div { display: grid; gap: 3px; }
+.creditLedgerDetail > header span,
+.creditLedgerDetail > footer span { color: #8194ad; font-size: 10px; }
+.creditLedgerDetail h3 { margin: 0; font-size: 17px; }
+.creditLedgerDetail > header button { width: 34px; padding: 0; }
+
+.creditLedgerDetailHero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.creditLedgerDetailHero > div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(126, 158, 196, 0.14);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(3, 8, 20, 0.44);
+}
+
+.creditLedgerDetailHero span { color: #8194ad; font-size: 10px; }
+.creditLedgerDetailHero strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.creditLedgerDetailHero strong.positive { color: #8fffd5; }
+.creditLedgerDetailHero strong.negative { color: #ffadba; }
+
+.creditLedgerDetail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(126, 158, 196, 0.14);
+  border-radius: 10px;
+  background: rgba(126, 158, 196, 0.14);
+}
+
+.creditLedgerDetail dl > div {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 9px;
+  padding: 9px 10px;
+  background: #0b1528;
+}
+
+.creditLedgerDetail dt { color: #8194ad; font-size: 10px; }
+.creditLedgerDetail dd { margin: 0; color: #dce8f7; font-size: 11px; overflow-wrap: anywhere; }
+
+.creditLedgerPrompt {
+  display: grid;
+  gap: 7px;
+}
+
+.creditLedgerPrompt > span { color: #9ef1d4; font-size: 11px; font-weight: 850; }
+.creditLedgerPrompt pre { max-height: 240px; overflow: auto; margin: 0; border: 1px solid rgba(126, 158, 196, 0.14); border-radius: 9px; padding: 10px; background: rgba(3, 8, 20, 0.6); color: #bfcee0; font: inherit; font-size: 10px; line-height: 1.55; white-space: pre-wrap; }
+
+.siteThemeLight .creditLedgerPanel,
+.siteThemeLight .creditLedgerDetail { border-color: #d4dee8; background: #ffffff; color: #30445a; box-shadow: none; }
+.siteThemeLight .creditLedgerSummary > div,
+.siteThemeLight .creditLedgerDetailHero > div { border-color: #d8e1ea; background: #f7f9fb; }
+.siteThemeLight .creditLedgerHeading h3,
+.siteThemeLight .creditLedgerSummary strong,
+.siteThemeLight .creditLedgerTable td > strong,
+.siteThemeLight .creditLedgerDetail h3 { color: #26384d; }
+.siteThemeLight .creditLedgerFilters :is(input, select),
+.siteThemeLight .creditLedgerFilters .search > div { border-color: #ccd8e3; background: #ffffff; color: #26384d; }
+.siteThemeLight .creditLedgerTableWrap { border-color: #d4dee8; }
+.siteThemeLight .creditLedgerTable th { border-color: #dce4ec; background: #eef3f7; color: #526980; }
+.siteThemeLight .creditLedgerTable td { border-color: #e2e8ee; color: #40566e; }
+.siteThemeLight .creditLedgerTable tbody tr:hover { background: #f5f9fb; }
+.siteThemeLight .creditLedgerPagination button.active { border-color: #75c9b7; background: #eaf7f3; color: #116657; }
+.siteThemeLight .creditLedgerPageJump,
+.siteThemeLight .creditLedgerPageSize { border-color: #d4dee8; background: #eef3f7; color: #40566e; }
+.siteThemeLight .creditLedgerPageSize select { color: #30445a; }
+.siteThemeLight .creditLedgerDetail dl { border-color: #d8e1ea; background: #d8e1ea; }
+.siteThemeLight .creditLedgerDetail dl > div { background: #f8fafc; }
+.siteThemeLight .creditLedgerDetail dd { color: #30445a; }
+.siteThemeLight .creditLedgerPrompt pre { border-color: #d8e1ea; background: #f8fafc; color: #40566e; }
+
+@media (max-width: 1050px) {
+  .creditLedgerSummary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .creditLedgerFilters,
+  .userCreditLedger .creditLedgerFilters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .creditLedgerFilters .actions { align-self: end; }
+}
+
+@media (max-width: 640px) {
+  .creditLedgerPanel { padding: 12px; border-radius: 12px; }
+  .creditLedgerHeading { align-items: stretch; }
+  .creditLedgerHeadingActions { align-items: stretch; flex-direction: column; }
+  .creditLedgerHeading p { max-width: 260px; }
+  .creditLedgerRefresh { padding-inline: 9px; }
+  .creditLedgerSummary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .creditLedgerSummary > div:last-child { grid-column: 1 / -1; }
+  .creditLedgerFilters,
+  .userCreditLedger .creditLedgerFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .creditLedgerFilters .search,
+  .creditLedgerFilters .actions { grid-column: 1 / -1; }
+  .creditLedgerFilters .actions button { flex: 1; }
+  .creditLedgerTableWrap { overflow: visible; border: 0; }
+  .creditLedgerTable { min-width: 0; border-collapse: separate; border-spacing: 0 8px; }
+  .creditLedgerTable thead { display: none; }
+  .creditLedgerTable tbody,
+  .creditLedgerTable tr,
+  .creditLedgerTable td { display: block; width: 100%; box-sizing: border-box; }
+  .creditLedgerTable tr { overflow: hidden; border: 1px solid rgba(126, 158, 196, 0.15); border-radius: 10px; background: rgba(3, 8, 20, 0.4); }
+  .creditLedgerTable td { display: grid; grid-template-columns: 86px minmax(0, 1fr); align-items: center; gap: 8px; border-bottom: 1px solid rgba(126, 158, 196, 0.08); padding: 8px 10px; }
+  .creditLedgerTable td::before { content: attr(data-label); color: #7588a2; font-size: 9px; font-weight: 850; }
+  .creditLedgerTable td:last-child { border-bottom: 0; }
+  .creditLedgerTable button.detail { justify-self: start; }
+  .creditLedgerPagination { align-items: stretch; flex-direction: column; }
+  .creditLedgerPagination nav { justify-content: center; max-width: 100%; }
+  .creditLedgerPagination button { width: 30px; min-height: 32px; }
+  .creditLedgerPageNumbers { gap: 4px; }
+  .creditLedgerPageJump { width: 34px; height: 32px; }
+  .creditLedgerPageSize { align-self: flex-end; }
+  .creditLedgerDetailBackdrop { padding: 8px; }
+  .creditLedgerDetail { max-height: calc(100vh - 16px); border-radius: 12px; padding: 12px; }
+  .creditLedgerDetailHero { grid-template-columns: 1fr; }
+  .creditLedgerDetail dl { grid-template-columns: 1fr; }
+  .creditLedgerDetail dl > div { grid-template-columns: 100px minmax(0, 1fr); }
 }

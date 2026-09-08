@@ -22,6 +22,7 @@ import {
   AudioLines,
   BarChart3,
   Bell,
+  BookOpen,
   Building2,
   Calculator,
   Cat,
@@ -53,6 +54,7 @@ import {
   Tags,
   TrendingUp,
   Trash2,
+  Upload,
   UserCircle,
   UserPlus,
   Users,
@@ -71,6 +73,7 @@ import AdminVideoProvider from './admin-video-provider.jsx';
 import ChatCompanion from './chat-companion.jsx';
 import Homepage from './homepage.jsx';
 import GroupAccountPanel from './group-account-panel.jsx';
+import CreditLedgerPanel from './credit-ledger.jsx';
 import {
   AuditEventsPanel,
   CreditAdjustmentDialog,
@@ -89,6 +92,55 @@ const InfiniteImageCanvas = lazy(() => import('./infinite-image-canvas.jsx'));
 const gaMeasurementId = import.meta.env.VITE_GA_MEASUREMENT_ID;
 const watchaLogoUrl =
   'https://watcha.tos-cn-beijing.volces.com/products/logo/1752064513_guan-cha-insights.png?x-tos-process=image/resize,w_720/format,webp';
+
+const animalAvatars = [
+  ['fox', 'Fox', '狐狸'], ['cat', 'Cat', '小猫'], ['dog', 'Dog', '小狗'], ['rabbit', 'Rabbit', '兔子'],
+  ['panda', 'Panda', '熊猫'], ['bear', 'Bear', '小熊'], ['tiger', 'Tiger', '老虎'], ['lion', 'Lion', '狮子'],
+  ['koala', 'Koala', '考拉'], ['raccoon', 'Raccoon', '浣熊'], ['deer', 'Deer', '小鹿'], ['owl', 'Owl', '猫头鹰'],
+  ['penguin', 'Penguin', '企鹅'], ['duck', 'Duck', '鸭子'], ['chick', 'Chick', '小鸡'], ['frog', 'Frog', '青蛙'],
+  ['pig', 'Pig', '小猪'], ['cow', 'Cow', '奶牛'], ['sheep', 'Sheep', '绵羊'], ['horse', 'Horse', '小马'],
+  ['monkey', 'Monkey', '猴子'], ['elephant', 'Elephant', '大象'], ['giraffe', 'Giraffe', '长颈鹿'], ['hippo', 'Hippo', '河马'],
+  ['crocodile', 'Crocodile', '鳄鱼'], ['whale', 'Whale', '鲸鱼'], ['dolphin', 'Dolphin', '海豚'], ['seal', 'Seal', '海豹'],
+  ['squirrel', 'Squirrel', '松鼠'], ['hedgehog', 'Hedgehog', '刺猬']
+].map(([id, en, zh]) => ({ id, en, zh, url: `/images/avatars/animals/${id}.svg` }));
+
+function createSquareAvatarDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file?.type?.match(/^image\/(png|jpeg|webp)$/)) {
+      reject(new Error('INVALID_TYPE'));
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      reject(new Error('TOO_LARGE'));
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const side = Math.min(image.naturalWidth, image.naturalHeight);
+        const sourceX = Math.round((image.naturalWidth - side) / 2);
+        const sourceY = Math.round((image.naturalHeight - side) / 2);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, sourceX, sourceY, side, side, 0, 0, 256, 256);
+        const webp = canvas.toDataURL('image/webp', 0.86);
+        resolve(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.88));
+      } catch (error) {
+        reject(error);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('INVALID_IMAGE'));
+    };
+    image.src = objectUrl;
+  });
+}
 
 const copy = {
   en: {
@@ -232,6 +284,12 @@ const copy = {
     accountSettings: 'Account settings',
     accountTitle: 'Account settings',
     accountSubtitle: 'Manage your public display name and GPT-Image2 credit usage.',
+    profileAvatar: 'Profile avatar',
+    presetAvatars: 'Cartoon animals',
+    uploadAvatar: 'Upload your own',
+    restoreLoginAvatar: 'Use login avatar',
+    avatarUploadHint: 'PNG, JPG or WebP. The image is cropped to a square automatically.',
+    avatarUploadFailed: 'Could not use this image. Choose a PNG, JPG or WebP under 8 MB.',
     displayName: 'Display name',
     saveProfile: 'Save profile',
     profileSaved: 'Profile saved.',
@@ -246,7 +304,7 @@ const copy = {
     currentPasswordWrong: 'The current password is incorrect.',
     passwordUnchanged: 'The new password must be different from the current password.',
     passwordChangeFailed: 'Password could not be changed. Please try again.',
-    googleAvatarSource: 'Avatar is synced from your login provider.',
+    googleAvatarSource: 'Your chosen avatar is shown across Pic365.',
     accountOverview: 'Account overview',
     totalGenerations: 'Generated tests',
     totalGenerationCredits: 'Credits spent',
@@ -508,6 +566,12 @@ const copy = {
     accountSettings: '账户设置',
     accountTitle: '账户设置',
     accountSubtitle: '管理你的显示名称和 GPT-Image2 积分消耗。',
+    profileAvatar: '个人头像',
+    presetAvatars: '卡通动物头像',
+    uploadAvatar: '上传自定义头像',
+    restoreLoginAvatar: '恢复登录头像',
+    avatarUploadHint: '支持 PNG、JPG、WebP，自动居中裁成正方形。',
+    avatarUploadFailed: '无法使用这张图片，请选择 8MB 以内的 PNG、JPG 或 WebP。',
     displayName: '显示名称',
     saveProfile: '保存资料',
     profileSaved: '资料已保存。',
@@ -522,7 +586,7 @@ const copy = {
     currentPasswordWrong: '当前密码不正确。',
     passwordUnchanged: '新密码不能与当前密码相同。',
     passwordChangeFailed: '密码修改失败，请稍后重试。',
-    googleAvatarSource: '头像会同步你的登录账号头像。',
+    googleAvatarSource: '你选择的头像会显示在 Pic365 各处。',
     accountOverview: '账户概览',
     totalGenerations: '生成测试数',
     totalGenerationCredits: '已消耗积分',
@@ -1208,6 +1272,7 @@ function formatStorageBytes(value) {
 function transactionLabel(transaction, language) {
   const typeMap = {
     storage: language === 'zh' ? '存储消耗' : 'Storage usage',
+    ai_voice: language === 'zh' ? 'AI 语音' : 'AI voice',
     grant: language === 'zh' ? '赠送' : 'Grant',
     signup_bonus: language === 'zh' ? '注册赠送' : 'Sign-up bonus',
     purchase: language === 'zh' ? '购买' : 'Purchase',
@@ -1857,6 +1922,8 @@ function AccountPanel({
 }) {
   const t = copy[language];
   const [fullName, setFullName] = useState('');
+  const [avatarDraft, setAvatarDraft] = useState('');
+  const [avatarMessage, setAvatarMessage] = useState('');
   const [status, setStatus] = useState('idle');
   const [message, setMessage] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -1865,11 +1932,15 @@ function AccountPanel({
   const [passwordStatus, setPasswordStatus] = useState('idle');
   const [passwordMessage, setPasswordMessage] = useState('');
   const favoritesRef = useRef(null);
+  const avatarInputRef = useRef(null);
+  const providerAvatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture || '';
   useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
     setFullName(profile?.fullName || session?.user?.user_metadata?.name || '');
+    setAvatarDraft(profile?.avatarUrl || providerAvatarUrl);
+    setAvatarMessage('');
     setStatus('idle');
     setMessage('');
     setCurrentPassword('');
@@ -1877,7 +1948,7 @@ function AccountPanel({
     setConfirmNewPassword('');
     setPasswordStatus('idle');
     setPasswordMessage('');
-  }, [open, profile?.fullName, session?.user?.user_metadata?.name]);
+  }, [open, profile?.fullName, profile?.avatarUrl, providerAvatarUrl, session?.user?.user_metadata?.name]);
 
   useEffect(() => {
     if (!open || initialSection !== 'favorites') return;
@@ -1890,7 +1961,7 @@ function AccountPanel({
   if (!open) return null;
 
   const email = profile?.email || session?.user?.email || '';
-  const avatarUrl = profile?.avatarUrl || session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture || '';
+  const avatarUrl = avatarDraft || providerAvatarUrl;
   const usage = profile?.usage || {};
   const recentTransactions = profile?.recentTransactions || [];
   const generationTransactions = recentTransactions.filter((transaction) => ['generation', 'refund', 'storage'].includes(transaction.type));
@@ -1919,7 +1990,7 @@ function AccountPanel({
           'Content-Type': 'application/json',
           ...getAuthHeaders(session)
         },
-        body: JSON.stringify({ fullName: nextName })
+        body: JSON.stringify({ fullName: nextName, avatarUrl: avatarDraft })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
@@ -1931,6 +2002,19 @@ function AccountPanel({
     } catch {
       setStatus('error');
       setMessage(t.profileUpdateFailed);
+    }
+  }
+
+  async function handleAvatarUpload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setAvatarMessage('');
+    try {
+      const nextAvatar = await createSquareAvatarDataUrl(file);
+      setAvatarDraft(nextAvatar);
+    } catch {
+      setAvatarMessage(t.avatarUploadFailed);
     }
   }
 
@@ -2012,6 +2096,54 @@ function AccountPanel({
 
         <div className="accountGrid">
           <form className="accountForm" onSubmit={handleSubmit}>
+            <section className="accountAvatarPicker" aria-labelledby="account-avatar-title">
+              <div className="accountAvatarPickerHeader">
+                <div>
+                  <span id="account-avatar-title">{t.profileAvatar}</span>
+                  <small>{t.avatarUploadHint}</small>
+                </div>
+                <div className="accountAvatarActions">
+                  <button type="button" onClick={() => avatarInputRef.current?.click()}>
+                    <Upload size={15} />
+                    {t.uploadAvatar}
+                  </button>
+                  {providerAvatarUrl ? (
+                    <button type="button" onClick={() => setAvatarDraft(providerAvatarUrl)}>
+                      <RefreshCw size={15} />
+                      {t.restoreLoginAvatar}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <input
+                ref={avatarInputRef}
+                className="accountAvatarFileInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleAvatarUpload}
+              />
+              <div className="accountAvatarPresetTitle">{t.presetAvatars}</div>
+              <div className="accountAvatarPresets">
+                {animalAvatars.map((avatar) => (
+                  <button
+                    key={avatar.id}
+                    className={cx('accountAvatarPreset', avatarDraft === avatar.url && 'selected')}
+                    type="button"
+                    title={avatar[language]}
+                    aria-label={avatar[language]}
+                    aria-pressed={avatarDraft === avatar.url}
+                    onClick={() => {
+                      setAvatarDraft(avatar.url);
+                      setAvatarMessage('');
+                    }}
+                  >
+                    <img src={avatar.url} alt="" />
+                    {avatarDraft === avatar.url ? <Check size={14} /> : null}
+                  </button>
+                ))}
+              </div>
+              {avatarMessage ? <p className="authMessage error">{avatarMessage}</p> : null}
+            </section>
             <label>
               <span>{t.displayName}</span>
               <input
@@ -3269,6 +3401,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
     can(ADMIN_PERMISSIONS.ADJUST_CREDITS) && { id: 'credits', groupId: 'financial', label: language === 'zh' ? '积分管理' : 'Credit management', Icon: Coins },
     can(ADMIN_PERMISSIONS.MANAGE_RECHARGE) && { id: 'recharge', groupId: 'financial', label: language === 'zh' ? '充值设置' : 'Recharge settings', Icon: CreditCard },
     can(ADMIN_PERMISSIONS.CREATE_REDEMPTION_CODES) && { id: 'redemption', groupId: 'financial', label: language === 'zh' ? '兑换码管理' : 'Redemption codes', Icon: KeyRound },
+    can(ADMIN_PERMISSIONS.VIEW_CREDIT_REPORTS) && { id: 'credit-ledger', groupId: 'financial', label: language === 'zh' ? '积分账单' : 'Credit ledger', Icon: ReceiptText },
     can(ADMIN_PERMISSIONS.VIEW_CREDIT_REPORTS) && { id: 'finance', groupId: 'financial', label: language === 'zh' ? '财务报表' : 'Financial reports', Icon: ReceiptText },
     can(ADMIN_PERMISSIONS.MANAGE_PROMOTIONS) && { id: 'promotion', groupId: 'financial', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
     can(ADMIN_PERMISSIONS.VIEW_USERS) && { id: 'users', groupId: 'users-content', label: language === 'zh' ? '用户管理' : 'User management', Icon: Users },
@@ -3588,6 +3721,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         ) : null}
 
         {activeSection === 'redemption' ? <RedemptionCodesPanel language={language} profile={profile} /> : null}
+        {activeSection === 'credit-ledger' ? <CreditLedgerPanel language={language} mode="admin" /> : null}
         {activeSection === 'finance' ? <FinancialReportsPanel language={language} /> : null}
         {activeSection === 'global-settings' ? <GlobalMenuSettingsPanel language={language} onChanged={onMenuSettingsChanged} /> : null}
         {activeSection === 'audit' ? <AuditEventsPanel language={language} profile={profile} /> : null}
@@ -4039,27 +4173,11 @@ function CreditPanel({
           ) : null}
         </div>
 
-        <section className="transactionSection">
-          <h3>
-            <ReceiptText size={18} />
-            {t.transactionHistory}
-          </h3>
-          {transactions.length ? (
-            <div className="transactionList">
-              {transactions.map((transaction) => (
-                <TransactionItem
-                  transaction={transaction}
-                  language={language}
-                  casesById={casesById}
-                  onOpenCase={onOpenCase}
-                  key={transaction.id}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="emptyTransactions">{t.noTransactions}</p>
-          )}
-        </section>
+        {isAuthenticatedSession(session) ? <CreditLedgerPanel
+          language={language}
+          mode="user"
+          refreshToken={transactions[0]?.id || ''}
+        /> : null}
       </section>
     </div>
   );
@@ -4697,8 +4815,8 @@ function PublicNavigation({
   onProfileChange
 }) {
   const labels = language === 'zh'
-    ? { solutions: '解决方案', cases: '范例', templates: '模板', cooperation: '合作', api: 'API', workspace: '进入工作台' }
-    : { solutions: 'Solutions', cases: 'Examples', templates: 'Templates', cooperation: 'Cooperation', api: 'API', workspace: 'Open workspace' };
+    ? { solutions: '解决方案', cases: '范例', templates: '模板', cooperation: '合作', api: 'API', guide: '使用手册', workspace: '进入工作台' }
+    : { solutions: 'Solutions', cases: 'Examples', templates: 'Templates', cooperation: 'Cooperation', api: 'API', guide: 'Guide', workspace: 'Open workspace' };
   return <div className="homeNavShell homeWrap">
     <nav className="homeNav" aria-label={language === 'zh' ? '首页导航' : 'Homepage navigation'}>
       <button className="homeBrand" type="button" onClick={onHome} aria-label="Pic365">
@@ -4706,12 +4824,16 @@ function PublicNavigation({
       </button>
       <div className="homeNavLinks">
         <button className={activePage === 'home' ? 'active' : ''} type="button" onClick={onSolutions}>{labels.solutions}</button>
-        <button className={activePage === 'cases' ? 'active' : ''} type="button" onClick={onCases}>{labels.cases}</button>
-        <button className={activePage === 'templates' ? 'active' : ''} type="button" onClick={onTemplates}>{labels.templates}</button>
+        {menuSettings.effective.cases ? <button className={activePage === 'cases' ? 'active' : ''} type="button" onClick={onCases}>{labels.cases}</button> : null}
+        {menuSettings.effective.templates ? <button className={activePage === 'templates' ? 'active' : ''} type="button" onClick={onTemplates}>{labels.templates}</button> : null}
         <button className={activePage === 'cooperation' ? 'active' : ''} type="button" onClick={onCooperation}>{labels.cooperation}</button>
         {menuSettings.effective.api ? <button type="button" onClick={onApi}>{labels.api}</button> : null}
       </div>
       <div className="homeNavActions">
+        <a className="guideButton homeGuideButton" href="/content/platform-guides/index.html" target="_blank" rel="noopener noreferrer" title={labels.guide} aria-label={labels.guide}>
+          <BookOpen size={17} />
+          <span>{labels.guide}</span>
+        </a>
         <LanguageSwitch language={language} setLanguage={setLanguage} />
         <NotificationBell language={language} session={session} profile={profile} onProfileChange={onProfileChange} onSignIn={onSignIn} />
         <ThemePicker language={language} siteTheme={siteTheme} setSiteTheme={setSiteTheme} />
@@ -4753,7 +4875,7 @@ function App() {
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
   const [menuSettings, setMenuSettings] = useState({
-    global: { templates: true, cases: true, api: true },
+    global: { ecommerce: true, templates: true, cases: true, api: true },
     personal: { hideEcommerce: false, hideTemplates: false, hideCases: false, hideApi: false },
     effective: { ecommerce: true, templates: true, cases: true, api: true }
   });
@@ -5324,16 +5446,18 @@ function App() {
             >
               {t.canvasMode}
             </button>
-            <button
-              className={cx('pageTab', activePage === 'create' && workspaceMode === 'ecommerce' && 'active')}
-              type="button"
-              onClick={() => {
-                setWorkspaceMode('ecommerce');
-                handlePageChange('create');
-              }}
-            >
-              {t.ecommerceMode}
-            </button>
+            {menuSettings.effective.ecommerce ? (
+              <button
+                className={cx('pageTab', activePage === 'create' && workspaceMode === 'ecommerce' && 'active')}
+                type="button"
+                onClick={() => {
+                  setWorkspaceMode('ecommerce');
+                  handlePageChange('create');
+                }}
+              >
+                {t.ecommerceMode}
+              </button>
+            ) : null}
             <button
               className={cx('pageTab', activePage === 'assets' && 'active')}
               type="button"
@@ -5351,6 +5475,17 @@ function App() {
               </button>
             ) : null}
           </nav>
+          <a
+            className="guideButton workspaceGuideButton"
+            href="/content/platform-guides/index.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            title={language === 'zh' ? '使用手册' : 'Guide'}
+            aria-label={language === 'zh' ? '使用手册' : 'Guide'}
+          >
+            <BookOpen size={17} />
+            <span>{language === 'zh' ? '使用手册' : 'Guide'}</span>
+          </a>
           <ThemePicker language={language} siteTheme={siteTheme} setSiteTheme={setSiteTheme} />
           <UserMenu
             language={language}

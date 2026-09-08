@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pic365精灵使用与能力规划</title>
+    <script src="../theme.js"></script>
+    <link rel="stylesheet" href="../shared.css" />
+    <link rel="stylesheet" href="../theme.css" />
+  </head>
+  <body class="guideDetail">
+    <div class="top">
+      <div class="topin">
+        <a class="brand" href="../index.html">PIC365 手册</a>
+        <nav class="nav">
+          <a href="../01-image-studio/index.html">灵感生图</a
+          ><a href="../02-infinite-canvas/index.html">无限画布</a
+          ><a href="../03-ecommerce-suite/index.html">电商套图</a
+          ><a href="../04-media-assets/index.html">媒资管理</a
+          ><a class="active" href="./index.html">Pic365精灵</a>
+        </nav>
+      </div>
+    </div>
+    <main class="wrap">
+      <section class="hero">
+        <div>
+          <div class="eyebrow">05 · Pic365精灵</div>
+          <h1>不只是回答问题，<br />而是陪用户完成工作</h1>
+          <p class="lead">
+            精灵应成为贯穿全站的创作副驾驶：理解图片与目标，推荐正确工作区，协助准备提示词和素材，并在生成前后帮助用户发现问题。
+          </p>
+          <div class="chips">
+            <span>看图问答</span><span>提示词助手</span><span>流程导航</span
+            ><span>生成前体检</span><span>结果质检</span><span>资产整理</span>
+          </div>
+        </div>
+        <div class="quick">
+          <div><b>当前已经具备</b>文字问答、最多 3 张图片、连续上下文</div>
+          <div><b>建议重点增加</b>感知当前页面并给出下一步</div>
+          <div><b>安全边界</b>扣费、删除、共享等操作必须确认</div>
+        </div>
+      </section>
+      <nav class="toc">
+        <a href="#current"><b>01</b>当前功能</a
+        ><a href="#jobs"><b>02</b>能帮助什么</a
+        ><a href="#flow"><b>03</b>交互方式</a
+        ><a href="#roadmap"><b>04</b>建设顺序</a>
+      </nav>
+      <section class="section" id="current">
+        <h2>当前精灵已经能做什么</h2>
+        <p class="intro">
+          页面右下角的狐狸头像是入口。登录后可以发送文字或图片，让精灵识别、分析并回答问题。
+        </p>
+        <figure class="shot">
+          <img src="./screens/01-panel.png" alt="Pic365精灵真实聊天窗口" />
+          <figcaption>
+            真实界面：聊天窗口可拖动位置、调整大小、粘贴或上传图片，并复制、删除或清空聊天记录。
+          </figcaption>
+        </figure>
+        <div class="grid">
+          <article class="card">
+            <h3>文字与图片问答</h3>
+            <p>
+              可以询问平台使用方法，也可以上传或粘贴图片请精灵观察。一次最多携带
+              3 张图片，单张不超过 5MB。
+            </p>
+          </article>
+          <article class="card">
+            <h3>连续对话</h3>
+            <p>
+              最多携带最近 24
+              条消息作为上下文，适合逐步完善提示词、反复讨论图片问题。
+            </p>
+          </article>
+          <article class="card">
+            <h3>记录管理</h3>
+            <p>
+              支持复制单条、复制全部、删除单条和清空聊天记录。精灵回答会显示本次实际聊天积分。
+            </p>
+          </article>
+          <article class="card">
+            <h3>浮动窗口</h3>
+            <p>
+              桌面端可拖动头像和窗口位置，也可调整窗口大小；缩小后不遮挡主要创作区域。
+            </p>
+          </article>
+        </div>
+        <div class="warn">
+          <strong>当前边界：</strong
+          >精灵现在主要提供分析和建议，不应声称已经替用户完成上传、生成、删除或共享等未实际执行的操作。
+        </div>
+      </section>
+      <section class="section" id="jobs">
+        <h2>建议让精灵承担的 8 类工作</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>1. 工作区导航员</h3>
+            <p>
+              用户描述目标后，判断应进入灵感生图、批量生图、无限画布、电商套图还是资产库，并给出最短操作路径。
+            </p>
+          </article>
+          <article class="card">
+            <h3>2. 提示词协作员</h3>
+            <p>
+              把口语需求整理成可执行提示词，检查主体、构图、光线、风格与限制条件，并生成精简版或专业版。
+            </p>
+          </article>
+          <article class="card">
+            <h3>3. 参考图检查员</h3>
+            <p>
+              检查清晰度、主体遮挡、角度互补性与内容冲突；建议哪张做母版，其他图片分别承担什么角色。
+            </p>
+          </article>
+          <article class="card">
+            <h3>4. 生成前体检员</h3>
+            <p>
+              检查模型支持的参考图数量、格式、尺寸、宽高比、预计积分和提示词编号，减少可预防的失败。
+            </p>
+          </article>
+          <article class="card">
+            <h3>5. 失败解释员</h3>
+            <p>
+              把渠道报错转换为用户能理解的原因，指出是尺寸、格式、参考图、余额、队列还是上游服务问题。
+            </p>
+          </article>
+          <article class="card">
+            <h3>6. 结果质检员</h3>
+            <p>
+              对比母版与结果，检查人物身份、商品结构、Logo、文字、配件和瑕疵，列出可采用或需返修的理由。
+            </p>
+          </article>
+          <article class="card">
+            <h3>7. 资产整理员</h3>
+            <p>
+              根据画面建议名称、标签和分类，发现近似或重复资产，并建议放入哪个项目或团队目录。
+            </p>
+          </article>
+          <article class="card">
+            <h3>8. 教程教练</h3>
+            <p>
+              识别用户当前停在哪一步，用短指令引导下一步；新用户可开启分步教学，熟练用户只看检查结论。
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="section" id="flow">
+        <h2>精灵应该怎样融入四个工作区</h2>
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>所在页面</th>
+                <th>精灵主动理解</th>
+                <th>可建议或准备</th>
+                <th>必须用户确认</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>灵感生图</td>
+                <td>参考图、提示词、模型和尺寸</td>
+                <td>补全提示词、母版建议、参数体检</td>
+                <td>提交生成、实际扣费</td>
+              </tr>
+              <tr>
+                <td>无限画布</td>
+                <td>当前选中实体、引用和生成分支</td>
+                <td>分支命名、引用角色、版本比较结论</td>
+                <td>锁定、删除、采用最终版本</td>
+              </tr>
+              <tr>
+                <td>电商套图</td>
+                <td>商品身份规则、素材完整度和当前阶段</td>
+                <td>缺图清单、镜头方案、一致性质检</td>
+                <td>批量生成、覆盖采用版本、交付</td>
+              </tr>
+              <tr>
+                <td>媒资管理</td>
+                <td>当前目录、资产内容、标签和权限</td>
+                <td>批量命名、分类、标签、重复项建议</td>
+                <td>共享、移动回收站、永久删除</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <div>
+              <h3>先理解当前页面</h3>
+              <p>
+                精灵应知道用户正在哪个工作区、选中了什么、哪些设置已填写，而不是让用户重复描述屏幕内容。
+              </p>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>只给最重要的下一步</h3>
+              <p>
+                优先指出当前阻塞项，例如“还没有选择母版”，再提供可展开的详细说明。
+              </p>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>建议可以一键填入</h3>
+              <p>
+                提示词、名称、标签和分类建议提供“填入但不提交”，让用户预览、修改后确认。
+              </p>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>危险或收费操作二次确认</h3>
+              <p>
+                明确显示动作对象、预计积分和影响范围。未确认前只能准备操作，不能自动执行。
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section class="section" id="roadmap">
+        <h2>推荐的功能建设顺序</h2>
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>优先级</th>
+                <th>功能</th>
+                <th>原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>第一阶段</td>
+                <td>当前页面感知、功能问答、提示词改写、参考图检查</td>
+                <td>价值高、风险低，能立刻减少新用户困惑</td>
+              </tr>
+              <tr>
+                <td>第二阶段</td>
+                <td>生成前体检、错误解释、结果对比质检</td>
+                <td>直接降低失败率和重复扣费</td>
+              </tr>
+              <tr>
+                <td>第三阶段</td>
+                <td>一键填入提示词和参数、资产命名分类建议</td>
+                <td>从回答升级为协作，但不越权提交</td>
+              </tr>
+              <tr>
+                <td>第四阶段</td>
+                <td>经确认后执行跨工作区操作、任务跟踪与交付清单</td>
+                <td>自动化价值最大，需要完整权限与审计机制</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="tip">
+          <strong>推荐首个落地功能：</strong
+          >用户在任意创作页问“我下一步该做什么”，精灵读取当前页面状态，指出唯一的阻塞项，并提供可直接填入、但不会自动提交的解决方案。
+        </div>
+        <div class="faq">
+          <details>
+            <summary>精灵应该主动弹出吗？</summary>
+            <p>
+              只在明确阻塞、连续失败或用户开启教学模式时轻量提示；普通创作过程中保持安静。
+            </p>
+          </details>
+          <details>
+            <summary>精灵能不能自动生成图片？</summary>
+            <p>
+              可以准备提示词和参数，但最终生成会扣费，必须展示预计积分并由用户确认。
+            </p>
+          </details>
+          <details>
+            <summary>怎样防止精灵误删资产？</summary>
+            <p>
+              删除、永久删除、共享、替换母版和覆盖最终版本都列为受保护动作，要求明确确认并记录结果。
+            </p>
+          </details>
+        </div>
+      </section>
+      <nav class="pager">
+        <a href="../04-media-assets/index.html">← 上一本：媒资管理</a
+        ><a class="next" href="../index.html">返回五本手册目录 →</a>
+      </nav>
+    </main>
+    <footer class="footer">Pic365 · 精灵使用与能力规划</footer>
+  </body>
+</html>

@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "publicUseApproved": true,
+  "published": true,
+  "sourceType": "two-user-supplied-photos-plus-two-existing-pic365-catalog-images",
+  "runDate": "2026-09-06",
+  "captureType": "new-real-execution",
+  "batchId": "repair-bea09183-2f63-406c-a1b7-b75e10c16fc7",
+  "providerId": "7b21b869-6845-42c4-bd4b-997b0233e942",
+  "providerName": "高速稳定GPT生图2.0",
+  "promptMode": "shared",
+  "preserveOriginalSize": true,
+  "quality": "high",
+  "containsVisibleProductMark": true,
+  "approvalNote": "已由项目负责人于 2026-09-06 确认可公开展示。",
+  "sourceFiles": [
+    "source/source-01.jpg",
+    "source/source-02.jpg",
+    "source/source-03.jpg",
+    "source/source-04.webp"
+  ],
+  "resultGenerationIds": [
+    "aed23734-3504-469b-873c-8f8e5583c05e",
+    "d6ca59d9-edd9-46a9-9ef3-9036eb2cdaf0",
+    "0a8bb5dc-f92c-48cc-aa6c-269c5dc56d1e",
+    "98ef87d2-4cf0-4a95-b076-4b7cffb12685"
+  ],
+  "outdoorRun": {
+    "batchId": "repair-65d35544-f94a-4b6a-80f4-7ac29ad36b1c",
+    "providerId": "7b21b869-6845-42c4-bd4b-997b0233e942",
+    "providerName": "高速稳定GPT生图2.0",
+    "quality": "low",
+    "resultGenerationIds": [
+      "b3d26695-7bd5-4499-9d50-4d093fd85488",
+      "7f8a650f-48dd-4ae0-bd54-101b0c794c04",
+      "5bdab4f3-bb65-4553-96c9-3f33f068f54f",
+      "7cc13a5a-eb23-42d2-bfbe-861e3b68c5ea"
+    ]
+  },
+  "screenCaptureFiles": [
+    "screens/01-batch-entry.png",
+    "screens/02-four-images.png",
+    "screens/03-shared-prompt.png",
+    "screens/04-task-list.png",
+    "screens/05-task-complete.png",
+    "screens/06-result-preview.png",
+    "screens/outdoor-03-shared-prompt.png",
+    "screens/outdoor-05-task-complete.png",
+    "screens/outdoor-06-result-preview.png"
+  ],
+  "qualityControl": {
+    "finalResultCount": 4,
+    "allTasksCompleted": true,
+    "backgroundAndLightingUnified": true,
+    "cinematicCampaignAtmosphere": true,
+    "outdoorLifestyleAtmosphere": true,
+    "adultModelConfirmed": true,
+    "outdoorRunUsedLowQuality": true,
+    "aspectRatiosPreserved": true,
+    "exploratoryRejectedInput": "A local material-detail crop was excluded after two generations invented unseen full-product structure. It is not part of the published tutorial result set."
+  },
+  "privacyReview": "passed",
+  "qualityReview": "approved"
+}

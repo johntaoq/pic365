@@ -10,10 +10,14 @@ const SAFE_PUBLIC_FILES = new Map([
 ]);
 
 const SAFE_PUBLIC_CONTENT_TYPES = {
+  '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
+  '.html': 'text/html; charset=utf-8',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.json': 'application/json; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mp4': 'video/mp4',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.webp': 'image/webp'
@@ -22,6 +26,7 @@ const SAFE_PUBLIC_CONTENT_TYPES = {
 function safePublicDataPlugin() {
   const dataRoot = path.resolve(process.cwd(), 'data');
   const imageRoot = path.resolve(dataRoot, 'images');
+  const tutorialRoot = path.resolve(process.cwd(), 'content', 'homepage-tutorials');
 
   function serveFile(filePath, res, next) {
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return next();
@@ -38,6 +43,18 @@ function safePublicDataPlugin() {
         const requestUrl = new URL(req.url || '/', 'http://localhost');
         const publicFile = SAFE_PUBLIC_FILES.get(requestUrl.pathname);
         if (publicFile) return serveFile(path.resolve(dataRoot, publicFile), res, next);
+        if (requestUrl.pathname.startsWith('/homepage-tutorials/')) {
+          let relativePath;
+          try {
+            relativePath = decodeURIComponent(requestUrl.pathname.slice('/homepage-tutorials/'.length));
+          } catch {
+            return next();
+          }
+          if (!relativePath || relativePath.endsWith('/')) relativePath += 'index.html';
+          const filePath = path.resolve(tutorialRoot, relativePath);
+          if (filePath !== tutorialRoot && !filePath.startsWith(`${tutorialRoot}${path.sep}`)) return next();
+          return serveFile(filePath, res, next);
+        }
         if (!requestUrl.pathname.startsWith('/images/')) return next();
         let relativePath;
         try {
@@ -57,6 +74,39 @@ function safePublicDataPlugin() {
         fs.copyFileSync(path.resolve(dataRoot, publicFile), path.resolve(distRoot, publicFile));
       }
       fs.cpSync(imageRoot, path.resolve(distRoot, 'images'), { recursive: true });
+      const tutorialIndexFile = path.resolve(tutorialRoot, 'index.json');
+      if (fs.existsSync(tutorialIndexFile)) {
+        const tutorialIndex = JSON.parse(fs.readFileSync(tutorialIndexFile, 'utf8'));
+        const enabledItems = (tutorialIndex.items || []).filter((item) => item.enabled === true);
+        const tutorialDistRoot = path.resolve(distRoot, 'homepage-tutorials');
+        fs.mkdirSync(tutorialDistRoot, { recursive: true });
+        fs.writeFileSync(path.resolve(tutorialDistRoot, 'index.json'), JSON.stringify({ ...tutorialIndex, items: enabledItems }, null, 2));
+        const catalogFile = path.resolve(tutorialRoot, 'index.html');
+        if (fs.existsSync(catalogFile)) fs.copyFileSync(catalogFile, path.resolve(tutorialDistRoot, 'index.html'));
+        for (const sharedFile of ['tutorial-theme.css', 'tutorial-theme.js']) {
+          const sourceFile = path.resolve(tutorialRoot, sharedFile);
+          if (fs.existsSync(sourceFile)) fs.copyFileSync(sourceFile, path.resolve(tutorialDistRoot, sharedFile));
+        }
+        for (const item of enabledItems) {
+          const sourceDir = path.resolve(tutorialRoot, item.slug);
+          if (fs.existsSync(sourceDir)) fs.cpSync(sourceDir, path.resolve(tutorialDistRoot, item.slug), { recursive: true });
+        }
+      }
+      const platformGuideRoot = path.resolve(process.cwd(), 'content', 'platform-guides');
+      if (fs.existsSync(platformGuideRoot)) {
+        const platformGuideDistRoot = path.resolve(distRoot, 'content', 'platform-guides');
+        fs.mkdirSync(platformGuideDistRoot, { recursive: true });
+        for (const sharedFile of ['index.html', 'shared.css', 'theme.css', 'theme.js']) {
+          const sourceFile = path.resolve(platformGuideRoot, sharedFile);
+          if (fs.existsSync(sourceFile)) fs.copyFileSync(sourceFile, path.resolve(platformGuideDistRoot, sharedFile));
+        }
+        for (const guideDirectory of ['01-image-studio', '02-infinite-canvas', '03-ecommerce-suite', '04-media-assets', '05-companion']) {
+          const sourceDirectory = path.resolve(platformGuideRoot, guideDirectory);
+          if (fs.existsSync(sourceDirectory)) {
+            fs.cpSync(sourceDirectory, path.resolve(platformGuideDistRoot, guideDirectory), { recursive: true });
+          }
+        }
+      }
     }
   };
 }

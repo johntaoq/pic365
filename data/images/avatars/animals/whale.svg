@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="whale cartoon avatar">
+  <rect width="128" height="128" rx="28" fill="#dff7ef"/>
+  <g stroke="#263238" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="#4c92c6"><path d="M32 48 14 25l32 13M96 48l18-23-32 13"/></g>
+  <circle cx="64" cy="68" r="46" fill="#4c92c6" stroke="#263238" stroke-width="5"/>
+
+  <ellipse cx="64" cy="80" rx="28" ry="23" fill="#bfe9f5"/>
+  <g fill="#fff" stroke="#263238" stroke-width="4"><circle cx="47" cy="61" r="10"/><circle cx="81" cy="61" r="10"/></g>
+  <g fill="#263238"><circle cx="49" cy="63" r="4"/><circle cx="79" cy="63" r="4"/><ellipse cx="64" cy="78" rx="7" ry="5"/></g>
+  <path d="M64 83q-8 10-16 2m16-2q8 10 16 2" fill="none" stroke="#263238" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

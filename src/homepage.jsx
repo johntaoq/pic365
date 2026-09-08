@@ -1,5 +1,10 @@
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
+  ArrowUp,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
   Clapperboard,
   ImageIcon,
   Layers3,
@@ -34,7 +39,7 @@ const HOME_COPY = {
     eyebrow: '面向真实业务的 AI 视觉工作台',
     titleA: '从一张图，', titleB: '到一套', titleAccent: '会卖、会动', titleC: '的内容。',
     intro: 'Pic365 把灵感生图、精准改图、电商套图、无限画布和视频创作连成一条工作流。少填参数，把商品、品牌和人物的一致性留给系统处理。',
-    start: '免费开始创作', findFit: '看看适合我的场景',
+    start: '免费开始创作', findFit: '看看适合我的场景', classroom: '教学课堂',
     proof: [['图像 + 视频', '统一创作入口'], ['参考图约束', '保持真实与一致'], ['多模型渠道', '质量与成本可选']],
     visualNote: '不仅是“生成一张图”', visualNoteBody: '把每次创作沉淀为可复用的素材、版本和画布关系。', realShots: '真实界面截图',
     principles: [
@@ -56,6 +61,7 @@ const HOME_COPY = {
     steps: [['从真实素材或灵感开始', '上传、粘贴、资源库或历史作品都可以进入创作。'], ['批量生成并保留版本关系', '参考图用途、提示词和任务状态都跟随作品保存。'], ['进入画布编排或视频创作', '选中实体即可引用、精修、衍生或转为动态内容。']],
     canvasCaption: '历史作品一键加入画布', deliveryCaption: '从生成结果继续精修与交付',
     casesKicker: 'EXAMPLES', casesTitle: '不是抽象能力，是可复用的生产结果', casesLead: '用当前产品中的真实任务举例，帮助访客快速判断 Pic365 是否适合自己的工作。',
+    tutorialsKicker: 'REAL SCENE CLASSROOM', tutorialsTitle: '真实场景课堂', tutorialsLead: '从客户问题、准备素材到真实步骤和最终结果，照着案例完成第一次创作。', tutorialsAll: '查看全部教程', tutorialsPrevious: '向左浏览课程', tutorialsNext: '向右浏览课程', tutorialAction: '查看教程', tutorialMinutes: '分钟学会',
     cases: [
       { type: '电商运营', title: '一组商品素材，完成平台套图', body: '商品母版约束结构和配件，按槽位生成主图、场景图、细节图，再统一进入精修交付。', fit: '品牌商家 / 代运营', action: '查看工作流', image: 'ecommerce-delivery.webp' },
       { type: '广告创作', title: '从范例风格快速生成营销视觉', body: '从饮品广告、海报和品牌图标范例进入创作，保留风格方向并替换为自己的主体。', fit: '市场 / 社媒 / 广告', action: '浏览范例', image: 'inspiration-gallery.webp' },
@@ -71,7 +77,7 @@ const HOME_COPY = {
   en: {
     eyebrow: 'An AI visual workspace built for real production', titleA: 'From one image', titleB: 'to a complete set of', titleAccent: 'selling, moving', titleC: 'content.',
     intro: 'Pic365 connects image generation, precise editing, commerce sets, infinite canvas, and video creation in one workflow—while the system handles product, brand, and character consistency.',
-    start: 'Start creating free', findFit: 'Find your workflow', proof: [['Image + video', 'One creation entry'], ['Reference constraints', 'Keep facts consistent'], ['Multiple providers', 'Choose quality and cost']],
+    start: 'Start creating free', findFit: 'Find your workflow', classroom: 'Tutorial classroom', proof: [['Image + video', 'One creation entry'], ['Reference constraints', 'Keep facts consistent'], ['Multiple providers', 'Choose quality and cost']],
     visualNote: 'More than generating one image', visualNoteBody: 'Every creation becomes reusable assets, versions, and canvas relationships.', realShots: 'Real product screens',
     principles: [['Ideas keep moving', 'Examples flow directly into creation and refinement.'], ['Product facts first', 'Structure, color, material, packaging, and accessories stay constrained.'], ['Precise at scale', 'Independent prompts, retries, adoption, and delivery work together.'], ['Reusable assets', 'History, media, nodes, and references remain available.']],
     audienceKicker: 'WHO IT IS FOR', audienceTitle: 'A clear starting point for every team', audienceLead: 'Each scenario explains the job, the matching capability, and a real Pic365 interface.',
@@ -84,6 +90,7 @@ const HOME_COPY = {
     workflowKicker: 'ONE CONNECTED WORKFLOW', workflowTitle: 'Create, produce, manage—\nwithout switching tools', workflowLead: 'Outputs remain usable inputs for the next step instead of becoming disconnected downloads.',
     steps: [['Start with real assets or inspiration', 'Upload, paste, library, and history all connect to creation.'], ['Generate at scale and keep versions', 'Reference roles, prompts, and task status remain attached.'], ['Compose on canvas or create video', 'Reference, refine, branch, and animate selected entities.']],
     canvasCaption: 'Add history directly to canvas', deliveryCaption: 'Continue from generation to delivery', casesKicker: 'EXAMPLES', casesTitle: 'Reusable production outcomes, not abstract features', casesLead: 'Real tasks help visitors identify the workflow that fits their work.',
+    tutorialsKicker: 'REAL SCENE CLASSROOM', tutorialsTitle: 'Learn from complete real workflows', tutorialsLead: 'Each tutorial connects the problem, source assets, real steps, results, and the next action.', tutorialsAll: 'View all tutorials', tutorialsPrevious: 'Browse tutorials left', tutorialsNext: 'Browse tutorials right', tutorialAction: 'View tutorial', tutorialMinutes: 'min tutorial',
     cases: [
       { type: 'Commerce', title: 'Turn product assets into a platform set', body: 'Use the master to lock structure and accessories, generate by slot, then refine and deliver.', fit: 'Brands / agencies', action: 'View workflow', image: 'ecommerce-delivery.webp' },
       { type: 'Advertising', title: 'Turn inspiration into campaign visuals', body: 'Enter from beverage ads, posters, and brand examples, then replace the subject while retaining direction.', fit: 'Marketing / social', action: 'Browse examples', image: 'inspiration-gallery.webp' },
@@ -101,6 +108,46 @@ function scrollToSection(id) {
 
 export default function Homepage({ language = 'zh', navigation, onCreate, onCanvas, onEcommerce, onCases }) {
   const t = HOME_COPY[language] || HOME_COPY.zh;
+  const [tutorials, setTutorials] = useState([]);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const tutorialViewportRef = useRef(null);
+
+  function scrollTutorials(direction) {
+    const viewport = tutorialViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({ left: direction * Math.max(320, viewport.clientWidth * 0.82), behavior: 'smooth' });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/homepage-tutorials/index.json?v=${encodeURIComponent(__PIC365_BUILD_ID__)}`, { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) throw new Error('TUTORIAL_INDEX_LOAD_FAILED');
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        setTutorials(items
+          .filter((item) => item.enabled === true || (import.meta.env.DEV && item.status === 'review'))
+          .sort((a, b) => Number(a.order || 0) - Number(b.order || 0)));
+      })
+      .catch(() => {
+        if (!cancelled) setTutorials([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const updateBackToTop = () => setShowBackToTop(window.scrollY > window.innerHeight);
+    updateBackToTop();
+    window.addEventListener('scroll', updateBackToTop, { passive: true });
+    window.addEventListener('resize', updateBackToTop);
+    return () => {
+      window.removeEventListener('scroll', updateBackToTop);
+      window.removeEventListener('resize', updateBackToTop);
+    };
+  }, []);
   return (
     <div className="homeLanding">
       {navigation}
@@ -111,7 +158,7 @@ export default function Homepage({ language = 'zh', navigation, onCreate, onCanv
             <span className="homeEyebrow"><i />{t.eyebrow}</span>
             <h1>{t.titleA}<br />{t.titleB}<em>{t.titleAccent}</em><br />{t.titleC}</h1>
             <p>{t.intro}</p>
-            <div className="homeHeroActions"><button className="homePrimaryButton" type="button" onClick={onCreate}>{t.start}<ArrowRight size={17} /></button><button className="homeSecondaryButton" type="button" onClick={() => scrollToSection('homepage-audiences')}>{t.findFit}</button></div>
+            <div className="homeHeroActions"><button className="homePrimaryButton" type="button" onClick={onCreate}>{t.start}<ArrowRight size={17} /></button><button className="homeSecondaryButton" type="button" onClick={() => scrollToSection('homepage-audiences')}>{t.findFit}</button><button className="homeSecondaryButton homeClassroomButton" type="button" onClick={() => scrollToSection('homepage-tutorials')}><BookOpen size={17} />{t.classroom}</button></div>
             <div className="homeProof">{t.proof.map(([title, body]) => <span key={title}><b>{title}</b>{body}</span>)}</div>
           </div>
           <div className="homeHeroVisual">
@@ -140,6 +187,13 @@ export default function Homepage({ language = 'zh', navigation, onCreate, onCanv
         </div>
       </section>
 
+      {tutorials.length ? <section className="homeSection tint" id="homepage-tutorials">
+        <div className="homeWrap">
+          <header className="homeSectionHead homeTutorialHead"><div><small>{t.tutorialsKicker}</small><h2>{t.tutorialsTitle}</h2></div><div><p>{t.tutorialsLead}</p><div className="homeTutorialActions"><a href="/homepage-tutorials/index.html">{t.tutorialsAll}<ArrowRight size={14} /></a></div></div></header>
+          <div className="homeTutorialCarousel"><button className="homeTutorialArrow previous" type="button" aria-label={t.tutorialsPrevious} onClick={() => scrollTutorials(-1)}><ChevronLeft size={25} /></button><div className="homeTutorialViewport" ref={tutorialViewportRef} tabIndex="0" aria-label={t.tutorialsTitle}><div className="homeTutorialGrid">{tutorials.map((item) => <a className="homeTutorialCard" href={item.href} key={item.slug}><div className="homeTutorialImage"><img src={`/homepage-tutorials/${item.cover}`} alt={item.title} loading="lazy" /></div><div className="homeTutorialBody"><small>{item.category}</small><h3>{item.title}</h3><p>{item.summary}</p><footer><span>{item.durationMinutes} {t.tutorialMinutes}</span><b>{t.tutorialAction}<ArrowRight size={13} /></b></footer></div></a>)}</div></div><button className="homeTutorialArrow next" type="button" aria-label={t.tutorialsNext} onClick={() => scrollTutorials(1)}><ChevronRight size={25} /></button></div>
+        </div>
+      </section> : null}
+
       <section className="homeSection tint">
         <div className="homeWrap">
           <header className="homeSectionHead"><div><small>{t.casesKicker}</small><h2>{t.casesTitle}</h2></div><p>{t.casesLead}</p></header>
@@ -156,6 +210,7 @@ export default function Homepage({ language = 'zh', navigation, onCreate, onCanv
 
       <section className="homeCta"><div className="homeWrap"><div className="homeCtaCard"><small>{t.ctaKicker}</small><h2>{t.ctaTitle}</h2><p>{t.ctaBody}</p><button className="homePrimaryButton" type="button" onClick={onCreate}>{t.start}<ArrowRight size={17} /></button></div></div></section>
       <footer className="homeFooter"><div className="homeWrap"><span>© 2026 Pic365 · {t.footer}</span><span>{t.footerLinks}</span></div></footer>
+      <button className={`homeBackToTop ${showBackToTop ? 'visible' : ''}`} type="button" aria-label={language === 'zh' ? '回到顶部' : 'Back to top'} title={language === 'zh' ? '回到顶部' : 'Back to top'} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><ArrowUp size={24} /></button>
     </div>
   );
 }

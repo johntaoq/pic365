@@ -1,0 +1,40 @@
+{
+  "version": 2,
+  "slug": "06-model-accessory-swap",
+  "enabled": true,
+  "featured": true,
+  "order": 6,
+  "category": "多参考图换装",
+  "title": "一张母版，一次完成整套换装",
+  "subtitle": "上传一张全身人物母版和包、手表、鞋、发型四张参考图，一条提示词生成一张完整成片",
+  "duration": "5分钟",
+  "entry": {
+    "page": "灵感生图",
+    "mode": "单图创作",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "先上传全身人物母版，再按包、手表、鞋、发型的顺序加入四张参考图。"
+  },
+  "status": "published",
+  "generationId": "57c46984-c9b9-4b52-95ca-6e2cd8e7a5b4",
+  "inputCount": 5,
+  "outputCount": 1,
+  "model": "gpt-image-2",
+  "size": "864x1536",
+  "quality": "low",
+  "inputs": [
+    { "number": 1, "label": "全身人物母版", "file": "source/model-full.png", "purpose": "锁定人物、白裙、站姿、背景和全身构图" },
+    { "number": 2, "label": "黑色斜肩包", "file": "source/bag.jpg", "purpose": "替换包" },
+    { "number": 3, "label": "手表", "file": "source/watch.png", "purpose": "替换手表" },
+    { "number": 4, "label": "红色短靴", "file": "source/shoes-red.png", "purpose": "替换鞋" },
+    { "number": 5, "label": "高盘发", "file": "source/hair.png", "purpose": "替换发型" }
+  ],
+  "prompt": "以图1中的成年女性全身模特为唯一人物母版，一次性完成整套换装：把图2的黑色斜肩包按真实佩戴方式斜跨在模特身上；在模特左手腕佩戴图3的金色外圈黑色表盘手表；把模特脚上的白色运动鞋完整替换为图4的红色短靴；把模特发型替换为图5的高盘发与自然碎发。必须同时完成以上四项。保持图1人物的脸型、五官、表情、肤色、身体比例、白色连衣裙、站姿、海边日落背景、光线和竖版全身构图一致。包、手表、鞋和发型分别只服从对应参考图，不得相互混淆，不新增其他配饰、文字或水印。",
+  "results": [
+    { "label": "一次性整套换装成片", "file": "results/composite.webp", "usage": "最终采用图" }
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/composite-before-after.webp"
+  }
+}

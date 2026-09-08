@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "publicUseApproved": true,
+  "published": true,
+  "sourceType": "new-real-pic365-teaching-illustration-run",
+  "runDate": "2026-09-06",
+  "captureType": "real-local-task-review",
+  "screenshots": [
+    "screens/00-spirit-copy.png",
+    "screens/01-horizontal-ready.png",
+    "screens/02-vertical-ready.png",
+    "screens/03-character-ready.png"
+  ],
+  "resultFiles": [
+    "results/result-spirit-slide.webp",
+    "results/result-horizontal.webp",
+    "results/result-vertical.webp",
+    "results/result-character.webp"
+  ],
+  "privacyReview": "passed",
+  "qualityReview": "approved",
+  "notes": [
+    "所有页面截图和结果来自本地真实任务。",
+    "古诗原文、作者、朝代和教学文字在公开使用前必须人工校对。",
+    "图片与人物素材已由项目负责人确认可公开展示。"
+  ]
+}

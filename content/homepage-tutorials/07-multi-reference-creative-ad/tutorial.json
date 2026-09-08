@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "slug": "07-multi-reference-creative-ad",
+  "enabled": true,
+  "featured": true,
+  "order": 7,
+  "category": "创意广告",
+  "title": "五张参考图，合成一张完整创意广告",
+  "subtitle": "人物、商品、配件、伙伴和场景各司其职",
+  "duration": "4分钟",
+  "entry": {
+    "page": "灵感生图",
+    "mode": "单图创作",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "先上传人物母版，再按图2至图5依次添加商品、配件、伙伴和场景。"
+  },
+  "referenceCount": 5,
+  "result": {
+    "file": "results/result-01.webp",
+    "generationId": "4995d92a-e754-4fd9-8be0-e3da0033cddd"
+  },
+  "status": "published",
+  "durationMinutes": 4,
+  "problem": "复杂广告需要组合人物、商品、配件、伙伴和场景，但如果不明确每张参考图的职责，内容容易混淆或遗漏。",
+  "audience": [
+    "创意广告团队",
+    "活动海报设计师",
+    "品牌运营",
+    "概念设计团队"
+  ],
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以准备五张参考图和编号提示词；提交任务时按页面提示登录。",
+    "unavailable": "当前模型不支持所需参考图数量时，减少参考图或选择支持多参考图的模型。"
+  },
+  "inputs": [
+    {
+      "label": "图1 人物母版",
+      "file": "source/source-01-person.webp",
+      "purpose": "控制人物身份与面部特征"
+    },
+    {
+      "label": "图2 商品包",
+      "file": "source/source-02-bag.webp",
+      "purpose": "控制包体结构"
+    },
+    {
+      "label": "图3 银色耳机",
+      "file": "source/source-03-earbuds.webp",
+      "purpose": "控制双耳配件"
+    },
+    {
+      "label": "图4 红色狐狸",
+      "file": "source/source-04-fox.webp",
+      "purpose": "控制伙伴角色"
+    },
+    {
+      "label": "图5 幻想场景",
+      "file": "source/source-05-scene.webp",
+      "purpose": "控制背景氛围"
+    }
+  ],
+  "steps": [
+    {
+      "number": 1,
+      "title": "进入单图创作",
+      "body": "先确认当前模型支持五张参考图。",
+      "image": "steps/step-01.webp"
+    },
+    {
+      "number": 2,
+      "title": "按顺序上传五张图",
+      "body": "缩略图编号就是提示词中使用的图号。",
+      "image": "steps/step-02.webp"
+    },
+    {
+      "number": 3,
+      "title": "逐图写清职责",
+      "body": "按图1人物至图5场景逐项说明。",
+      "image": "steps/step-03.webp"
+    },
+    {
+      "number": 4,
+      "title": "提交一次完整合成",
+      "body": "五张参考图共同控制一张完整广告。",
+      "image": "steps/step-04.webp"
+    },
+    {
+      "number": 5,
+      "title": "检查职责是否齐全",
+      "body": "确认人物、包、耳机、狐狸和场景都存在。",
+      "image": "steps/step-05.webp"
+    },
+    {
+      "number": 6,
+      "title": "打开大图逐项复核",
+      "body": "放大检查耳机、包体、人物身份和品牌标识。",
+      "image": "steps/step-06.webp"
+    }
+  ],
+  "prompt": "以图1的人物为唯一人物母版；图2只控制斜肩包；图3只控制双耳银色耳机；图4只控制红色狐狸伙伴；图5只控制仙侠云海、石桥和远山场景。保持各参考职责互不混淆，生成一张完整的东方幻想创意广告。",
+  "results": [
+    {
+      "label": "参考图职责示意",
+      "file": "compare/reference-map.webp",
+      "usage": "说明图1至图5分工"
+    },
+    {
+      "label": "采用版本",
+      "file": "results/result-01.webp",
+      "usage": "五项参考职责均可辨认"
+    },
+    {
+      "label": "淘汰版本",
+      "file": "results/rejected-01-earbuds-missing.webp",
+      "usage": "说明耳机职责缺失时需要重做"
+    }
+  ],
+  "tips": [
+    "参考图按稳定顺序上传并记录编号。",
+    "提示词逐项说明每张图片只控制什么。",
+    "结果中逐个核对五项职责。",
+    "涉及人物肖像和品牌标识时必须完成授权检查。"
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/reference-map.webp"
+  }
+}

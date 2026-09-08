@@ -91,6 +91,19 @@ test('MAI-Image-2 rejects references and MAI-Image-2.5 allows only one', () => {
   );
 });
 
+test('MAI-Image-2.6 family accepts one primary plus four supporting images', () => {
+  for (const model of ['MAI-Image-2.6', 'MAI-Image-2.6-Flash']) {
+    assert.doesNotThrow(() => validateReferenceRequestsForModel(
+      Array.from({ length: 5 }, (_, index) => ({ generationId: `g-${index}` })),
+      model
+    ));
+    assert.throws(() => validateReferenceRequestsForModel(
+      Array.from({ length: 6 }, (_, index) => ({ generationId: `g-${index}` })),
+      model
+    ), /TOO_MANY_REFERENCE_IMAGES/);
+  }
+});
+
 test('MAI-Image-2.5 accepts PNG but rejects WebP reference inputs', async () => {
   const pngDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   const pngReferences = normalizeReferenceRequests([{ imageDataUrl: pngDataUrl }]);
@@ -106,6 +119,26 @@ test('MAI-Image-2.5 accepts PNG but rejects WebP reference inputs', async () => 
   }]);
   await assert.rejects(
     () => loadReferenceImageInputs('unused-user', webpReferences, { model: 'MAI-Image-2.5' }),
+    /INVALID_REFERENCE_IMAGE_FORMAT/
+  );
+});
+
+test('MAI-Image-2.6 accepts JPEG and PNG but rejects WebP reference inputs', async () => {
+  const pngDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const pngImages = await loadReferenceImageInputs(
+    'unused-user',
+    normalizeReferenceRequests([{ imageDataUrl: pngDataUrl }]),
+    { model: 'MAI-Image-2.6-Flash' }
+  );
+  assert.equal(pngImages.length, 1);
+
+  const webpBytes = await sharp({
+    create: { width: 1, height: 1, channels: 4, background: '#ffffff' }
+  }).webp().toBuffer();
+  await assert.rejects(
+    () => loadReferenceImageInputs('unused-user', normalizeReferenceRequests([{
+      imageDataUrl: `data:image/webp;base64,${webpBytes.toString('base64')}`
+    }]), { model: 'MAI-Image-2.6' }),
     /INVALID_REFERENCE_IMAGE_FORMAT/
   );
 });

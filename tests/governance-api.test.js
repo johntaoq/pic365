@@ -90,15 +90,23 @@ test('menu preferences are user-owned and global switches are super-admin only',
 
   const forbidden = await invoke(globalSettingsHandler, {
     method: 'PATCH', headers: accountantHeaders,
-    body: { templates: false, cases: false, api: false }
+    body: { ecommerce: false, templates: false, cases: false, api: false }
   });
   assert.equal(forbidden.statusCode, 403);
 
+  const personalReopened = await invoke(menuHandler, {
+    method: 'PATCH', headers: memberHeaders,
+    body: { hideEcommerce: false }
+  });
+  assert.equal(personalReopened.statusCode, 200);
+  assert.equal(personalReopened.payload.menu.effective.ecommerce, true);
+
   const global = await invoke(globalSettingsHandler, {
     method: 'PATCH', headers: rootHeaders,
-    body: { templates: true, cases: false, api: true }
+    body: { ecommerce: false, templates: true, cases: false, api: true }
   });
   assert.equal(global.statusCode, 200);
+  assert.equal(global.payload.settings.ecommerce, false);
   const effective = await invoke(menuHandler, { headers: memberHeaders });
   assert.deepEqual(effective.payload.menu.effective, { ecommerce: false, templates: false, cases: false, api: true });
 });

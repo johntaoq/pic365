@@ -1,0 +1,39 @@
+{
+  "publicUseApproved": true,
+  "published": true,
+  "sourceType": "existing-real-pic365-project",
+  "projectId": "4c9b5881-6d02-44f2-8c3c-54d6850c48f7",
+  "projectName": "非遗 · 淘宝 / 天猫",
+  "productName": "古法药香五行珠",
+  "platform": "douyin",
+  "captureType": "real-project-review",
+  "sourceAssetIds": [
+    "de169dbb-f6d1-4082-b616-a922cb1a79c1",
+    "52db7cab-e111-40f7-8633-afc8152c81c1",
+    "f94d6ae5-c543-4411-b50f-9af0328ef5f8",
+    "1f6d66bf-e3f3-4753-a801-65fb2737ccb2"
+  ],
+  "selectedGenerations": {
+    "cover-square": "67d708ef-cf97-4c5d-a799-206c2fbc7c15",
+    "material-portrait": "527fbca4-e949-4c8c-a153-3298bf48678b",
+    "three-second-benefit": "d15bfee2-28ca-469b-ac64-0278b3db23bb",
+    "person-scene": "0788f2fa-5155-4072-b308-8ef9efc09203",
+    "detail-closeup": "30c04122-83f9-41e1-81fb-981a25113d00",
+    "promotion-label": "39922171-c6d8-4818-91c1-5532fd3edeca",
+    "video-cover": "e45dcf78-f972-4622-a038-d32ca3729218"
+  },
+  "screenshots": [
+    "screens/01-product.png",
+    "screens/02-images.png",
+    "screens/03-plan.png",
+    "screens/04-shot-list.png",
+    "screens/05-generate.png",
+    "screens/06-delivery.png"
+  ],
+  "qualityReview": "approved",
+  "notes": [
+    "所有操作截图均来自真实 Pic365 项目界面。",
+    "生成结果来自该项目真实成功任务，不是为教程绘制的图片。",
+    "原始商品、包装文字和相关素材已由项目负责人确认可公开展示。"
+  ]
+}

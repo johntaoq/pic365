@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "status": "published",
+  "publicUseApproved": true,
+  "published": true,
+  "source": "Pic365 主账号本地资产库与本教程准备素材",
+  "generatedAt": "2026-09-06",
+  "generationId": "57c46984-c9b9-4b52-95ca-6e2cd8e7a5b4",
+  "request": {
+    "inputCount": 5,
+    "outputCount": 1,
+    "model": "gpt-image-2",
+    "size": "864x1536",
+    "quality": "low"
+  },
+  "inputOrder": [
+    "图1：全身人物母版",
+    "图2：黑色斜肩包",
+    "图3：手表",
+    "图4：红色短靴",
+    "图5：高盘发"
+  ],
+  "notes": "一次真实提交完成四项换装，并只生成一张最终成片。公开展示前仍需确认人物肖像、商品标识和参考素材授权。"
+}

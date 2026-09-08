@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
+const root=path.dirname(fileURLToPath(import.meta.url));
+for(const name of ['01-opening','02-character','03-riding','04-battle']) await sharp(path.join(root,'results',`${name}.png`)).webp({quality:91}).toFile(path.join(root,'results',`${name}.webp`));
+await sharp(path.join(root,'results','storyboard-preview-poster.jpg')).webp({quality:90}).toFile(path.join(root,'results','storyboard-preview-poster.webp'));
+const thumbs=await Promise.all(['branch-b-source.png','branch-b1.png','branch-b2.png','branch-b3-video.png'].map(name=>sharp(path.join(root,'results',name)).resize(280,280,{fit:'contain',background:'#07101b'}).toBuffer()));
+const bg=Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1080"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#132442"/><stop offset=".55" stop-color="#08111e"/><stop offset="1" stop-color="#251638"/></linearGradient></defs><rect width="1440" height="1080" fill="url(#g)"/><rect x="62" y="54" width="204" height="44" rx="22" fill="#80f0b0"/><text x="164" y="83" text-anchor="middle" font-family="Microsoft YaHei,Arial" font-size="18" font-weight="700" fill="#07120d">真实场景课堂</text><text x="62" y="178" font-family="Microsoft YaHei,Arial" font-size="56" font-weight="800" fill="#fff">把角色和场景</text><text x="62" y="248" font-family="Microsoft YaHei,Arial" font-size="56" font-weight="800" fill="#80f0b0">排成一段短视频</text><text x="64" y="300" font-family="Microsoft YaHei,Arial" font-size="21" fill="#aabbd0">无限画布 · 镜头分支 · 图片动起来</text><path d="M206 580H1234" stroke="#6d82a3" stroke-width="5" stroke-dasharray="16 14"/><text x="64" y="1015" font-family="Microsoft YaHei,Arial" font-size="19" fill="#aabbd0">真实项目复盘 · 4 个镜头 · 1 个视频预览 · 未发布</text></svg>`);
+await sharp({create:{width:1440,height:1080,channels:4,background:'#08111e'}}).composite([{input:bg,left:0,top:0},...thumbs.map((input,i)=>({input,left:62+i*345,top:420}))]).webp({quality:91}).toFile(path.join(root,'cover.webp'));
+console.log('Sample 08 assets built.');

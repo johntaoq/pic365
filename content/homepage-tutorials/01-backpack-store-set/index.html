@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>Pic365 教学 Demo｜一张包图，生成完整商城套图</title>
+  <style>
+    :root { color-scheme: dark; --bg:#05080d; --panel:#0d1725; --panel2:#101d2c; --line:#263a50; --text:#f6fbff; --muted:#9cafc7; --green:#76f4a7; --green-ink:#07110d; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif; color:var(--text); background:radial-gradient(circle at 15% 0%,#122c3b 0,transparent 34%),radial-gradient(circle at 90% 15%,#172218 0,transparent 28%),var(--bg); }
+    button,a { font:inherit; }
+    a { color:inherit; }
+    img { display:block; max-width:100%; }
+    .wrap { width:min(1180px,calc(100% - 36px)); margin:auto; }
+    .top { position:sticky; top:0; z-index:20; border-bottom:1px solid rgba(118,244,167,.2); background:rgba(5,8,13,.88); backdrop-filter:blur(16px); }
+    .top .wrap { min-height:70px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:800; font-size:20px; }
+    .brand i { width:30px; height:30px; border:7px solid var(--green); border-radius:10px 16px 10px 16px; transform:rotate(-8deg); }
+    .status { color:var(--muted); font-size:14px; }
+    .status b { color:#ffd472; }
+    .hero { padding:68px 0 44px; }
+    .heroGrid { display:grid; grid-template-columns:.88fr 1.12fr; gap:54px; align-items:center; }
+    .heroGrid > *,.contextGrid > *,.inputGrid > *,.stepPanel > *,.resultGrid > * { min-width:0; }
+    .kicker,.chip { display:inline-flex; align-items:center; gap:8px; border:1px solid rgba(118,244,167,.35); border-radius:999px; padding:9px 14px; color:var(--green); background:rgba(118,244,167,.08); font-size:14px; font-weight:700; }
+    h1 { margin:22px 0 20px; font-size:clamp(42px,5vw,70px); line-height:1.04; letter-spacing:-.045em; }
+    h1 em { color:var(--green); font-style:normal; }
+    .lead { margin:0; color:#c0ccda; font-size:19px; line-height:1.8; }
+    .proof { display:grid; grid-template-columns:repeat(3,1fr); margin:30px 0; gap:10px; }
+    .proof span { padding:16px; border:1px solid var(--line); border-radius:16px; color:var(--muted); background:rgba(13,23,37,.7); font-size:14px; }
+    .proof b { display:block; color:#fff; margin-bottom:6px; font-size:17px; }
+    .contextGrid { display:grid; grid-template-columns:1.2fr .8fr; gap:16px; }
+    .contextCard { padding:25px; border:1px solid var(--line); border-radius:24px; background:rgba(13,23,37,.86); }
+    .contextCard small { color:var(--green); font-weight:800; }
+    .contextCard h2,.contextCard h3 { margin:9px 0 12px; letter-spacing:-.02em; }
+    .contextCard h2 { font-size:clamp(26px,3vw,36px); }
+    .contextCard h3 { font-size:22px; }
+    .contextCard p { margin:0; color:#c0ccda; line-height:1.75; }
+    .audienceList { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
+    .audienceList span { padding:8px 12px; border:1px solid var(--line); border-radius:999px; color:#dbe7f4; background:#0a1320; font-size:13px; }
+    .actions { display:flex; flex-wrap:wrap; gap:12px; }
+    .primary,.secondary { min-height:52px; border-radius:26px; padding:0 23px; border:0; cursor:pointer; font-weight:800; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
+    .primary { background:var(--green); color:var(--green-ink); }
+    .secondary { color:#fff; background:var(--panel); border:1px solid var(--line); }
+    .heroVisual { position:relative; }
+    .heroVisual img { border-radius:28px; border:1px solid #284056; box-shadow:0 30px 90px rgba(0,0,0,.46); }
+    .heroBadge { position:absolute; right:-18px; bottom:24px; padding:16px 20px; border-radius:18px; background:var(--green); color:var(--green-ink); font-weight:900; box-shadow:0 15px 40px rgba(0,0,0,.3); }
+    section { padding:54px 0; }
+    .sectionHead { display:flex; justify-content:space-between; align-items:end; gap:28px; margin-bottom:28px; }
+    .sectionHead small { color:var(--green); font-weight:800; }
+    h2 { margin:8px 0 0; font-size:clamp(30px,4vw,46px); letter-spacing:-.03em; }
+    .sectionHead p { max-width:500px; color:var(--muted); line-height:1.7; margin:0; }
+    .inputGrid { display:grid; grid-template-columns:1.25fr 1fr 1fr; gap:16px; }
+    .mediaCard,.resultCard,.stepPanel,.promptBox,.tipCard { overflow:hidden; border:1px solid var(--line); border-radius:24px; background:rgba(13,23,37,.86); }
+    .mediaCard img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#080f18; }
+    .mediaCard div,.resultCard div { padding:17px 18px 20px; }
+    .mediaCard strong,.resultCard strong { display:block; font-size:18px; }
+    .mediaCard span,.resultCard span { display:block; margin-top:6px; color:var(--muted); font-size:14px; line-height:1.5; }
+    .mediaCard.master { border-color:var(--green); box-shadow:0 0 0 1px var(--green); }
+    .mediaCard.master div::before { content:"商品母版"; display:inline-block; margin-bottom:10px; padding:5px 9px; border-radius:99px; color:var(--green-ink); background:var(--green); font-size:12px; font-weight:900; }
+    .stepTabs { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+    .stepTabs button { border:1px solid var(--line); color:#d7e2ef; background:var(--panel); border-radius:999px; padding:12px 17px; cursor:pointer; }
+    .stepTabs button.active { background:var(--green); color:var(--green-ink); border-color:var(--green); font-weight:900; }
+    .stepPanel { display:grid; grid-template-columns:1.45fr .55fr; min-height:440px; }
+    .stepPanel img { width:100%; height:100%; min-height:360px; object-fit:contain; background:#020503; }
+    .stepCopy { padding:40px; display:flex; flex-direction:column; justify-content:center; }
+    .stepCopy b { color:var(--green); }
+    .stepCopy h3 { margin:12px 0; font-size:30px; }
+    .stepCopy p { color:var(--muted); line-height:1.8; }
+    .realRun { display:inline-flex; align-items:center; gap:8px; margin-top:18px; color:#d9ffe7; font-size:13px; font-weight:800; }
+    .realRun::before { content:""; width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 0 5px rgba(118,244,167,.12); }
+    .where { margin-top:18px; padding:14px 16px; border:1px solid rgba(118,244,167,.26); border-radius:16px; background:rgba(118,244,167,.06); color:#dfffea; font-size:14px; line-height:1.65; }
+    .promptBox { padding:28px; }
+    .promptTop { display:flex; justify-content:space-between; gap:20px; align-items:center; }
+    .promptTop span { color:var(--muted); }
+    .systemNote { display:grid; grid-template-columns:1fr auto; gap:20px; align-items:start; margin-bottom:20px; padding:20px; border:1px solid rgba(118,244,167,.24); border-radius:18px; background:rgba(118,244,167,.055); }
+    .systemNote strong { display:block; margin-bottom:8px; color:#effff5; font-size:19px; }
+    .systemNote p { margin:0; color:#b8c8d8; line-height:1.75; }
+    .autoBadge { white-space:nowrap; border-radius:999px; padding:9px 13px; color:var(--green-ink); background:var(--green); font-size:13px; font-weight:900; }
+    .ruleChips { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:20px; }
+    .ruleChips span { padding:9px 13px; border:1px solid var(--line); border-radius:999px; color:#dbe7f4; background:#0a1320; font-size:13px; }
+    .copyButton { border:1px solid rgba(118,244,167,.45); color:var(--green); background:rgba(118,244,167,.08); border-radius:16px; padding:11px 16px; cursor:pointer; }
+    blockquote { margin:22px 0 0; padding:22px; border-radius:18px; color:#dbe8f5; background:#07101c; border:1px solid #1d3045; line-height:1.85; }
+    .templateNote { margin:14px 2px 0; color:#879bb2; font-size:13px; line-height:1.7; }
+    .compare { width:100%; border:1px solid var(--line); border-radius:28px; }
+    .resultGrid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:26px; }
+    .resultCard img { width:100%; aspect-ratio:1/1; object-fit:cover; background:#08111f; }
+    .resultCard.wide { grid-column:span 2; }
+    .resultCard.wide img { aspect-ratio:2/1; }
+    .tips { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+    .tipCard { padding:22px; display:flex; gap:14px; line-height:1.7; color:#cfdae6; }
+    .tipCard i { flex:0 0 30px; width:30px; height:30px; border-radius:50%; display:grid; place-items:center; background:var(--green); color:var(--green-ink); font-style:normal; font-weight:900; }
+    .preflight { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    .preflight article { padding:22px; border:1px solid var(--line); border-radius:22px; background:rgba(13,23,37,.86); }
+    .preflight strong { display:block; margin-bottom:8px; font-size:17px; }
+    .preflight p { margin:0; color:var(--muted); line-height:1.65; font-size:14px; }
+    .cta { padding:48px; border-radius:32px; border:1px solid rgba(118,244,167,.35); background:linear-gradient(120deg,#102b22,#0c1724); display:flex; justify-content:space-between; align-items:center; gap:30px; }
+    .cta p { color:var(--muted); }
+    footer { padding:40px 0 70px; color:#7f91a7; font-size:13px; text-align:center; }
+    .toast { position:fixed; right:22px; bottom:22px; padding:13px 18px; background:var(--green); color:var(--green-ink); border-radius:14px; font-weight:800; opacity:0; transform:translateY(10px); pointer-events:none; transition:.2s; }
+    .toast.show { opacity:1; transform:none; }
+    :focus-visible { outline:3px solid rgba(118,244,167,.72); outline-offset:3px; }
+    @media (max-width:820px) {
+      .top .wrap { min-height:62px; }.status { display:none; }.hero { padding-top:42px; }.heroGrid,.stepPanel,.contextGrid { grid-template-columns:1fr; }.heroBadge { right:12px; }.proof { grid-template-columns:1fr; }.sectionHead { display:block; }.sectionHead p { margin-top:14px; }.inputGrid { grid-template-columns:1fr; }.resultGrid { grid-template-columns:1fr 1fr; }.resultCard.wide { grid-column:span 2; }.tips,.preflight { grid-template-columns:1fr; }.cta { padding:28px; display:block; }.cta .primary { margin-top:16px; width:100%; }.stepCopy { padding:28px; }.systemNote { grid-template-columns:1fr; }.autoBadge { justify-self:start; }.promptTop { align-items:flex-start; flex-direction:column; }.stepTabs button { min-height:44px; }
+    }
+    @media (max-width:520px) {
+      .wrap { width:calc(100% - 28px); }
+      .hero { padding:38px 0 32px; }
+      h1 { font-size:clamp(34px,10vw,40px); letter-spacing:-.045em; }
+      .lead { font-size:17px; line-height:1.75; overflow-wrap:anywhere; }
+      section { padding:42px 0; }
+      .resultGrid { grid-template-columns:1fr; }
+      .resultCard.wide { grid-column:span 1; }
+      .resultCard.wide img { aspect-ratio:1/1; }
+      .stepTabs { gap:8px; }
+      .stepTabs button { flex:1 1 calc(50% - 8px); padding:11px 10px; }
+      .stepPanel img { min-height:240px; }
+      .heroBadge { right:8px; bottom:12px; padding:12px 14px; }
+    }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none!important; } }
+  </style>
+<link rel="stylesheet" href="../tutorial-theme.css"><script src="../tutorial-theme.js"></script></head>
+<body>
+  <header class="top"><div class="wrap"><div class="brand"><i aria-hidden="true"></i>Pic365 真实场景课堂</div><div class="status">Sample 01 · <b>评审版，未发布</b></div></div></header>
+  <main>
+    <section class="hero"><div class="wrap heroGrid">
+      <div><span class="kicker">真实操作 · 真实生成 · 4分钟教程</span><h1>一张包图<br><em>生成完整商城套图</em></h1><p class="lead">我们用用户提供的三张男士通勤斜肩包实拍图，在 Pic365 中真实完成 Shopify 项目设置、七图生成和交付准备。</p><div class="proof"><span><b>3 张实拍图</b>正面、整体与材质</span><span><b>7 张新结果</b>本次真实生成</span><span><b>7 种商城用途</b>主图、场景、细节与推广</span></div><div class="actions"><button class="primary" data-scroll="tutorial">看真实操作</button><button class="secondary" data-scroll="results">先看结果</button></div></div>
+      <div class="heroVisual"><img src="cover.webp" alt="一张包图生成完整商城套图教程封面"><span class="heroBadge">真实资产库案例</span></div>
+    </div></section>
+
+    <section><div class="wrap contextGrid"><article class="contextCard"><small>客户遇到的问题</small><h2>照片已经拍好，却不能直接覆盖商城需要</h2><p>普通实拍图的背景、角度和用途单一，难以同时用于商城首页、集合页、商品详情和社交媒体。这个教程演示如何围绕同一件商品，一次建立完整且统一的图片清单。</p></article><article class="contextCard"><small>适用用户</small><h3>谁可以直接照着做</h3><p>适合需要快速整理商品视觉资产的团队。</p><div class="audienceList"><span>跨境电商运营</span><span>独立站商家</span><span>商品设计师</span><span>代运营团队</span></div></article></div></section>
+
+    <section><div class="wrap"><div class="sectionHead"><div><small>01 · 准备素材</small><h2>准备三张清晰照片，先确定谁是母版</h2></div><p>母版决定商品身份；另外两张只补充整体角度和材质细节。尽量使用无遮挡、无反光、细节清楚的原图。</p></div><div class="inputGrid"><article class="mediaCard master"><img src="source/source-01.webp" alt="商品母版正面图"><div><strong>商品母版：正面图</strong><span>选择结构最清晰的一张，锁定包体轮廓、纹理、前袋、拉链、背带和标识。</span></div></article><article class="mediaCard"><img src="source/source-02.webp" alt="商品整体角度参考图"><div><strong>角度参考</strong><span>完整展示商品和肩带，用于补充肩带长度、整体比例与侧面关系。</span></div></article><article class="mediaCard"><img src="source/source-03.webp" alt="商品材质细节参考图"><div><strong>材质参考</strong><span>使用清晰近照，补充皮革纹理、车线、拉链与金属标识。</span></div></article></div></div></section>
+
+    <section id="tutorial"><div class="wrap"><div class="sectionHead"><div><small>02 · 真实操作过程</small><h2>每一步都能看到在 Pic365 哪里操作</h2></div><p>下面六张均为本次项目的真实界面截图。点击步骤即可对照操作区域、输入内容和生成结果。</p></div><div class="stepTabs" role="tablist" aria-label="教程步骤"><button type="button" class="active" role="tab" aria-selected="true" aria-controls="stepPanel" data-step="0">1 建商品</button><button type="button" role="tab" aria-selected="false" aria-controls="stepPanel" data-step="1">2 定母版</button><button type="button" role="tab" aria-selected="false" aria-controls="stepPanel" data-step="2">3 选方案</button><button type="button" role="tab" aria-selected="false" aria-controls="stepPanel" data-step="3">4 选图单</button><button type="button" role="tab" aria-selected="false" aria-controls="stepPanel" data-step="4">5 看结果</button><button type="button" role="tab" aria-selected="false" aria-controls="stepPanel" data-step="5">6 做交付</button></div><article class="stepPanel" id="stepPanel" role="tabpanel" aria-live="polite"><img id="stepImage" src="steps/step-01.webp" alt="Pic365 商品项目真实操作界面"><div class="stepCopy"><b id="stepNumber">真实界面 · STEP 01</b><h3 id="stepTitle">建立商品项目</h3><p id="stepBody">进入“电商套图”，填写商品名称，确认系统识别的分类，并选择 Shopify 销售平台。</p><span class="realRun">本次项目真实截图</span><div class="where" id="stepWhere">位置：电商套图 → 商品</div></div></article></div></section>
+
+    <section><div class="wrap"><div class="sectionHead"><div><small>03 · 系统如何执行</small><h2>你没有输入这段话，系统替你完成了</h2></div><p>这不是额外操作步骤，而是说明 Pic365 如何把前面已经完成的选择转成生成约束。</p></div><div class="promptBox"><div class="systemNote"><div><strong>本次操作没有手动填写这段提示词</strong><p>用户只设置商品资料、母版、其他参考图、Shopify 平台、视觉方案和七个图片槽位。生成时，Pic365 会针对每个槽位分别组合执行指令，并非使用同一段提示词一次生成七张图片。</p></div><span class="autoBadge">后台自动完成</span></div><div class="ruleChips"><span>母版：商品身份最高优先级</span><span>其他图片：只补充可信细节</span><span>每个槽位：独立构图要求</span><span>整套图片：统一商品与视觉</span></div><div class="promptTop"><span>下面是根据本次项目归纳的借鉴模板，可用于自由生图、批量改图等需要手动填写提示词的场景。</span><button class="copyButton" id="copyPrompt">复制借鉴模板</button></div><blockquote id="promptText">以图1中的男士通勤斜肩包为唯一商品母版，保持包体轮廓、单肩背带、前袋结构、深灰黑棋盘纹理、拉链、金属件和原有小尺寸标识一致。图2和图3只补充可确认的角度与细节。为 Shopify 商城生成干净、专业、具有统一商品身份的图片；不得改变商品结构，不得新增文字、Logo、口袋、配件或功能。</blockquote><p class="templateNote">说明：这是方便学习的通用表达，不是界面中出现过的内容，也不是本次七个生成任务的后台提示词原文。</p></div></div></section>
+
+    <section id="results"><div class="wrap"><div class="sectionHead"><div><small>04 · 最终结果</small><h2>同一件商品，覆盖七种商城用途</h2></div><p>每张图都有明确任务，不是把同一种构图重复七次。</p></div><img class="compare" src="compare/before-after.webp" alt="商品输入与商城结果对比"><div class="resultGrid"><article class="resultCard wide"><img src="results/product-hero.webp" alt="商城主图"><div><strong>商城主图</strong><span>首页与商品详情头图</span></div></article><article class="resultCard wide"><img src="results/lifestyle.webp" alt="生活方式图"><div><strong>生活方式图</strong><span>展示真实背负关系</span></div></article><article class="resultCard"><img src="results/material-detail.webp" alt="材质特写"><div><strong>材质特写</strong><span>纹理、拉链与五金</span></div></article><article class="resultCard"><img src="results/gallery-angle.webp" alt="多角度图"><div><strong>多角度图</strong><span>商城商品图集</span></div></article><article class="resultCard"><img src="results/collection-card.webp" alt="集合页卡片"><div><strong>集合页卡片</strong><span>分类页与搜索结果</span></div></article><article class="resultCard"><img src="results/social-share.webp" alt="社媒素材"><div><strong>社媒素材</strong><span>社交平台推广</span></div></article><article class="resultCard wide"><img src="results/video-cover.webp" alt="视频封面"><div><strong>视频封面</strong><span>短视频与动态广告入口</span></div></article></div></div></section>
+
+    <section><div class="wrap"><div class="sectionHead"><div><small>05 · 避坑提示</small><h2>客户最容易忽略的四件事</h2></div></div><div class="tips"><div class="tipCard"><i>1</i><span>母版选结构最清晰的一张，不要只选氛围最好的一张。</span></div><div class="tipCard"><i>2</i><span>补充图只说明角度和细节，不能覆盖母版中的商品事实。</span></div><div class="tipCard"><i>3</i><span>发现一张图有问题，只重做该素材位，不必重新生成整套。</span></div><div class="tipCard"><i>4</i><span>发布前逐张检查纹理、拉链数量、背带连接和原商品标识。</span></div></div></div></section>
+
+    <section><div class="wrap"><div class="sectionHead"><div><small>06 · 开始前确认</small><h2>遇到这些情况，页面会告诉你下一步</h2></div><p>功能和计费规则可能调整，本教程不展示固定价格；提交前请以 Pic365 当时页面显示为准。</p></div><div class="preflight"><article><strong>还没有登录</strong><p>可以先查看教程和准备素材；创建项目或保存进度时，按页面提示登录。</p></article><article><strong>当前条件不足</strong><p>提交生成前，以页面实时显示的可用状态和规则为准；如暂时无法提交，已填写的项目内容不会因此改变。</p></article><article><strong>功能暂时不可用</strong><p>保留素材和项目设置，稍后重试；不要反复提交同一任务，避免产生重复结果。</p></article></div></div></section>
+
+    <section><div class="wrap"><div class="cta"><div><span class="chip">下一步</span><h2>把你的商品也做成一整套</h2><p>进入 Pic365 创作页后选择“电商套图”，再按本教程建立 Shopify 商品项目。</p></div><a class="primary" id="tryDemo" href="../../../#create">进入 Pic365 开始创作</a></div></div></section>
+  </main>
+  <footer>Pic365 教学 Sample 01 · 本地评审版 · 未接入主页</footer>
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    const steps = [
+      ['真实界面 · STEP 01','建立商品项目','进入“电商套图”，填写商品名称，确认系统识别的分类，并选择 Shopify 销售平台。','steps/step-01.webp','Pic365 商品项目真实操作界面','位置：电商套图 → 商品'],
+      ['真实界面 · STEP 02','上传图片并设置母版','上传三张实拍图，把正面结构最清楚的一张设置为母版；另外两张只用于补充角度和材质。','steps/step-02.webp','Pic365 商品图片与母版真实操作界面','位置：电商套图 → 图片 → 商品图片'],
+      ['真实界面 · STEP 03','选择统一套图方案','选择 Shopify 品牌故事套图和统一视觉风格，让主图、场景图和细节图属于同一个商品系列。','steps/step-03.webp','Pic365 套图方案真实操作界面','位置：电商套图 → 方案 → 套图方案'],
+      ['真实界面 · STEP 04','确认七张图片清单','勾选商品页 Hero、集合页缩略图、多角度、生活方式、材质、社媒分享和视频封面。','steps/step-04.webp','Pic365 图片清单真实操作界面','位置：电商套图 → 方案 → 图片清单'],
+      ['真实界面 · STEP 05','生成并逐张检查','本次七个素材位全部真实生成。这里可以查看实际结果、单张重做、版本管理和下载。','steps/step-05.webp','Pic365 七张套图真实生成结果界面','位置：电商套图 → 生成'],
+      ['真实界面 · STEP 06','载入精修交付','七张采用图进入交付清单，可继续调整文字图层、版式和安全区，再统一导出。','steps/step-06.webp','Pic365 精修交付真实操作界面','位置：电商套图 → 交付']
+    ];
+    const tabs = [...document.querySelectorAll('[data-step]')];
+    tabs.forEach((button) => button.addEventListener('click', () => {
+      const item = steps[Number(button.dataset.step)];
+      tabs.forEach((entry) => {
+        const selected = entry === button;
+        entry.classList.toggle('active', selected);
+        entry.setAttribute('aria-selected', String(selected));
+      });
+      document.getElementById('stepNumber').textContent = item[0];
+      document.getElementById('stepTitle').textContent = item[1];
+      document.getElementById('stepBody').textContent = item[2];
+      const image = document.getElementById('stepImage'); image.src = item[3]; image.alt = item[4];
+      document.getElementById('stepWhere').textContent = item[5];
+    }));
+    document.querySelectorAll('[data-scroll]').forEach((button) => button.addEventListener('click', () => document.getElementById(button.dataset.scroll).scrollIntoView({behavior:'smooth'})));
+    const toast = document.getElementById('toast');
+    function showToast(text) { toast.textContent = text; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 1800); }
+    document.getElementById('copyPrompt').addEventListener('click', async () => { try { await navigator.clipboard.writeText(document.getElementById('promptText').textContent.trim()); showToast('借鉴模板已复制'); } catch { showToast('请手动选择模板复制'); } });
+    tabs.forEach((button, index) => {
+      button.tabIndex = index === 0 ? 0 : -1;
+      button.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+        event.preventDefault();
+        const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[nextIndex].click(); tabs[nextIndex].focus();
+      });
+      button.addEventListener('click', () => tabs.forEach((entry) => { entry.tabIndex = entry === button ? 0 : -1; }));
+    });
+  </script>
+</body>
+</html>

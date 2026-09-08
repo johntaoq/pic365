@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "slug": "01-backpack-store-set",
+  "status": "published",
+  "enabled": true,
+  "featured": true,
+  "order": 1,
+  "category": "电商运营",
+  "durationMinutes": 4,
+  "title": "一张包图，生成完整商城套图",
+  "subtitle": "2026-09-06 使用三张真实商品照片，在 Pic365 本地完整执行 Shopify 套图流程并生成七张结果。",
+  "problem": "商品已经拍摄完成，但照片背景、角度和用途单一，无法直接覆盖商城首页、集合页、详情页与社交媒体。",
+  "audience": [
+    "跨境电商运营",
+    "独立站商家",
+    "商品设计师",
+    "代运营团队"
+  ],
+  "entry": {
+    "page": "灵感生图",
+    "mode": "电商套图",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "进入创作页后选择电商套图，再建立 Shopify 商品项目。"
+  },
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以查看教程和准备素材；创建项目或保存进度时按页面提示登录。",
+    "unavailable": "功能暂时不可用时保留素材和项目设置，稍后重试，不要反复提交同一任务。"
+  },
+  "inputs": [
+    {
+      "label": "商品母版",
+      "file": "source/source-01.webp",
+      "purpose": "锁定包体结构、纹理、拉链、背带和原有标识"
+    },
+    {
+      "label": "角度参考",
+      "file": "source/source-02.webp",
+      "purpose": "补充整体比例、肩带与侧面关系"
+    },
+    {
+      "label": "材质参考",
+      "file": "source/source-03.webp",
+      "purpose": "补充皮革纹理、车线、拉链和金属标识"
+    }
+  ],
+  "steps": [
+    {
+      "number": 1,
+      "title": "建立商品项目",
+      "body": "在电商套图的“商品”步骤填写商品名、选择鞋履与箱包 / 手提包，并选择 Shopify。",
+      "image": "steps/step-01.webp"
+    },
+    {
+      "number": 2,
+      "title": "上传图片并设置母版",
+      "body": "上传三张实拍图，把正面结构最清晰的照片设置为商品母版，另外两张分别补充整体角度和材质细节。",
+      "image": "steps/step-02.webp"
+    },
+    {
+      "number": 3,
+      "title": "选择套图方案",
+      "body": "采用 Shopify 品牌故事套图和统一的强转化视觉方向，让整套图片保持同一商品气质。",
+      "image": "steps/step-03.webp"
+    },
+    {
+      "number": 4,
+      "title": "确认图片清单",
+      "body": "勾选商品页 Hero、集合页缩略图、多角度、生活方式、材质、社媒分享和视频封面七个用途。",
+      "image": "steps/step-04.webp"
+    },
+    {
+      "number": 5,
+      "title": "查看真实生成结果",
+      "body": "七个素材位均由本次项目真实生成。可逐张下载、重做或进入版本中心，不需要重跑整套。",
+      "image": "steps/step-05.webp"
+    },
+    {
+      "number": 6,
+      "title": "进入精修交付",
+      "body": "将七张采用图载入交付区，进行文字图层、版式、安全区、顺序和导出设置。",
+      "image": "steps/step-06.webp"
+    }
+  ],
+  "prompt": "以图1中的男士通勤斜肩包为唯一商品母版，保持包体轮廓、单肩背带、前袋结构、深灰黑棋盘纹理、拉链、金属件和原有小尺寸标识一致。图2和图3只补充可确认的角度与细节。为 Shopify 商城生成干净、专业、具有统一商品身份的图片；不得改变商品结构，不得新增文字、Logo、口袋、配件或功能。",
+  "promptDisclosure": {
+    "type": "teaching-summary",
+    "userEntered": false,
+    "description": "该文本是根据本次项目设置归纳的可借鉴模板，不是界面操作，也不是七个生成任务的后台提示词原文。系统实际按每个图片槽位分别组合平台、素材、母版、商品事实、视觉风格与交付约束。"
+  },
+  "results": [
+    {
+      "label": "商城主图",
+      "file": "results/product-hero.webp",
+      "usage": "首页与商品详情头图"
+    },
+    {
+      "label": "生活方式图",
+      "file": "results/lifestyle.webp",
+      "usage": "展示真实背负关系"
+    },
+    {
+      "label": "材质特写",
+      "file": "results/material-detail.webp",
+      "usage": "展示纹理、拉链和五金"
+    },
+    {
+      "label": "集合页卡片",
+      "file": "results/collection-card.webp",
+      "usage": "商品列表与分类页"
+    },
+    {
+      "label": "多角度图",
+      "file": "results/gallery-angle.webp",
+      "usage": "商品图集"
+    },
+    {
+      "label": "社媒素材",
+      "file": "results/social-share.webp",
+      "usage": "社交平台宣传"
+    },
+    {
+      "label": "视频封面",
+      "file": "results/video-cover.webp",
+      "usage": "短视频和动态广告入口"
+    }
+  ],
+  "tips": [
+    "母版选择结构最清晰、遮挡最少的一张，不要只选择氛围最好的一张。",
+    "补充图负责说明角度和细节，不能与母版发生商品事实冲突。",
+    "发现某一个素材位有问题时，只重做该图，不必重新生成整套。",
+    "上线前必须逐张检查原商品标识、包体纹理、拉链数量和背带连接位置。"
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/before-after.webp",
+    "screens": "screens/"
+  },
+  "run": {
+    "date": "2026-09-06",
+    "projectId": "63f5321c-86f8-46f7-98c6-d17d3ff803d7",
+    "providerId": "f9ae6896-6299-4619-9774-243ff3a3f3ad",
+    "providerName": "低价GPT",
+    "resultCount": 7
+  }
+}

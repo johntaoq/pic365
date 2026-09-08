@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "slug": "10-story-to-picture-book",
+  "status": "published",
+  "enabled": true,
+  "featured": false,
+  "order": 10,
+  "category": "绘本创作",
+  "durationMinutes": 6,
+  "title": "一个故事梗概，变成连续绘本",
+  "subtitle": "用原创角色设定卡和六条分镜提示词，真实生成一套连续儿童绘本画面。",
+  "problem": "故事已经写好，但逐张生成容易让角色外貌、服装和道具发生变化，也难以保持镜头顺序。",
+  "audience": [
+    "绘本创作者",
+    "儿童内容团队",
+    "教育机构",
+    "故事板设计师"
+  ],
+  "entry": {
+    "page": "灵感生图",
+    "mode": "批量生图",
+    "label": "用同款案例开始创作",
+    "href": "/#create",
+    "instruction": "先生成或上传原创角色设定卡，再进入批量生图添加分镜提示词。"
+  },
+  "inputs": [
+    {
+      "label": "原创角色设定卡",
+      "file": "source/character-card.webp",
+      "purpose": "锁定栗栗的外貌、雨衣、背包、雨靴和叶片别针"
+    }
+  ],
+  "steps": [
+    {
+      "number": 1,
+      "title": "建立原创角色设定",
+      "body": "先在单图创作生成正面、侧面、背面和表情参考。",
+      "image": "steps/step-01.webp"
+    },
+    {
+      "number": 2,
+      "title": "检查角色母版",
+      "body": "确认角色识别特征清楚且没有文字或版权元素。",
+      "image": "steps/step-02.webp"
+    },
+    {
+      "number": 3,
+      "title": "上传角色参考",
+      "body": "在批量生图中把设定卡作为每个镜头共同使用的参考图。",
+      "image": "steps/step-03.webp"
+    },
+    {
+      "number": 4,
+      "title": "拆成六条分镜",
+      "body": "每行只描述一个时刻，同时重复角色锁定条件。",
+      "image": "steps/step-04.webp"
+    },
+    {
+      "number": 5,
+      "title": "提交并查看任务",
+      "body": "一次提交后在任务列表观察排队、失败和完成状态。",
+      "image": "steps/step-05.webp"
+    },
+    {
+      "number": 6,
+      "title": "失败镜头单独重做",
+      "body": "首次并发任务被取消后，保留角色卡并逐镜头重做，无需重做角色设定。",
+      "image": "steps/step-06.webp"
+    },
+    {
+      "number": 7,
+      "title": "按故事顺序验收",
+      "body": "检查六幅画面的服装、背包、雨靴、种子与灯塔是否连续。",
+      "image": "steps/step-07.webp"
+    }
+  ],
+  "results": [
+    {
+      "label": "发现种子",
+      "file": "results/scene-01.webp",
+      "usage": "故事开端"
+    },
+    {
+      "label": "森林出发",
+      "file": "results/scene-02.webp",
+      "usage": "角色行动"
+    },
+    {
+      "label": "遇到断桥",
+      "file": "results/scene-03.webp",
+      "usage": "故事冲突"
+    },
+    {
+      "label": "搭桥过河",
+      "file": "results/scene-04.webp",
+      "usage": "解决问题"
+    },
+    {
+      "label": "灯塔播种",
+      "file": "results/scene-05.webp",
+      "usage": "接近目标"
+    },
+    {
+      "label": "花朵发光",
+      "file": "results/scene-06.webp",
+      "usage": "故事结尾"
+    }
+  ],
+  "tips": [
+    "正式上线只使用原创或已授权角色。",
+    "每条提示词都重复角色固定特征，不依赖上一条提示词。",
+    "失败或不一致的镜头单独重做，不要整批重跑。",
+    "绘本文字建议后期排版，不让模型直接生成。"
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/story-sequence.webp"
+  },
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以准备故事梗概和角色设定；保存或提交任务时按页面提示登录。",
+    "unavailable": "批量任务暂时不可用时保留角色卡和分镜提示词，逐镜头稍后重试。"
+  },
+  "prompt": "以图1中的原创小红熊猫“栗栗”为唯一角色母版，严格保持红棕色毛发、奶白脸颊、环纹尾巴、黄色连帽雨衣、青绿色小背包、蓝色雨靴和绿色叶片别针一致。每条提示词只描述一个故事时刻，并保持统一儿童绘本画风。"
+}

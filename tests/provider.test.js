@@ -215,6 +215,37 @@ test('multipart image providers upload reference images as files without a manua
   }
 });
 
+test('MAI-Image-2.6 multipart editing accepts five images and rejects a sixth', async () => {
+  const previousFetch = globalThis.fetch;
+  let requestOptions;
+  globalThis.fetch = async (_url, options) => {
+    requestOptions = options;
+    return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+
+  const providerConfig = {
+    name: 'MAI Image 2.6 Flash',
+    providerType: 'openai-compatible-multipart',
+    baseUrl: 'https://provider.example',
+    apiKey: 'mai-test-key',
+    model: 'MAI-Image-2.6-Flash'
+  };
+  const images = Array(5).fill('data:image/png;base64,aGVsbG8=');
+  try {
+    await editImage({ prompt: 'Use all references', images, providerConfig });
+    assert.equal(requestOptions.body.getAll('image').length, 5);
+    await assert.rejects(
+      () => editImage({ prompt: 'Too many references', images: [...images, images[0]], providerConfig }),
+      (error) => error?.code === 'TOO_MANY_REFERENCE_IMAGES'
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('auto-compatible providers retry image edits as multipart when JSON is rejected', async () => {
   const previousFetch = globalThis.fetch;
   const requests = [];

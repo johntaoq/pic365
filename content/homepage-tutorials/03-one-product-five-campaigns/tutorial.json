@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "slug": "03-one-product-five-campaigns",
+  "enabled": true,
+  "featured": true,
+  "order": 3,
+  "category": "广告创作",
+  "title": "一张商品图，测试五种广告创意",
+  "subtitle": "真实执行：单图配五条提示词，一次生成五个广告方向",
+  "duration": "3分钟",
+  "entry": {
+    "page": "灵感生图",
+    "mode": "批量生图",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "进入灵感生图后选择批量生图，上传一张商品图并添加多条提示词。"
+  },
+  "sourceImages": [
+    {
+      "label": "唯一商品图",
+      "file": "source/source-01.webp",
+      "purpose": "锁定圆形底座、旋转关节、倾斜背板、三条开孔和两个承托钩"
+    }
+  ],
+  "steps": [
+    {
+      "title": "进入批量生图",
+      "number": 1,
+      "image": "steps/step-01.webp"
+    },
+    {
+      "title": "上传唯一商品图",
+      "number": 2,
+      "image": "steps/step-02.webp"
+    },
+    {
+      "title": "填写五条提示词",
+      "number": 3,
+      "image": "steps/step-03.webp"
+    },
+    {
+      "title": "查看五个任务生成中",
+      "number": 4,
+      "image": "steps/step-04.webp"
+    },
+    {
+      "title": "确认五个任务完成",
+      "number": 5,
+      "image": "steps/step-05.webp"
+    },
+    {
+      "title": "打开结果大图检查",
+      "number": 6,
+      "image": "steps/step-06.webp"
+    }
+  ],
+  "promptMode": "single-image-multiple-prompts",
+  "promptCount": 5,
+  "results": [
+    {
+      "label": "极简棚拍",
+      "file": "results/01-minimal.webp"
+    },
+    {
+      "label": "办公桌面",
+      "file": "results/02-office.webp"
+    },
+    {
+      "label": "黑金轻奢",
+      "file": "results/03-luxury.webp"
+    },
+    {
+      "label": "节日礼赠",
+      "file": "results/04-festival.webp"
+    },
+    {
+      "label": "年轻社媒",
+      "file": "results/05-social.webp"
+    }
+  ],
+  "status": "published",
+  "durationMinutes": 3,
+  "problem": "同一件商品需要测试多种广告方向，但逐条重复上传和等待既慢，也不方便团队并排比较。",
+  "audience": [
+    "广告设计师",
+    "品牌运营",
+    "社交媒体团队",
+    "电商视觉团队"
+  ],
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以查看教程和准备素材；保存或提交任务时按页面提示登录。",
+    "unavailable": "功能暂时不可用时保留图片和提示词，稍后重试，不要重复提交相同任务。"
+  },
+  "prompt": "保持图中黑色金属手机支架的圆形底座、旋转关节、倾斜支撑板、三条竖向开孔、两个承托钩和整体比例完全一致。制作极简浅灰棚拍广告图，柔和阴影，主体居中，背景干净，不增加文字、Logo、手机或配件。",
+  "tips": [
+    "每条提示词都重复商品结构约束。",
+    "五个方向只改变背景、光线、场景和广告气质。",
+    "结果并排比较后再选择一个方向继续精修。",
+    "发现商品结构漂移时只重做对应任务。"
+  ]
+}

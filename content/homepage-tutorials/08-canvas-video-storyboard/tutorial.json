@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "slug": "08-canvas-video-storyboard",
+  "enabled": true,
+  "featured": true,
+  "order": 8,
+  "category": "无限画布",
+  "title": "把角色和场景排成一段短视频",
+  "subtitle": "真实画布复盘：整理素材、锁定角色、生成镜头分支，再让选中的画面动起来",
+  "duration": "5分钟",
+  "entry": {
+    "page": "无限画布",
+    "mode": "画布项目",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#canvas",
+    "instruction": "把角色、场景和镜头素材加入画布，锁定关键实体后再建立生成分支。"
+  },
+  "steps": [
+    {
+      "title": "打开真实画布项目",
+      "number": 1,
+      "image": "steps/step-01.webp"
+    },
+    {
+      "title": "适应内容查看完整关系",
+      "number": 2,
+      "image": "steps/step-02.webp"
+    },
+    {
+      "title": "锁定关键角色实体",
+      "number": 3,
+      "image": "steps/step-03.webp"
+    },
+    {
+      "title": "从选中画面进入视频模式",
+      "number": 4,
+      "image": "steps/step-04.webp"
+    },
+    {
+      "title": "播放并检查视频结果",
+      "number": 5,
+      "image": "steps/step-05.webp"
+    }
+  ],
+  "branches": [
+    {
+      "label": "开篇支线",
+      "nodes": [
+        "A1",
+        "A2 视频"
+      ],
+      "files": [
+        "results/branch-a1.webp",
+        "results/branch-a2-video.webp"
+      ]
+    },
+    {
+      "label": "角色支线",
+      "nodes": [
+        "B",
+        "B1",
+        "B2",
+        "B3-01 视频"
+      ],
+      "files": [
+        "results/branch-b-source.webp",
+        "results/branch-b1.webp",
+        "results/branch-b2.webp",
+        "results/branch-b3-video.webp"
+      ]
+    }
+  ],
+  "video": {
+    "file": "results/storyboard-preview.mp4",
+    "poster": "results/storyboard-preview-poster.webp",
+    "seconds": 4,
+    "size": "1280×720"
+  },
+  "status": "published",
+  "durationMinutes": 5,
+  "problem": "角色、场景、道具和镜头版本分散时，很难看清引用关系，也不方便把选定画面继续生成视频。",
+  "audience": [
+    "短剧编导",
+    "分镜师",
+    "短视频创作者",
+    "视觉策划团队"
+  ],
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以查看教程；保存画布项目或生成视频时按页面提示登录。",
+    "unavailable": "视频能力暂时不可用时先保存静态分镜和引用关系，稍后再生成动态结果。"
+  },
+  "inputs": [
+    {
+      "label": "真实画布镜头源图",
+      "file": "source/source-01.webp",
+      "purpose": "展示角色、场景和镜头分支的起点"
+    }
+  ],
+  "prompt": "保持画布中已锁定角色的身份、服装和道具一致，围绕当前选中镜头描述一个主要动作、镜头运动和氛围变化，再将确认后的静态画面生成短视频。",
+  "results": [
+    {
+      "label": "开篇镜头",
+      "file": "results/01-opening.webp",
+      "usage": "故事开场"
+    },
+    {
+      "label": "角色镜头",
+      "file": "results/02-character.webp",
+      "usage": "角色建立"
+    },
+    {
+      "label": "骑乘镜头",
+      "file": "results/03-riding.webp",
+      "usage": "动作推进"
+    },
+    {
+      "label": "战斗镜头",
+      "file": "results/04-battle.webp",
+      "usage": "冲突镜头"
+    },
+    {
+      "label": "短视频预览",
+      "file": "results/storyboard-preview.mp4",
+      "usage": "图生视频结果"
+    }
+  ],
+  "tips": [
+    "先明确角色、场景和道具职责。",
+    "锁定已经确认的关键实体。",
+    "每个镜头只表达一个主要动作。",
+    "先验收静态图，再投入视频生成。"
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/storyboard-overview.webp",
+    "video": "results/storyboard-preview.mp4"
+  }
+}

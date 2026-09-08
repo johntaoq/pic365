@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   GEMINI_IMAGE_RATIO_PRESETS,
+  getImageModelConstraints,
   isGeminiImageModel,
   parseImageSize,
   resolveProviderImageQuality
@@ -286,8 +287,20 @@ export async function editImage({
 }) {
   const config = providerConfig || getProviderConfig();
   const imageModel = resolveImageModel(config, model);
+  const constraints = getImageModelConstraints(imageModel);
+  const requestedImages = (Array.isArray(images) ? images : []).filter(Boolean);
+  if (requestedImages.length && constraints.maxReferenceImages === 0) {
+    const error = new Error('REFERENCE_IMAGES_UNSUPPORTED');
+    error.code = 'REFERENCE_IMAGES_UNSUPPORTED';
+    throw error;
+  }
+  if (requestedImages.length > constraints.maxReferenceImages) {
+    const error = new Error('TOO_MANY_REFERENCE_IMAGES');
+    error.code = 'TOO_MANY_REFERENCE_IMAGES';
+    throw error;
+  }
   if (isGeminiImageModel(imageModel)) {
-    const geminiImages = (Array.isArray(images) ? images : []).filter(Boolean).slice(0, 9);
+    const geminiImages = requestedImages;
     if (!geminiImages.length) throw new Error('IMAGE_INPUT_REQUIRED');
     return requestGeminiChatImage({
       prompt,
@@ -299,9 +312,7 @@ export async function editImage({
       providerConfig: config
     });
   }
-  const imageInputs = (Array.isArray(images) ? images : [])
-    .filter(Boolean)
-    .slice(0, 9)
+  const imageInputs = requestedImages
     .map((imageUrl) => ({ image_url: imageUrl }));
   if (!imageInputs.length) throw new Error('IMAGE_INPUT_REQUIRED');
 
@@ -321,7 +332,7 @@ export async function editImage({
   let providerResponse = await requestProvider(
     'images/edits',
     multipartPreferred
-      ? buildMultipartEditBody({ prompt, images: images.slice(0, 9), model: imageModel, size, quality, format })
+      ? buildMultipartEditBody({ prompt, images: requestedImages, model: imageModel, size, quality, format })
       : requestBody,
     { signal, timeoutMs: IMAGE_REQUEST_TIMEOUT_MS, providerConfig: config }
   );
@@ -329,7 +340,7 @@ export async function editImage({
     multipartEditRoutes.add(routeKey);
     providerResponse = await requestProvider(
       'images/edits',
-      buildMultipartEditBody({ prompt, images: images.slice(0, 9), model: imageModel, size, quality, format }),
+      buildMultipartEditBody({ prompt, images: requestedImages, model: imageModel, size, quality, format }),
       { signal, timeoutMs: IMAGE_REQUEST_TIMEOUT_MS, providerConfig: config }
     );
   }

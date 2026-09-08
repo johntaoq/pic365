@@ -241,3 +241,43 @@ test('MAI provider quotes enforce the provider-specific canvas limits', async ()
   assert.equal(auto.statusCode, 400);
   assert.equal(auto.payload.reason, 'AUTO_SIZE_UNSUPPORTED');
 });
+
+test('MAI-Image-2.6 quotes accept the expanded canvas and at most five image inputs', async () => {
+  const provider = localDb.saveImageProviderConfig({
+    name: 'MAI 2.6 pricing test',
+    providerType: 'openai-compatible-multipart',
+    baseUrl: 'https://images.example.com',
+    apiKey: 'mai-2-6-pricing-test-key',
+    model: 'MAI-Image-2.6-Flash',
+    pricingStrategy: 'fixed-quality',
+    pricingConfig: {
+      strategy: 'fixed-quality',
+      qualityPricesRmb: { low: 0.4, medium: 0.8, high: 1.6 },
+      referenceImagePriceRmb: 0.1
+    },
+    enabled: true,
+    isDefault: false
+  });
+
+  const accepted = await invoke({
+    method: 'GET',
+    query: { size: '1536x1536', quality: 'medium', referenceCount: '5', providerId: provider.id }
+  });
+  assert.equal(accepted.statusCode, 200);
+  assert.equal(accepted.payload.pricing.maximumPixels, 1536 * 1536);
+  assert.equal(accepted.payload.pricing.referenceCount, 5);
+
+  const tooManyInputs = await invoke({
+    method: 'GET',
+    query: { size: '1024x1024', quality: 'medium', referenceCount: '6', providerId: provider.id }
+  });
+  assert.equal(tooManyInputs.statusCode, 400);
+  assert.equal(tooManyInputs.payload.error, 'TOO_MANY_REFERENCE_IMAGES');
+
+  const tooLarge = await invoke({
+    method: 'GET',
+    query: { size: '1536x1552', quality: 'medium', providerId: provider.id }
+  });
+  assert.equal(tooLarge.statusCode, 400);
+  assert.equal(tooLarge.payload.reason, 'MAI_MAX_PIXELS');
+});

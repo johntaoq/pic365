@@ -25,7 +25,7 @@ function permission(profile, value) {
 
 export function GlobalMenuSettingsPanel({ language = 'zh', onChanged }) {
   const zh = language === 'zh';
-  const [settings, setSettings] = useState({ templates: true, cases: true, api: true });
+  const [settings, setSettings] = useState({ ecommerce: true, templates: true, cases: true, api: true });
   const [registrationPolicy, setRegistrationPolicy] = useState({ enabled: true, allowlist: [], denylist: [] });
   const [ecommercePrompt, setEcommercePrompt] = useState({ prompt: '', defaultPrompt: '', isDefault: true });
   const [status, setStatus] = useState('loading');
@@ -146,6 +146,7 @@ export function GlobalMenuSettingsPanel({ language = 'zh', onChanged }) {
     <div className="adminSectionHeading"><div><h3><Settings size={18} />{zh ? '全局设置' : 'Global settings'}</h3><p>{zh ? '全局关闭后，所有用户都不能通过个人设置重新开启。' : 'Globally disabled menu items cannot be re-enabled by users.'}</p></div></div>
     <div className="governanceSwitchGrid">
       {[
+        ['ecommerce', zh ? '允许显示“电商套图”' : 'Allow Product image sets'],
         ['templates', zh ? '允许显示“模板”' : 'Allow Templates'],
         ['cases', zh ? '允许显示“范例”' : 'Allow Examples'],
         ['api', zh ? '允许显示“API”' : 'Allow API']
@@ -524,8 +525,19 @@ export function PersonalMenuSettings({ language = 'zh', profile, onMenuChanged }
   const zh = language === 'zh';
   const [menu, setMenu] = useState(null);
   useEffect(() => {
-    fetch('/api/menu-settings', { cache: 'no-store' }).then((r) => r.json()).then((p) => p.ok && setMenu(p.menu)).catch(() => undefined);
-  }, []);
+    let cancelled = false;
+    if (!profile?.id) {
+      setMenu(null);
+      return () => { cancelled = true; };
+    }
+    fetch('/api/menu-settings', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((p) => {
+        if (!cancelled && p.ok) setMenu(p.menu);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [profile?.id]);
   async function updatePreference(key, checked) {
     const next = { ...menu.personal, [key]: checked };
     setMenu((current) => ({ ...current, personal: next }));
@@ -535,7 +547,7 @@ export function PersonalMenuSettings({ language = 'zh', profile, onMenuChanged }
   }
   if (!profile) return null;
   return <div className="accountGovernanceGrid personalSettingsOnly"><section className="accountGovernanceCard"><h3><Settings size={17} />{zh ? '界面设置' : 'Interface settings'}</h3><p>{zh ? '隐藏不常用的顶部菜单。全局关闭的项目不能由个人重新开启。' : 'Hide unused top menu items.'}</p>{menu ? <div className="accountMenuPreferences">{[
-    ['hideEcommerce', null, zh ? '隐藏“电商套图”' : 'Hide Product image sets'],
+    ['hideEcommerce', 'ecommerce', zh ? '隐藏“电商套图”' : 'Hide Product image sets'],
     ['hideTemplates', 'templates', zh ? '隐藏“模板”' : 'Hide Templates'],
     ['hideCases', 'cases', zh ? '隐藏“范例”' : 'Hide Examples'],
     ['hideApi', 'api', zh ? '隐藏“API”' : 'Hide API']

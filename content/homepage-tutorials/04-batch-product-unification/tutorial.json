@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "slug": "04-batch-product-unification",
+  "status": "published",
+  "enabled": true,
+  "featured": true,
+  "order": 4,
+  "category": "批量改图",
+  "duration": "5分钟",
+  "durationMinutes": 5,
+  "title": "四张商品照片，一次统一风格",
+  "subtitle": "2026-09-06 使用 Pic365 批量改图真实执行两个批次：黑金电影舞台，以及成年阳光男模佩戴的休闲户外运动场景。",
+  "problem": "同一商品的图片来自不同拍摄批次，不仅背景杂乱，整体视觉也缺少记忆点。逐张做广告级布光费时，且很难保持同一系列的氛围。",
+  "audience": [
+    "网店运营",
+    "摄影后期",
+    "批量上新团队",
+    "电商代运营"
+  ],
+  "entry": {
+    "page": "灵感生图",
+    "mode": "批量生图",
+    "label": "进入批量改图",
+    "href": "/#create",
+    "instruction": "进入灵感生图后选择“批量生图”，上传多张图片并切换到“统一提示词”。"
+  },
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "批量改图需要登录；未登录时可以先准备图片、顺序和统一提示词。",
+    "unavailable": "批量任务暂时不可用时保留素材与提示词，稍后重试，不要重复提交。"
+  },
+  "inputs": [
+    {
+      "label": "正面实拍",
+      "file": "source/source-01.webp",
+      "purpose": "保留正面结构、纹理、拉链和标识"
+    },
+    {
+      "label": "斜角实拍",
+      "file": "source/source-02.webp",
+      "purpose": "保留原始斜角和背带展开关系"
+    },
+    {
+      "label": "既有横版商品图",
+      "file": "source/source-03.webp",
+      "purpose": "验证横版画幅仍按原比例输出"
+    },
+    {
+      "label": "既有方形商品图",
+      "file": "source/source-04.webp",
+      "purpose": "验证方形画幅与独立商品角度"
+    }
+  ],
+  "steps": [
+    {
+      "number": 1,
+      "title": "进入批量生图",
+      "body": "在灵感生图顶部选择“批量生图”，确认当前面板支持最多 10 张图片。",
+      "image": "steps/step-01.webp"
+    },
+    {
+      "number": 2,
+      "title": "一次上传四张图片",
+      "body": "上传不同角度和画幅的商品图，先检查缩略图与文件顺序，确保每张图都完整可辨认。",
+      "image": "steps/step-02.webp"
+    },
+    {
+      "number": 3,
+      "title": "切换统一提示词",
+      "body": "选择“统一提示词”，写入高端商业与电影质感的共同风格要求；选择高质量档并勾选保留原图尺寸。",
+      "image": "steps/step-03.webp"
+    },
+    {
+      "number": 4,
+      "title": "提交后查看任务列表",
+      "body": "一次提交会拆成四个独立任务。按钮提交后会锁定，任务状态统一在任务列表查看。",
+      "image": "steps/step-04.webp"
+    },
+    {
+      "number": 5,
+      "title": "逐张检查并决定是否重做",
+      "body": "四张任务分别完成。若某张商品结构、角度或标识不符合原图，只重做该张，不必重新提交整批。",
+      "image": "steps/step-05.webp"
+    },
+    {
+      "number": 6,
+      "title": "打开电影场景结果",
+      "body": "放大检查黑金展台、冷暖轮廓光和商品结构，确认四张图的视觉语言统一。",
+      "image": "steps/step-06.webp"
+    },
+    {
+      "number": 7,
+      "title": "切换休闲户外运动场景",
+      "body": "保留同一组商品图，替换为户外运动提示词，明确成年男模、真实佩戴关系、河滨绿道与晨光，并选择 Low 质量。",
+      "image": "steps/step-07.webp"
+    },
+    {
+      "number": 8,
+      "title": "核验户外人像结果",
+      "body": "四张 Low 质量任务全部完成，逐张检查模特年龄、肢体、背带受力、包体比例与商品细节。",
+      "image": "steps/step-08.webp"
+    }
+  ],
+  "prompt": "分别以每张输入图中的男士通勤斜肩包为唯一商品母版，严格保持该图原有拍摄角度、包体轮廓、深色棋盘纹理、前袋、拉链、背带连接、金属件和原有小尺寸标识不变。统一应用“高端商业 × 电影质感”风格：将商品置于深黑曜石色的大型未来展台中，背景有巨型弧形建筑轮廓和克制空间层次，使用顶部暖金色聚光、侧后方冷青色轮廓光、轻微体积雾和暗色镜面地面，形成强视觉中心、戏剧化明暗对比与奢侈品发布会氛围。按每张原图镜头角度自然适配展台透视，保持原画幅比例，商品完整清晰，不增加人物、文字、装饰道具、口袋、背带或其他商品结构。",
+  "promptDisclosure": {
+    "type": "user-entered",
+    "userEntered": true,
+    "description": "这是本次真实批量任务在“统一提示词”输入框中使用的完整文字。"
+  },
+  "outdoorPrompt": "分别以每张输入图中的男士通勤斜肩包为唯一商品母版，严格保持包体轮廓、深色棋盘纹理、前袋、拉链、背带连接、金属件和原有小尺寸标识不变。统一生成真实、高级的休闲户外运动广告摄影：一位 20–28 岁的成年东亚男性模特，阳光帅气、健康利落，穿简洁浅色功能夹克、深色运动长裤和干净运动鞋，将该斜肩包按真实使用方式自然斜跨在背部或胸前，包体占比合理、完整可见，背带贴合肩部与躯干，不遮挡关键结构。场景统一为清晨的现代城市河滨公园绿道，有干净的混凝土路面、绿色树木、远处现代建筑和轻微晨雾，模特可自然步行、慢跑或停下整理背带。使用温暖低角度阳光、清晰轮廓光、自然抓拍动势和运动品牌画册质感，画面通透、有活力但不夸张。保持每张原画幅比例，不增加文字、水印、其他包袋、额外口袋、背带或配件，不改变商品颜色、材质和数量。",
+  "results": [
+    {
+      "label": "正面竖图",
+      "file": "results/01-unified.webp",
+      "sourceSize": "1080×1567",
+      "outputSize": "1088×1568"
+    },
+    {
+      "label": "斜角竖图",
+      "file": "results/02-unified.webp",
+      "sourceSize": "1080×1430",
+      "outputSize": "1088×1440"
+    },
+    {
+      "label": "横版商品图",
+      "file": "results/03-unified.webp",
+      "sourceSize": "1536×1024",
+      "outputSize": "1536×1024"
+    },
+    {
+      "label": "方形商品图",
+      "file": "results/04-unified.webp",
+      "sourceSize": "1024×1024",
+      "outputSize": "1024×1024"
+    },
+    {
+      "label": "户外慢跑竖图",
+      "file": "results/01-outdoor.webp",
+      "sourceSize": "1080×1567",
+      "outputSize": "1088×1568",
+      "scenario": "outdoor"
+    },
+    {
+      "label": "背部佩戴竖图",
+      "file": "results/02-outdoor.webp",
+      "sourceSize": "1080×1430",
+      "outputSize": "1088×1440",
+      "scenario": "outdoor"
+    },
+    {
+      "label": "河滨步行横图",
+      "file": "results/03-outdoor.webp",
+      "sourceSize": "1536×1024",
+      "outputSize": "1536×1024",
+      "scenario": "outdoor"
+    },
+    {
+      "label": "户外画册方图",
+      "file": "results/04-outdoor.webp",
+      "sourceSize": "1024×1024",
+      "outputSize": "1024×1024",
+      "scenario": "outdoor"
+    }
+  ],
+  "tips": [
+    "统一提示词只写所有图片共同需要改变的内容，不要混入某一张独有的局部要求。",
+    "保留原图尺寸时，系统会按模型步进对边长向上取整，因此 1080×1567 会得到 1088×1568。",
+    "只包含局部细节、无法看清完整商品结构的图片，不适合要求模型补全整件商品，应单独处理。",
+    "批量完成后仍要逐张检查结构与标识；发现异常时使用任务卡上的“重做”。"
+  ],
+  "assets": {
+    "cover": "cover.webp",
+    "compare": "compare/before-after.webp",
+    "screens": "screens/"
+  },
+  "run": {
+    "date": "2026-09-06",
+    "batchId": "repair-bea09183-2f63-406c-a1b7-b75e10c16fc7",
+    "providerId": "7b21b869-6845-42c4-bd4b-997b0233e942",
+    "providerName": "高速稳定GPT生图2.0",
+    "quality": "high",
+    "preserveOriginalSize": true,
+    "resultCount": 4,
+    "generationIds": [
+      "aed23734-3504-469b-873c-8f8e5583c05e",
+      "d6ca59d9-edd9-46a9-9ef3-9036eb2cdaf0",
+      "0a8bb5dc-f92c-48cc-aa6c-269c5dc56d1e",
+      "98ef87d2-4cf0-4a95-b076-4b7cffb12685"
+    ]
+  },
+  "outdoorRun": {
+    "date": "2026-09-06",
+    "batchId": "repair-65d35544-f94a-4b6a-80f4-7ac29ad36b1c",
+    "providerId": "7b21b869-6845-42c4-bd4b-997b0233e942",
+    "providerName": "高速稳定GPT生图2.0",
+    "quality": "low",
+    "preserveOriginalSize": true,
+    "resultCount": 4,
+    "generationIds": [
+      "b3d26695-7bd5-4499-9d50-4d093fd85488",
+      "7f8a650f-48dd-4ae0-bd54-101b0c794c04",
+      "5bdab4f3-bb65-4553-96c9-3f33f068f54f",
+      "7cc13a5a-eb23-42d2-bfbe-861e3b68c5ea"
+    ]
+  }
+}

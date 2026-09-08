@@ -137,6 +137,7 @@ export function getGlobalMenuSettings() {
   const row = getDb().prepare('SELECT value_json, updated_at FROM app_settings WHERE setting_key = ?').get(GLOBAL_MENU_SETTING_KEY);
   const value = parseJson(row?.value_json);
   return {
+    ecommerce: normalizeBoolean(value.ecommerce, true),
     templates: normalizeBoolean(value.templates, true),
     cases: normalizeBoolean(value.cases, true),
     api: normalizeBoolean(value.api, true),
@@ -149,6 +150,7 @@ export function updateGlobalMenuSettings(actorUserId, values = {}, auditMeta = {
   const db = getDb();
   const previous = getGlobalMenuSettings();
   const next = {
+    ecommerce: normalizeBoolean(values.ecommerce, previous.ecommerce),
     templates: normalizeBoolean(values.templates, previous.templates),
     cases: normalizeBoolean(values.cases, previous.cases),
     api: normalizeBoolean(values.api, previous.api)
@@ -256,7 +258,7 @@ export function getEffectiveMenuSettings(userId = null) {
     global,
     personal,
     effective: {
-      ecommerce: !personal.hideEcommerce,
+      ecommerce: global.ecommerce && !personal.hideEcommerce,
       templates: global.templates && !personal.hideTemplates,
       cases: global.cases && !personal.hideCases,
       api: global.api && !personal.hideApi

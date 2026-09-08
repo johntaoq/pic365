@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "slug": "05-toy-precision-retouch",
+  "enabled": true,
+  "featured": true,
+  "order": 5,
+  "category": "图片精修",
+  "title": "只改一个地方，其余画面尽量保留",
+  "subtitle": "真实执行：涂抹飞虫，锁定原图比例，生成后放大复核",
+  "duration": "3分钟",
+  "entry": {
+    "page": "灵感生图",
+    "mode": "单图创作",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "上传母版后打开标记区域工具，只涂抹需要删除的位置。"
+  },
+  "sourceImages": [
+    {
+      "label": "玩偶商品原图",
+      "file": "source/source-01.webp",
+      "purpose": "保留主体、道具、背景、光线和纵向构图"
+    }
+  ],
+  "steps": [
+    {
+      "title": "上传原图并锁定比例",
+      "number": 1,
+      "image": "steps/step-01.webp"
+    },
+    {
+      "title": "打开标记区域",
+      "number": 2,
+      "image": "steps/step-02.webp"
+    },
+    {
+      "title": "涂抹飞虫",
+      "number": 3,
+      "image": "steps/step-03.webp"
+    },
+    {
+      "title": "填写局部删除要求",
+      "number": 4,
+      "image": "steps/step-04.webp"
+    },
+    {
+      "title": "提交生成",
+      "number": 5,
+      "image": "steps/step-05.webp"
+    },
+    {
+      "title": "放大检查结果",
+      "number": 6,
+      "image": "steps/step-06.webp"
+    }
+  ],
+  "results": [
+    {
+      "label": "删除飞虫后的采用结果",
+      "file": "results/result-01.webp"
+    }
+  ],
+  "status": "published",
+  "durationMinutes": 3,
+  "problem": "照片整体已经可用，却被飞虫、杂物或局部瑕疵影响，不值得重新拍摄，也不希望整张图片重新生成。",
+  "audience": [
+    "商品摄影",
+    "二手电商",
+    "内容设计师",
+    "商品录入团队"
+  ],
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以查看教程；保存或提交局部精修任务时按页面提示登录。",
+    "unavailable": "功能暂时不可用时保留原图、标记和提示词，稍后重试。"
+  },
+  "prompt": "仅删除图1涂抹区域内的蜻蜓及其运动轨迹，用周围墙面与窗帘的真实颜色、纹理和光线自然补全。除涂抹区域外，玩偶、机器人、球拍、底座、桌面、背景、构图、色彩、光线和所有细节保持不变。不要新增文字、物体或改变任何角色造型。",
+  "tips": [
+    "涂抹范围只覆盖目标和必要边缘。",
+    "生成前保持与原图相同的画幅比例。",
+    "放大检查主体边缘、纹理、文字和背景。",
+    "生成式编辑不能承诺未涂抹区域像素级不变。"
+  ]
+}

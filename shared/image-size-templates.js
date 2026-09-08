@@ -58,15 +58,21 @@ export function imageSizeTemplateFamily(model) {
 export function imageSizeTemplateForModel(model) {
   const family = imageSizeTemplateFamily(model);
   const configured = IMAGE_SIZE_TEMPLATE_CATALOG[family];
-  const sizes = configured.sizes.filter((size) => validateImageSizeForModel(size, model || configured.model).valid);
+  const constraints = getImageModelConstraints(model || configured.model);
+  const isMai26 = constraints.modelFamily === 'mai-image-2.6';
+  const targetLongSide = isMai26 ? 1536 : configured.targetLongSide;
+  const candidateSizes = isMai26
+    ? [...configured.sizes, '1024x1536', '1536x1024', '1152x1536', '1536x1152', '1536x1536']
+    : configured.sizes;
+  const sizes = candidateSizes.filter((size) => validateImageSizeForModel(size, model || configured.model).valid);
   const ratios = configured.ratios.filter((preset) => Boolean(dimensionsForImageModelRatio(
     model || configured.model,
     preset.width,
     preset.height,
-    configured.targetLongSide
+    targetLongSide
   )));
   const defaultSize = sizes.includes(configured.defaultSize) ? configured.defaultSize : sizes[0] || '1024x1024';
-  return { ...configured, family, sizes, ratios, defaultSize };
+  return { ...configured, family, targetLongSide, sizes, ratios, defaultSize };
 }
 
 export function ratioIdForImageSize(value, ratios = IMAGE_RATIO_PRESETS) {

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "source": "User-supplied files and a real Pic365 local generation run",
+  "runDate": "2026-09-06",
+  "projectId": "63f5321c-86f8-46f7-98c6-d17d3ff803d7",
+  "projectName": "教学Demo01 · 男士通勤斜肩包",
+  "platform": "shopify",
+  "assetOwnershipVerified": true,
+  "usesOtherCustomerAssets": false,
+  "containsPersonalContactInformation": false,
+  "containsVisibleProductMark": true,
+  "publicUseApproved": true,
+  "approvalNote": "已由项目负责人于 2026-09-06 确认可公开展示。",
+  "inputAssetIds": [
+    "b1d9b0e0-c068-4d9e-9168-45130bf6656f",
+    "b9d7a361-caa2-4e8f-8e52-e13b1a76b8a6",
+    "d177db2b-bb50-44b3-8a8e-290f68d24ba7"
+  ],
+  "resultGenerationIds": [
+    "0c836ccc-7154-4147-9a5a-eb9baebdd661",
+    "dc82dddf-99f8-42d9-ad4a-a30cd2bd9d36",
+    "811e37fd-4850-4e30-a4d4-e56b945586e6",
+    "42eefc93-5084-4668-9809-96a92cb877ab",
+    "d8953b77-4864-40f3-ac4f-1c31fadf47be",
+    "058dd5a6-9ac7-43b0-b187-54fbb373d1c5",
+    "be0bad83-48f2-4b52-92d9-364ae65a0a50"
+  ],
+  "screenCaptureSource": "Pic365 local UI at http://127.0.0.1:5173/#create",
+  "screenCaptureFiles": [
+    "screens/01-product.png",
+    "screens/02-images.png",
+    "screens/03-plan.png",
+    "screens/04-shot-list.png",
+    "screens/05-generate.png",
+    "screens/06-delivery.png"
+  ],
+  "privacyReview": "passed",
+  "qualityReview": "approved",
+  "published": true
+}

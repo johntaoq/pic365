@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "slug": "02-bracelet-douyin-campaign",
+  "status": "published",
+  "enabled": true,
+  "featured": true,
+  "order": 2,
+  "category": "电商运营",
+  "title": "一串手链，变成抖音广告素材",
+  "subtitle": "真实项目复盘：4 张普通实拍生成 7 个抖音电商图位",
+  "duration": "4分钟",
+  "durationMinutes": 4,
+  "problem": "商品、礼盒和包装已经拍摄完成，但缺少佩戴效果、材质特写、三秒卖点图和短视频封面，无法直接覆盖抖音商品内容。",
+  "audience": [
+    "饰品商家",
+    "直播电商",
+    "短视频运营",
+    "商品设计师"
+  ],
+  "entry": {
+    "page": "灵感生图",
+    "mode": "电商套图",
+    "platform": "抖音电商",
+    "label": "进入 Pic365 开始创作",
+    "href": "/#create",
+    "instruction": "进入创作页后选择电商套图，再选择抖音平台和三秒转化套图。"
+  },
+  "availability": {
+    "pricing": "提交前以 Pic365 当时页面显示的规则为准，教程不展示固定价格。",
+    "signedOut": "未登录时可以查看教程和准备素材；创建项目或保存进度时按页面提示登录。",
+    "unavailable": "功能暂时不可用时保留素材和项目设置，稍后重试，不要反复提交同一任务。"
+  },
+  "platform": "douyin",
+  "sourceImages": [
+    {
+      "label": "商品母版",
+      "file": "source/source-01.webp",
+      "purpose": "锁定珠子数量、综合色彩、比例、串线和环形结构"
+    },
+    {
+      "label": "礼盒陈列",
+      "file": "source/source-02.webp",
+      "purpose": "补充礼盒、衬布和流苏关系"
+    },
+    {
+      "label": "包装正面",
+      "file": "source/source-03.webp",
+      "purpose": "确认包装外观和原有标签位置"
+    },
+    {
+      "label": "包装角度",
+      "file": "source/source-04.webp",
+      "purpose": "补充外盒比例和表面纹理"
+    }
+  ],
+  "steps": [
+    {
+      "title": "确认商品与抖音平台",
+      "body": "填写古法药香五行珠，确认分类并选择抖音电商。",
+      "number": 1,
+      "image": "steps/step-01.webp"
+    },
+    {
+      "title": "上传素材并确认母版",
+      "body": "将完整珠串设为母版，礼盒和包装图作为补充事实素材。",
+      "number": 2,
+      "image": "steps/step-02.webp"
+    },
+    {
+      "title": "选择抖音套图模板",
+      "body": "采用抖音三秒转化套图和强转化视觉。",
+      "number": 3,
+      "image": "steps/step-03.webp"
+    },
+    {
+      "title": "确认七个图片槽位",
+      "body": "确认方形、竖版、佩戴、细节、活动底图和短视频封面。",
+      "number": 4,
+      "image": "steps/step-04.webp"
+    },
+    {
+      "title": "检查真实生成结果",
+      "body": "逐张核对珠子数量、颜色、串线、包装和佩戴关系。",
+      "number": 5,
+      "image": "steps/step-05.webp"
+    },
+    {
+      "title": "进入精修交付",
+      "body": "采用版本进入交付区，继续处理文字安全区和导出。",
+      "number": 6,
+      "image": "steps/step-06.webp"
+    }
+  ],
+  "prompt": "以图1中的五行珠为唯一商品母版，保持珠子数量、圆珠大小关系、综合色彩、表面质感、串线和环形结构一致。图2至图4只补充礼盒、衬布、流苏和包装外观中可确认的信息。制作抖音商品素材时，佩戴关系必须符合真实手腕比例；细节图不得虚构材质和工艺；短视频封面上下保留平台界面安全区；不得新增功效、认证、价格、折扣或不存在的配件。",
+  "promptDisclosure": {
+    "type": "teaching-summary",
+    "userEntered": false,
+    "description": "该文本是根据真实项目设置整理的借鉴模板，不是用户在界面中输入的内容，也不是后台提示词原文。系统实际按每个抖音图片槽位分别组合执行指令。"
+  },
+  "results": [
+    {
+      "label": "1:1 商品封面",
+      "file": "results/cover-square.webp"
+    },
+    {
+      "label": "3:4 商品素材",
+      "file": "results/material-portrait.webp"
+    },
+    {
+      "label": "三秒卖点视觉",
+      "file": "results/three-second-benefit.webp"
+    },
+    {
+      "label": "真人佩戴场景",
+      "file": "results/person-scene.webp"
+    },
+    {
+      "label": "细节特写",
+      "file": "results/detail-closeup.webp"
+    },
+    {
+      "label": "活动打标底图",
+      "file": "results/promotion-label.webp"
+    },
+    {
+      "label": "9:16 短视频封面",
+      "file": "results/video-cover.webp"
+    }
+  ],
+  "tips": [
+    "母版必须完整显示整圈珠子，不能用被遮挡的佩戴图作为唯一依据。",
+    "逐张核对珠子数量、综合色彩、排列和串线，不要只看氛围是否漂亮。",
+    "佩戴场景要检查手腕尺寸、接触位置和手部结构。",
+    "商品名称不能被扩写成未经证实的功效、认证或疗效承诺。"
+  ]
+}

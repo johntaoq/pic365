@@ -39,15 +39,17 @@ test('accountant and operations are parallel least-privilege roles', () => {
 });
 
 test('global menu settings override and preserve personal preferences', () => {
-  governance.updateUserMenuPreferences(member.id, { hideEcommerce: true, hideTemplates: true, hideCases: false, hideApi: false });
-  governance.updateGlobalMenuSettings(root.id, { templates: false, cases: true, api: false });
+  governance.updateUserMenuPreferences(member.id, { hideEcommerce: false, hideTemplates: true, hideCases: false, hideApi: false });
+  governance.updateGlobalMenuSettings(root.id, { ecommerce: false, templates: false, cases: true, api: false });
   const hidden = governance.getEffectiveMenuSettings(member.id);
   assert.deepEqual(hidden.effective, { ecommerce: false, templates: false, cases: true, api: false });
-  assert.equal(hidden.personal.hideEcommerce, true);
+  assert.equal(hidden.personal.hideEcommerce, false);
   assert.equal(hidden.personal.hideTemplates, true);
-  governance.updateGlobalMenuSettings(root.id, { templates: true, cases: true, api: true });
+  governance.updateGlobalMenuSettings(root.id, { ecommerce: true, templates: true, cases: true, api: true });
   const reopened = governance.getEffectiveMenuSettings(member.id);
-  assert.deepEqual(reopened.effective, { ecommerce: false, templates: false, cases: true, api: true });
+  assert.deepEqual(reopened.effective, { ecommerce: true, templates: false, cases: true, api: true });
+  governance.updateUserMenuPreferences(member.id, { hideEcommerce: true });
+  assert.equal(governance.getEffectiveMenuSettings(member.id).effective.ecommerce, false);
 });
 
 test('accountants cannot enter user management or edit user profiles', () => {

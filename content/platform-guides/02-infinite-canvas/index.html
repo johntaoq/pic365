@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>无限画布使用手册 · Pic365</title>
+    <script src="../theme.js"></script>
+    <link rel="stylesheet" href="../shared.css" />
+    <link rel="stylesheet" href="../theme.css" />
+  </head>
+  <body class="guideDetail">
+    <div class="top">
+      <div class="topin">
+        <a class="brand" href="../index.html">PIC365 手册</a>
+        <nav class="nav">
+          <a href="../01-image-studio/index.html">灵感生图</a
+          ><a class="active" href="./index.html">无限画布</a
+          ><a href="../03-ecommerce-suite/index.html">电商套图</a
+          ><a href="../04-media-assets/index.html">媒资管理</a>
+        </nav>
+      </div>
+    </div>
+    <main class="wrap">
+      <section class="hero">
+        <div>
+          <div class="eyebrow">02 · 无限画布</div>
+          <h1>把灵感、版本与关系，<br />放在同一张画布</h1>
+          <p class="lead">
+            适合连续改图、角色或商品一致性、多参考融合、版本分支和图片转视频。画布既是创作空间，也是可追溯的项目记录。
+          </p>
+          <div class="chips">
+            <span>自由布局</span><span>生成分支</span><span>多图引用</span
+            ><span>位置锁定</span><span>版本对比</span><span>图片转视频</span>
+          </div>
+        </div>
+        <div class="quick">
+          <div><b>空白处拖动</b>平移整张画布</div>
+          <div><b>图片上拖动</b>直接移动实体，无需先选中</div>
+          <div><b>双击空白处</b>释放当前选中与框选状态</div>
+        </div>
+      </section>
+      <nav class="toc">
+        <a href="#map"><b>01</b>画布导航</a
+        ><a href="#entity"><b>02</b>实体与引用</a
+        ><a href="#branch"><b>03</b>生成分支</a
+        ><a href="#project"><b>04</b>项目与版本</a>
+      </nav>
+      <section class="section" id="map">
+        <h2>导航画布与找到内容</h2>
+        <figure class="shot">
+          <img
+            src="./screens/02-fit-content.png"
+            alt="无限画布适应内容后的真实界面"
+          />
+          <figcaption>
+            真实界面：适应内容后可同时看到实体关系、底部创作区、项目列表和右上角缩略地图。
+          </figcaption>
+        </figure>
+        <div class="grid">
+          <article class="card">
+            <h3>平移与缩放</h3>
+            <p>
+              在空白区域按住拖动可平移；滚轮缩放；顶部的放大、缩小与百分比显示当前倍率。“适应内容”会把现有实体重新纳入可视区域。
+            </p>
+          </article>
+          <article class="card">
+            <h3>框选与多选</h3>
+            <p>
+              切换框选工具后拖出选择框，可一次选择多个实体，用于对比、整理或批量操作。双击空白处释放选择。
+            </p>
+          </article>
+          <article class="card">
+            <h3>缩略地图</h3>
+            <p>
+              初次打开位于右上角。缩微框使用普通细线，当前视野和选中内容以更醒目的边框区分，帮助定位远处节点。
+            </p>
+          </article>
+          <article class="card">
+            <h3>自动排列与搜索</h3>
+            <p>
+              实体较多时使用自动排列整理结构；搜索用于定位画布内容。撤销/重做可恢复近期编辑动作。
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="section" id="entity">
+        <h2>实体、锁定和引用关系</h2>
+        <p class="intro">
+          图片、视频、想法和生成任务都是画布实体。图片实体是最常用的创作起点。
+        </p>
+        <figure class="shot">
+          <img
+            src="./screens/03-selected.png"
+            alt="无限画布选中实体和底部创作区"
+          />
+          <figcaption>
+            真实界面：选中图片后，底部出现母版、参考图、提示词、尺寸、质量与生成按钮。
+          </figcaption>
+        </figure>
+        <div class="steps">
+          <article class="step">
+            <div>
+              <h3>移动与选择</h3>
+              <p>
+                鼠标悬停在图片非删除按钮区域即可用手掌抓取移动。点击实体会选中它；点击空白处仍按画布原有方式平移。
+              </p>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>锁定位置</h3>
+              <p>
+                锁定后不仅保护内容，也锁住画布坐标。尝试拖动时，实体会显示红色遮罩和带锁的黄色圆圈，提醒先解锁。
+              </p>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>建立参考关系</h3>
+              <p>
+                当前选中图片自动成为母版“图1”。通过引用按钮、连接手柄、资产库或批量选择添加辅助图，随后编号为图2、图3……。
+              </p>
+            </div>
+          </article>
+          <article class="step">
+            <div>
+              <h3>删除关系</h3>
+              <p>
+                引用线悬停后会出现删除入口，可以解除引用。生成线代表历史生成关系，不允许删除；线条中间的实心圆点可悬停查看当时的提示词和设置。
+              </p>
+            </div>
+          </article>
+        </div>
+        <div class="tip">
+          <strong>参考角色建议：</strong
+          >主体图负责身份与结构；其余图片分别承担风格、构图、色彩或细节，不要让多张图同时争夺“主体”。
+        </div>
+      </section>
+      <section class="section" id="branch">
+        <h2>从图片生成新分支</h2>
+        <figure class="shot">
+          <img
+            src="./screens/04-video-settings.png"
+            alt="无限画布图片转视频真实设置"
+          />
+          <figcaption>
+            真实操作：选中图片后切换到视频模式，设置服务、画幅、时长与运动描述，再生成视频分支。
+          </figcaption>
+        </figure>
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>区域</th>
+                <th>功能</th>
+                <th>使用要点</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>提示词</td>
+                <td>描述新分支要发生的变化</td>
+                <td>引用多图时按图1、图2顺序说明各图作用</td>
+              </tr>
+              <tr>
+                <td>预设短句</td>
+                <td>快速加入常用修改方向</td>
+                <td>点击后仍应检查完整提示词是否矛盾</td>
+              </tr>
+              <tr>
+                <td>图片参数</td>
+                <td>服务、比例、尺寸、质量、数量</td>
+                <td>可把当前尺寸保存为模板；提交前确认积分</td>
+              </tr>
+              <tr>
+                <td>视频参数</td>
+                <td>视频服务、输出模式、时长、方向与音频能力</td>
+                <td>不同上游模型支持项不同，以当前界面可选项为准</td>
+              </tr>
+              <tr>
+                <td>任务节点</td>
+                <td>显示排队、生成、成功、失败</td>
+                <td>失败可原位重试；运行任务可在支持时取消</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="section" id="project">
+        <h2>项目、版本与最终采用</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>项目自动保存</h3>
+            <p>
+              新建、重命名、复制、归档或恢复画布项目。顶部保存状态用于确认改动是否已写入，离开前应看到“已保存”。
+            </p>
+          </article>
+          <article class="card">
+            <h3>预览与下载</h3>
+            <p>
+              点击实体预览可放大、缩小和重置；图片与视频均可从预览或实体操作区下载。
+            </p>
+          </article>
+          <article class="card">
+            <h3>版本比较</h3>
+            <p>
+              选择 2 张图片可用滑杆比较；3
+              张及以上使用网格比较。对比后点击“采用”，将满意版本标记为最终版本。
+            </p>
+          </article>
+          <article class="card">
+            <h3>归档与回收站</h3>
+            <p>
+              归档项目进入只读状态；回收站可恢复或永久删除。删除和清空前确认项目没有仍需保留的素材。
+            </p>
+          </article>
+        </div>
+        <div class="warn">
+          <strong>锁定实体保护：</strong
+          >锁定后不可移动、删除、清空或继续精修。需要操作时先解锁，完成后再锁回去。
+        </div>
+        <div class="faq">
+          <details>
+            <summary>为什么看不到刚才的图片？</summary>
+            <p>
+              先点“适应内容”，再看右上角缩略地图。图片可能位于当前视野之外，并不一定丢失。
+            </p>
+          </details>
+          <details>
+            <summary>引用线和生成线有什么区别？</summary>
+            <p>
+              引用线表示某张图被本次生成作为参考，可解除；生成线表示结果从哪个父节点产生，是追溯链路，不能删除。
+            </p>
+          </details>
+          <details>
+            <summary>怎样让多个版本不混乱？</summary>
+            <p>
+              给关键实体重命名，锁定已确认版本，使用分支而不是覆盖，并把最终结果标记为“采用”。
+            </p>
+          </details>
+        </div>
+      </section>
+      <nav class="pager">
+        <a href="../01-image-studio/index.html">← 上一本：灵感生图</a
+        ><a class="next" href="../03-ecommerce-suite/index.html"
+          >下一本：电商套图 →</a
+        >
+      </nav>
+    </main>
+    <footer class="footer">Pic365 · 无限画布基础使用手册</footer>
+  </body>
+</html>

@@ -58,6 +58,18 @@ test('MAI image models enforce 768 minimum sides and 1048576 maximum pixels', ()
   assert.equal(validateImageSizeForModel('2048x2048', 'gpt-image-2').valid, true);
 });
 
+test('MAI-Image-2.6 family supports up to 1536 squared pixels', () => {
+  for (const model of ['MAI-Image-2.6', 'MAI-Image-2.6-Flash']) {
+    const constraints = getImageModelConstraints(model);
+    assert.equal(constraints.modelFamily, 'mai-image-2.6', model);
+    assert.equal(constraints.maxPixels, 1536 * 1536, model);
+    assert.equal(validateImageSizeForModel('1536x1536', model).valid, true, model);
+    assert.equal(validateImageSizeForModel('2048x1152', model).valid, true, model);
+    assert.equal(validateImageSizeForModel('1536x1552', model).error, 'MAI_MAX_PIXELS', model);
+    assert.equal(validateImageSizeForModel('2048x1168', model).error, 'MAI_MAX_PIXELS', model);
+  }
+});
+
 test('Gemini image models expose their own ratios, references, and formats', () => {
   for (const model of ['gemini-3.1-flash-image', 'gemini-3.1-flash-image-preview', 'nano-banana-2']) {
     assert.equal(isGeminiImageModel(model), true, model);
@@ -154,6 +166,8 @@ test('MAI ratio helpers only expose ratios that fit the model canvas limits', ()
   assert.equal(dimensionsForImageModelRatio('MAI-Image-2.5', 1, 2, 1024), null);
   assert.equal(getImageModelConstraints('MAI-Image-2').maxReferenceImages, 0);
   assert.equal(getImageModelConstraints('MAI-Image-2.5').maxReferenceImages, 1);
+  assert.equal(getImageModelConstraints('MAI-Image-2.6').maxReferenceImages, 5);
+  assert.equal(getImageModelConstraints('MAI-Image-2.6-Flash').maxReferenceImages, 5);
 });
 
 test('MAI reference capability is enforced independently from other providers', () => {
@@ -169,6 +183,12 @@ test('MAI reference capability is enforced independently from other providers', 
   assert.equal(validateImageReferenceInputsForModel({
     model: 'MAI-Image-2', count: 1, mimeTypes: ['image/png']
   }).error, 'REFERENCE_IMAGES_UNSUPPORTED');
+  assert.equal(validateImageReferenceInputsForModel({
+    model: 'MAI-Image-2.6-Flash', count: 5, mimeTypes: ['image/png', 'image/jpeg', 'image/png', 'image/jpeg', 'image/png']
+  }).valid, true);
+  assert.equal(validateImageReferenceInputsForModel({
+    model: 'MAI-Image-2.6', count: 6, mimeTypes: Array(6).fill('image/png')
+  }).error, 'TOO_MANY_REFERENCE_IMAGES');
   assert.equal(validateImageReferenceInputsForModel({
     model: 'gpt-image-2', count: 3, mimeTypes: ['image/png', 'image/jpeg', 'image/webp']
   }).valid, true);
