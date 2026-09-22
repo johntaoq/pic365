@@ -22,6 +22,7 @@ import {
 import {
   ECOMMERCE_PROJECT_ASSET_LIMIT,
   ECOMMERCE_PROJECT_ASSET_MAX_BYTES,
+  ECOMMERCE_PROJECT_ASSET_REQUEST_MAX_BYTES,
   isSupportedEcommerceAssetMimeType
 } from '../../shared/ecommerce-assets.js';
 
@@ -149,7 +150,7 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req, { maxBytes: 16 * 1024 * 1024 });
+    body = await readJsonBody(req, { maxBytes: ECOMMERCE_PROJECT_ASSET_REQUEST_MAX_BYTES });
   } catch {
     return json(res, 400, { ok: false, error: 'INVALID_ASSET' });
   }

@@ -4,6 +4,7 @@ import {
   createSiteNoticeSnoozeValue,
   inferSiteNoticeFormat,
   isSiteNoticeSnoozedToday,
+  normalizeSiteNoticePlacement,
   siteNoticeLocalDateKey
 } from '../shared/site-notice.js';
 
@@ -30,4 +31,10 @@ test('site notices infer HTML when legacy configuration says markdown', () => {
   assert.equal(inferSiteNoticeFormat('<p><strong>系统维护</strong></p>', 'markdown'), 'html');
   assert.equal(inferSiteNoticeFormat('**系统维护**', 'markdown'), 'markdown');
   assert.equal(inferSiteNoticeFormat('普通文字', 'html'), 'html');
+});
+
+test('site notices default to a modal while retaining legacy placement parsing', () => {
+  assert.equal(normalizeSiteNoticePlacement(), 'modal');
+  assert.equal(normalizeSiteNoticePlacement('modal'), 'modal');
+  assert.equal(normalizeSiteNoticePlacement('banner'), 'banner');
 });

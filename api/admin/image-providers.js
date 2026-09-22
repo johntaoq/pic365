@@ -1,5 +1,5 @@
 import { authenticateRequest } from '../_lib/local-auth.js';
-import { deleteImageProviderConfig, listImageProviderConfigs, saveImageProviderConfig } from '../_lib/local-db.js';
+import { deleteImageProviderConfig, listImageProviderConfigs, reorderImageProviderConfigs, saveImageProviderConfig } from '../_lib/local-db.js';
 import { readJsonBody } from '../_lib/request.js';
 import { recordAdminAuditEvent, requestAuditMetadata, requirePermission } from '../_lib/governance.js';
 import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
@@ -17,6 +17,16 @@ export default async function handler(req, res) {
     requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_CHANNELS);
     if (req.method === 'GET') return res.status(200).json({ ok: true, providers: listImageProviderConfigs({ admin: true }) });
     const body = await readJsonBody(req);
+    if (req.method === 'PATCH' && body.action === 'reorder') {
+      const before = listImageProviderConfigs({ admin: true }).map(({ id, sortOrder }) => ({ id, sortOrder }));
+      const providers = reorderImageProviderConfigs(body.orderedIds);
+      recordAdminAuditEvent({
+        actorUserId: auth.user.id, permission: ADMIN_PERMISSIONS.MANAGE_CHANNELS,
+        category: 'channels', action: 'image_providers_reordered', entityType: 'image_provider', entityId: 'all',
+        before, after: providers.map(({ id, sortOrder }) => ({ id, sortOrder })), auditMeta: requestAuditMetadata(req)
+      });
+      return res.status(200).json({ ok: true, providers });
+    }
     if (req.method === 'DELETE') {
       const before = listImageProviderConfigs({ admin: true }).find((item) => item.id === clean(body.id || req.query?.id, 80));
       const deleted = deleteImageProviderConfig(clean(body.id || req.query?.id, 80));

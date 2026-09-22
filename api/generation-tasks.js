@@ -14,6 +14,7 @@ import { readJsonBody } from './_lib/request.js';
 import { getInfiniteCanvasProject } from './_lib/infinite-canvas-db.js';
 import { startFreeGenerationWorker } from '../server/free-generation-worker.js';
 import {
+  IMAGE_GENERATION_REQUEST_MAX_BYTES,
   resolveSourceImageSizeForModel,
   validateImageReferenceInputsForModel,
   validateImageSizeForModel
@@ -97,7 +98,7 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req, { maxBytes: 96 * 1024 * 1024 });
+    body = await readJsonBody(req, { maxBytes: IMAGE_GENERATION_REQUEST_MAX_BYTES });
   } catch (error) {
     return json(res, error?.status || 400, { ok: false, error: error?.code || 'INVALID_TASK_REQUEST' });
   }

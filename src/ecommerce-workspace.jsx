@@ -145,11 +145,11 @@ const copy = {
     uploadFromDevice: 'Choose from folder',
     chooseFromLibrary: 'Choose from media library',
     assetLibraryLinkFailed: 'Some asset-library images could not be added.',
-    assetLimit: 'Paste, drop, or choose PNG, JPG, or WebP images; up to 5 MB each and 9 images per project.',
+    assetLimit: 'Paste, drop, or choose PNG, JPG, or WebP images; up to 15 MB each and 9 images per project.',
     pasteEmpty: 'No supported image was found on the clipboard. Copy an image, then paste again.',
     pasteUnavailable: 'Clipboard access is unavailable here. Press Ctrl+V directly in this image area.',
-    assetTooLarge: 'Each image must be 5 MB or smaller.',
-    referenceTooLarge: 'Each reference image must be no larger than 7 MB.',
+    assetTooLarge: 'Each image must be 15 MB or smaller.',
+    referenceTooLarge: 'Each reference image must be no larger than 15 MB.',
     assetCountLimit: 'Each product project supports up to 9 images.',
     uploadingAssets: 'Uploading...',
     uploadFailed: 'One or more files could not be uploaded.',
@@ -345,11 +345,11 @@ const copy = {
     uploadFromDevice: '从文件夹选择',
     chooseFromLibrary: '从媒资库选择',
     assetLibraryLinkFailed: '部分资产库图片未能加入项目。',
-    assetLimit: '支持粘贴、拖拽、文件夹或媒资库选择 PNG、JPG、WebP 图片；单张不超过 5 MB，最多 9 张。',
+    assetLimit: '支持粘贴、拖拽、文件夹或媒资库选择 PNG、JPG、WebP 图片；单张不超过 15 MB，最多 9 张。',
     pasteEmpty: '剪贴板中没有可用图片，请复制图片后再粘贴。',
     pasteUnavailable: '当前浏览器无法主动读取剪贴板，请在商品图片区直接按 Ctrl+V。',
-    assetTooLarge: '单张图片不能超过 5 MB。',
-    referenceTooLarge: '每张参考图不能超过 7 MB。',
+    assetTooLarge: '单张参考图不能超过 15 MB。',
+    referenceTooLarge: '单张参考图不能超过 15 MB。',
     assetCountLimit: '每个商品项目最多 9 张图片。',
     uploadingAssets: '正在上传……',
     uploadFailed: '部分素材上传失败。',
@@ -1229,6 +1229,7 @@ export default function EcommerceWorkspace({
     : 'medium';
   const linkedMediaAssetIds = useMemo(() => assets.map((asset) => asset.mediaAssetId).filter(Boolean), [assets]);
   const remainingProjectAssetSlots = Math.max(0, ECOMMERCE_PROJECT_ASSET_LIMIT - assets.length);
+  const oversizedProjectAssets = useMemo(() => assets.filter((asset) => Number(asset.fileSize || 0) > ECOMMERCE_PROJECT_ASSET_MAX_BYTES), [assets]);
 
   useEffect(() => {
     setProjectListCollapsed(readEcommerceProjectListCollapsed(preferenceUserId));
@@ -1868,6 +1869,11 @@ export default function EcommerceWorkspace({
 
   function handleContinueToPlan() {
     if (!formRef.current.masterAssetId) return;
+    if (oversizedProjectAssets.length) {
+      setAssetStatus('error');
+      setAssetFeedback(t.referenceTooLarge);
+      return;
+    }
     setCollapsedSections((current) => ({ ...current, assets: true, visual: false, outputs: false }));
     setSelectedWorkflowStep(2);
     setHoveredWorkflowStep(2);
@@ -2329,6 +2335,10 @@ export default function EcommerceWorkspace({
       setGenerationMessage(t.masterRequired);
       return false;
     }
+    if (oversizedProjectAssets.length) {
+      setGenerationMessage(t.referenceTooLarge);
+      return false;
+    }
     if (!selectedProviderCompatibility.valid) {
       setGenerationMessage(selectedProviderCompatibilityMessage);
       return false;
@@ -2479,6 +2489,10 @@ export default function EcommerceWorkspace({
     }
     if (!project.masterAssetId) {
       setGenerationMessage(t.masterRequired);
+      return;
+    }
+    if (oversizedProjectAssets.length) {
+      setGenerationMessage(t.referenceTooLarge);
       return;
     }
     if (!selectedProviderCompatibility.valid) {
@@ -2976,13 +2990,14 @@ export default function EcommerceWorkspace({
                   <div className="ecommerceAssetGrid">
                     {assets.map((asset) => (
                       <article
-                        className={`${asset.isMaster ? 'master' : ''} ${asset.available === false ? 'unavailable' : ''}`.trim()}
+                        className={`${asset.isMaster ? 'master' : ''} ${asset.available === false ? 'unavailable' : ''} ${Number(asset.fileSize || 0) > ECOMMERCE_PROJECT_ASSET_MAX_BYTES ? 'oversized' : ''}`.trim()}
                         key={asset.id}
                         onMouseEnter={(event) => { if (asset.available !== false) showThumbnailHoverPreview(event, asset); }}
                         onMouseLeave={hideThumbnailHoverPreview}
                       >
                         {asset.available === false ? <div className="ecommerceAssetUnavailable"><ShieldAlert size={22} /><strong>{t.assetUnavailable}</strong><small>{t.assetUnavailableHint}</small></div> : <img src={asset.imageUrl} alt={asset.fileName} loading="lazy" />}
                         {asset.isMaster ? <em className="ecommerceMasterBadge"><Check size={12} /> {t.masterAsset}</em> : null}
+                        {Number(asset.fileSize || 0) > ECOMMERCE_PROJECT_ASSET_MAX_BYTES ? <em className="ecommerceAssetSizeError">{t.referenceTooLarge}</em> : null}
                         <div className="ecommerceAssetInfo">
                           <span>{assetTypeLabels[asset.assetType] || asset.assetType}</span>
                           <strong title={asset.fileName}>{asset.fileName}</strong>
@@ -2991,7 +3006,7 @@ export default function EcommerceWorkspace({
                           <Trash2 size={14} />
                         </button>
                         {asset.available !== false && !asset.isMaster && asset.assetType === 'product' ? (
-                          <button className="ecommerceSetMasterButton" type="button" onClick={() => handleSetMaster(asset.id)}>
+                          <button className="ecommerceSetMasterButton" type="button" disabled={Number(asset.fileSize || 0) > ECOMMERCE_PROJECT_ASSET_MAX_BYTES} onClick={() => handleSetMaster(asset.id)}>
                             {t.setMaster}
                           </button>
                         ) : null}
@@ -3007,7 +3022,7 @@ export default function EcommerceWorkspace({
                 {assets.length ? <p className="ecommerceMasterHint">{t.masterHint}</p> : null}
                 {form.masterAssetId ? (
                   <div className="ecommerceStepAction">
-                    <button className="primary" type="button" onClick={handleContinueToPlan}>
+                    <button className="primary" type="button" onClick={handleContinueToPlan} disabled={oversizedProjectAssets.length > 0}>
                       {t.continueToPlan} <ChevronRight size={16} />
                     </button>
                   </div>
@@ -3116,7 +3131,7 @@ export default function EcommerceWorkspace({
                   className="primary"
                   type="button"
                   onClick={handleGenerateFromOutputs}
-                  disabled={status === 'saving' || !form.selectedSlots.length || !form.masterAssetId}
+                  disabled={status === 'saving' || !form.selectedSlots.length || !form.masterAssetId || oversizedProjectAssets.length > 0}
                 >
                   {status === 'saving' ? <LoaderCircle size={16} className="spin" /> : <ChevronRight size={16} />}
                   {t.generateFromOutputs}
@@ -3197,7 +3212,7 @@ export default function EcommerceWorkspace({
                     className="primary"
                     type="button"
                     onClick={handleGenerateSelected}
-                    disabled={!selectedProductionSlots.length}
+                    disabled={!selectedProductionSlots.length || oversizedProjectAssets.length > 0}
                   >
                     {batchRunning ? <LoaderCircle size={15} className="spin" /> : <Zap size={15} />}
                     {batchRunning ? `${t.batchGenerating} ${activeGenerationCount}` : t.generateSelected}
@@ -3290,7 +3305,7 @@ export default function EcommerceWorkspace({
                             : retryable
                               ? handleRetryTask(item.id)
                               : runSlotGeneration(item.id)}
-                          disabled={output?.locked || task?.status === 'cancelling' || (!taskActive && (batchRunning || productionPricingLoading || !slotPricing || !form.masterAssetId || status === 'saving' || !selectedProviderCompatibility.valid))}
+                          disabled={output?.locked || task?.status === 'cancelling' || (!taskActive && (batchRunning || productionPricingLoading || !slotPricing || !form.masterAssetId || status === 'saving' || !selectedProviderCompatibility.valid || oversizedProjectAssets.length > 0))}
                         >
                           {taskActive
                             ? task.status === 'cancelling' ? <LoaderCircle size={15} className="spin" /> : <X size={15} />

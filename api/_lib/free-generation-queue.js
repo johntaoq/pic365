@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { getDb } from './local-db.js';
+import { IMAGE_GENERATION_REQUEST_MAX_BYTES } from '../../shared/image-generation.js';
 import { normalizeImageStylePresetId } from '../../shared/image-style-presets.js';
 
 export const MAX_FREE_GENERATION_TASKS = 30;
@@ -30,12 +31,18 @@ function resultItems(row) {
   const payload = parseJson(row.result_json, {});
   const unitCredits = Number(payload.unitCredits || 0);
   const images = Array.isArray(payload.images) && payload.images.length ? payload.images : payload.image ? [payload] : [];
+  const generationIds = images.map((item) => String(item.generationId || '')).filter(Boolean);
+  const storedSizes = generationIds.length
+    ? new Map(getDb().prepare(`SELECT id, file_size FROM generations WHERE id IN (${generationIds.map(() => '?').join(',')})`).all(...generationIds)
+      .map((generation) => [generation.id, Number(generation.file_size || 0)]))
+    : new Map();
   return images.map((item, index) => ({
     id: item.generationId || `${row.id}-${index}`,
     generationId: item.generationId || '',
     imageUrl: item.image || '',
     thumbnailUrl: item.thumbnailUrl || (item.generationId ? `/api/generated?id=${encodeURIComponent(item.generationId)}&variant=thumbnail` : item.image || ''),
     mimeType: item.contentType || item.mimeType || 'image/png',
+    fileSize: Number(item.fileSize || storedSizes.get(item.generationId) || 0),
     prompt: row.prompt || '',
     size: item.size || row.size,
     quality: item.quality || row.quality,
@@ -120,8 +127,8 @@ function normalizedTaskRequest(request = {}) {
   const imageCount = taskMode === 'batch-repair'
     ? 1
     : Math.max(1, Math.min(4, Math.round(Number(request.count) || 1)));
-  const batchId = taskMode === 'batch-repair' ? cleanText(request.batchId, 160) : '';
-  const batchIndex = taskMode === 'batch-repair' ? Math.max(0, Math.min(19, Math.round(Number(request.batchIndex) || 0))) : 0;
+  const batchId = cleanText(request.batchId, 160);
+  const batchIndex = batchId ? Math.max(0, Math.min(19, Math.round(Number(request.batchIndex) || 0))) : 0;
   const sourceName = taskMode === 'batch-repair' ? cleanText(request.sourceName, 240) : '';
   const sourceWidth = taskMode === 'batch-repair' ? Math.max(0, Math.round(Number(request.sourceWidth) || 0)) : 0;
   const sourceHeight = taskMode === 'batch-repair' ? Math.max(0, Math.round(Number(request.sourceHeight) || 0)) : 0;
@@ -170,16 +177,15 @@ function normalizedTaskRequest(request = {}) {
     canvasReferenceNodeIds,
     canvasX,
     canvasY,
+    ...(batchId ? { batchId, batchIndex } : {}),
     ...(taskMode === 'batch-repair' ? {
-      batchId,
-      batchIndex,
       sourceName,
       sourceWidth,
       sourceHeight,
       preserveSourceSize
     } : {})
   });
-  if (Buffer.byteLength(serialized, 'utf8') > 96 * 1024 * 1024) {
+  if (Buffer.byteLength(serialized, 'utf8') > IMAGE_GENERATION_REQUEST_MAX_BYTES) {
     const error = new Error('REQUEST_BODY_TOO_LARGE');
     error.code = 'REQUEST_BODY_TOO_LARGE';
     throw error;

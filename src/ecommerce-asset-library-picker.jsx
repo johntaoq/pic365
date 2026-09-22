@@ -24,6 +24,7 @@ const copy = {
     shared: '团队共享',
     favorite: '收藏',
     linked: '已在项目',
+    tooLarge: '超过 15 MB',
     selected: (count, max) => `已选 ${count}/${max} 张`,
     empty: '没有找到可用图片',
     loadMore: '加载更多',
@@ -46,7 +47,7 @@ const copy = {
     shared: 'Shared',
     favorite: 'Favorites',
     linked: 'In project',
-    tooLarge: 'Over 5 MB',
+    tooLarge: 'Over 15 MB',
     unsupported: 'Unsupported format',
     selected: (count, max) => `${count}/${max} selected`,
     empty: 'No available images found',
@@ -210,8 +211,8 @@ export default function EcommerceAssetLibraryPicker({
             const unsupported = allowedMimeTypeSet.size > 0 && !allowedMimeTypeSet.has(asset.mimeType);
             const selected = selectedIds.includes(asset.id);
             return (
-              <button className={`${selected ? 'selected' : ''} ${linked ? 'linked' : ''} ${tooLarge || unsupported ? 'unavailable' : ''}`.trim()} type="button" disabled={linked || tooLarge || unsupported} aria-pressed={selected} onClick={() => toggleAsset(asset)} key={asset.id}>
-                <span className="ecommerceAssetLibraryThumb"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} loading="lazy" decoding="async" />{selected ? <i><Check size={15} /></i> : null}{linked ? <b>{t.linked}</b> : tooLarge ? <b>{t.tooLarge || (language === 'zh' ? '超过 5 MB' : 'Over 5 MB')}</b> : unsupported ? <b>{t.unsupported || (language === 'zh' ? '格式不支持' : 'Unsupported format')}</b> : null}</span>
+              <button className={`${selected ? 'selected' : ''} ${linked ? 'linked' : ''} ${tooLarge || unsupported ? 'unavailable' : ''} ${tooLarge ? 'oversized' : ''}`.trim()} type="button" disabled={linked || tooLarge || unsupported} aria-pressed={selected} onClick={() => toggleAsset(asset)} key={asset.id}>
+                <span className="ecommerceAssetLibraryThumb"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} loading="lazy" decoding="async" />{selected ? <i><Check size={15} /></i> : null}{linked ? <b>{t.linked}</b> : tooLarge ? <b>{t.tooLarge}</b> : unsupported ? <b>{t.unsupported || (language === 'zh' ? '格式不支持' : 'Unsupported format')}</b> : null}</span>
                 <strong title={asset.name}>{asset.name}</strong>
                 <small>{asset.collectionName || (asset.shared ? t.shared : asset.sourceType === 'generated' ? t.generated : t.uploads)}</small>
               </button>

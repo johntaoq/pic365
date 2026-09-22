@@ -60,6 +60,7 @@ export default async function handler(req, res) {
         imageUrl: generatedImageUrl(row.id),
         thumbnailUrl: generatedImageUrl(row.id, GENERATED_THUMBNAIL_VARIANT),
         mimeType: imageMimeType(row.storage_path),
+        fileSize: Number(row.file_size || 0),
         createdAt: row.created_at || '',
         completedAt: row.completed_at || ''
       };

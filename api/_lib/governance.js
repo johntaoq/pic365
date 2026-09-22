@@ -15,6 +15,7 @@ import {
   hashPassword
 } from './local-db.js';
 import { decryptProviderSecret, encryptProviderSecret } from './provider-secrets.js';
+import { resolveAuditActors } from './audit-actors.js';
 import {
   getRegistrationEmailPolicy,
   normalizeRegistrationEmailPolicy,
@@ -96,6 +97,10 @@ export function recordAdminAuditEvent({ actorUserId, permission, category, actio
 export function insertAuditEvent(event, db = getDb()) {
   const id = randomUUID();
   const createdAt = now();
+  const actorType = event.actorType === 'system' ? 'system'
+    : event.actorUserId || event.actorName || event.actorEmail ? 'user' : 'unknown';
+  const actor = actorType === 'user' && event.actorUserId
+    ? db.prepare('SELECT full_name, email, role FROM users WHERE id = ?').get(event.actorUserId) : null;
   db.prepare(`
     INSERT INTO audit_events
       (id, category, action, result, actor_type, actor_user_id, actor_role,
@@ -108,11 +113,11 @@ export function insertAuditEvent(event, db = getDb()) {
     cleanText(event.category, 60),
     cleanText(event.action, 100),
     cleanText(event.result || 'success', 30),
-    cleanText(event.actorType || 'user', 30),
-    event.actorUserId || null,
-    cleanText(event.actorRole, 40),
-    cleanText(event.actorName, 120),
-    cleanText(event.actorEmail, 320),
+    actorType,
+    actorType === 'user' ? event.actorUserId || null : null,
+    actorType === 'user' ? cleanText(event.actorRole || actor?.role, 40) : '',
+    actorType === 'system' ? 'system' : cleanText(event.actorName || actor?.full_name || event.actorEmail || actor?.email || event.actorUserId, 120),
+    actorType === 'user' ? cleanText(event.actorEmail || actor?.email, 320) : '',
     event.targetUserId || null,
     cleanText(event.entityType, 80),
     cleanText(event.entityId, 160),
@@ -825,13 +830,15 @@ export function listAuditEventsForUser(actorUserId, { category = '', scope = '',
     params.push(...allowedCategories);
   }
   params.push(Math.max(1, Math.min(500, Number(limit) || 200)), Math.max(0, Number(offset) || 0));
-  return getDb().prepare(`
+  const db = getDb();
+  const rows = db.prepare(`
     SELECT * FROM audit_events ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY created_at DESC LIMIT ? OFFSET ?
-  `).all(...params).map((row) => ({
+  `).all(...params);
+  const actors = resolveAuditActors(db, rows);
+  return rows.map((row, index) => ({
     id: row.id, category: row.category, action: row.action, result: row.result,
-    actorUserId: row.actor_user_id || '', actorRole: row.actor_role,
-    actorName: row.actor_name_snapshot, actorEmail: row.actor_email_snapshot,
+    ...actors[index],
     targetUserId: row.target_user_id || '', entityType: row.entity_type, entityId: row.entity_id,
     creditDelta: row.credit_delta == null ? null : Number(row.credit_delta),
     balanceBefore: row.balance_before == null ? null : Number(row.balance_before),

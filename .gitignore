@@ -15,3 +15,15 @@ data/backups/
 data/logs/
 data/*.log
 .env.production
+
+# Local execution state and generated QA artifacts are not release sources.
+/data/local-dev/
+/output/
+/outputecommerce-flow-test/
+/tmp/
+/work/
+/content/**/qa/
+/content/**/capture-summary*.json
+/content/**/qa-summary.json
+/design/**/qa/
+/design/**/*.log

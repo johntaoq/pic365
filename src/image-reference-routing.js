@@ -2,6 +2,13 @@ export function imageReferenceIdentity(item) {
   return String(item?.generationId || item?.id || item?.assetId || '');
 }
 
+export function resolveImagePreviewIdentity(items = [], preferredIdentity = '') {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  const preferred = String(preferredIdentity || '');
+  if (preferred && list.some((item) => imageReferenceIdentity(item) === preferred)) return preferred;
+  return imageReferenceIdentity(list[0]);
+}
+
 export function resolveImageReferenceTarget(workspaceTab, creationMode) {
   return workspaceTab === 'control' && creationMode === 'batch-repair'
     ? 'batch-repair'

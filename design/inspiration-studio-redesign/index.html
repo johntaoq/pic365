@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pic365 灵感生图界面设计</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050b16;
+      --bg-soft: #091322;
+      --panel: rgba(12, 25, 43, .92);
+      --panel-strong: #0c192b;
+      --line: rgba(143, 176, 202, .18);
+      --line-bright: rgba(117, 226, 197, .45);
+      --text: #eff7ff;
+      --muted: #8196ad;
+      --muted-2: #647a92;
+      --mint: #8ce8cd;
+      --mint-strong: #5cd9b5;
+      --blue: #9ebdff;
+      --orange: #f1c783;
+      --danger: #ff8797;
+      --shadow: 0 22px 60px rgba(0, 0, 0, .25);
+      --r: 20px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-width: 320px; min-height: 100%; }
+    body {
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 13% -12%, rgba(76, 215, 184, .18), transparent 32rem),
+        radial-gradient(circle at 91% -10%, rgba(118, 101, 229, .18), transparent 36rem),
+        var(--bg);
+      overflow-x: hidden;
+    }
+    button, textarea, select, input { font: inherit; }
+    button { color: inherit; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgba(110, 218, 189, .38); background-clip: padding-box; }
+    * { scrollbar-color: rgba(110, 218, 189, .38) transparent; scrollbar-width: thin; }
+
+    .app { min-height: 100vh; }
+    .topbar {
+      height: 70px;
+      display: grid;
+      grid-template-columns: 210px minmax(0, 1fr) 250px;
+      align-items: center;
+      gap: 18px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(5, 12, 23, .86);
+      backdrop-filter: blur(18px);
+    }
+    .brand, .top-actions, .nav, .mode-tabs, .panel-head, .section-head, .row, .inline, .footer-action, .task-title-line { display: flex; align-items: center; }
+    .brand { gap: 10px; }
+    .logo {
+      width: 38px; height: 38px; display: grid; place-items: center;
+      border-radius: 12px; color: #073038; font-weight: 900;
+      background: linear-gradient(135deg, var(--mint), var(--blue));
+      box-shadow: 0 8px 24px rgba(91, 217, 181, .22);
+    }
+    .brand strong { font-size: 16px; font-weight: 800; }
+    .brand span { color: var(--muted); font-size: 10px; }
+    .nav { justify-content: center; gap: 5px; }
+    .nav a { padding: 10px 14px; border-radius: 10px; color: var(--muted); text-decoration: none; font-size: 12px; }
+    .nav a.active { color: #dffbf2; background: rgba(79, 195, 165, .12); box-shadow: inset 0 -2px var(--mint-strong); }
+    .top-actions { justify-content: flex-end; gap: 10px; }
+    .autosave { color: var(--muted-2); font-size: 10px; }
+    .credit { padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px; color: #b8c9d9; background: rgba(18, 35, 57, .7); font-size: 10px; }
+    .avatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: #0b2d32; background: linear-gradient(145deg, #d5fff3, #a6c8ff); font-weight: 900; }
+
+    .hero {
+      min-height: 122px;
+      display: flex; align-items: center; justify-content: space-between; gap: 24px;
+      padding: 18px 28px;
+    }
+    .hero h1 { margin: 0; font-size: 34px; line-height: 1.1; letter-spacing: -1.5px; }
+    .hero p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+    .mode-tabs { gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 15px; background: rgba(13, 27, 46, .78); }
+    .mode-tabs button {
+      min-width: 126px; height: 42px; border: 0; border-radius: 11px;
+      color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700;
+    }
+    .mode-tabs button.active { color: #dffff5; background: linear-gradient(135deg, rgba(78, 203, 171, .19), rgba(109, 139, 230, .15)); box-shadow: inset 0 0 0 1px rgba(107, 228, 195, .26); }
+    .mode-tabs .count { min-width: auto; padding: 2px 7px; margin-left: 4px; border-radius: 999px; background: rgba(117, 226, 197, .13); color: #9ce8d2; }
+
+    .workspace { height: calc(100vh - 192px); min-height: 690px; padding: 0 20px 20px; }
+    .view { display: none; height: 100%; gap: 15px; }
+    .view.active { display: grid; }
+    .single-view { grid-template-columns: minmax(460px, .92fr) minmax(600px, 1.08fr); }
+    .batch-view { grid-template-columns: 330px minmax(700px, 1fr); }
+    .tasks-view { grid-template-columns: 260px minmax(760px, 1fr); }
+    .panel {
+      min-width: 0; min-height: 0; overflow: hidden;
+      border: 1px solid var(--line); border-radius: var(--r);
+      background: var(--panel); box-shadow: var(--shadow);
+    }
+    .panel-head { height: 54px; justify-content: space-between; gap: 14px; padding: 0 17px; border-bottom: 1px solid var(--line); }
+    .panel-head strong { font-size: 13px; }
+    .panel-head small { color: var(--muted-2); font-size: 9px; }
+    .ghost-btn, .soft-btn, .primary-btn, .icon-btn {
+      border: 1px solid var(--line); border-radius: 10px; background: #102039; cursor: pointer;
+    }
+    .ghost-btn { min-height: 32px; padding: 0 10px; color: #90a5ba; font-size: 9px; }
+    .soft-btn { min-height: 34px; padding: 0 12px; color: #aef0dc; border-color: rgba(104, 220, 190, .28); background: rgba(57, 170, 142, .10); font-size: 10px; }
+    .primary-btn { min-height: 44px; padding: 0 22px; border: 0; color: #092f35; font-weight: 900; background: linear-gradient(135deg, #91ead1, #9abfff); box-shadow: 0 12px 28px rgba(72, 190, 160, .20); }
+    .icon-btn { width: 32px; height: 32px; padding: 0; color: #93a7bc; }
+    .section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .section-head { justify-content: space-between; margin-bottom: 10px; }
+    .section-head strong { font-size: 11px; }
+    .section-head span { color: var(--muted-2); font-size: 9px; }
+    .label { color: var(--muted-2); font-size: 8px; }
+    .value { margin-top: 4px; color: #dce8f2; font-size: 10px; font-weight: 800; }
+
+    .reference-layout { display: grid; grid-template-columns: 138px minmax(0, 1fr); gap: 10px; }
+    .master, .ref, .upload-tile, .art { position: relative; overflow: hidden; border-radius: 13px; }
+    .master { height: 154px; border: 2px solid var(--mint-strong); box-shadow: 0 0 0 4px rgba(87, 216, 182, .08); }
+    .master .tag, .ref .tag { position: absolute; left: 7px; bottom: 7px; padding: 4px 6px; border-radius: 6px; color: #e5fff8; background: rgba(4, 18, 26, .74); font-size: 7px; }
+    .ref-side { display: grid; grid-template-rows: 82px 62px; gap: 10px; }
+    .ref-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+    .ref { height: 82px; border: 1px solid var(--line); }
+    .upload-tile { height: 82px; display: grid; place-items: center; border: 1px dashed rgba(103, 218, 188, .42); color: #8fddc7; background: rgba(60, 174, 146, .06); font-size: 9px; text-align: center; }
+    .upload-hint { display: flex; align-items: center; padding: 0 12px; border-radius: 11px; color: var(--muted); background: rgba(16, 32, 53, .72); font-size: 9px; line-height: 1.5; }
+    .art { position: absolute; inset: 0; background: linear-gradient(145deg, #28586c, #6dc6b1 48%, #efcf87); }
+    .art::before { content: ""; position: absolute; width: 30%; height: 68%; left: 35%; top: 16%; border-radius: 42% 42% 18% 18%; background: linear-gradient(#f7fffc, #a8d7cb); box-shadow: 0 16px 38px rgba(8, 32, 39, .28); }
+    .art::after { content: ""; position: absolute; width: 20%; aspect-ratio: 1; right: 9%; top: 9%; border-radius: 50%; background: #ffe297; }
+    .art.pink { background: linear-gradient(145deg, #6d416a, #d990ad 50%, #f4cf9e); }
+    .art.blue { background: linear-gradient(145deg, #25346c, #7484e7 50%, #a9d1ff); }
+    .art.earth { background: linear-gradient(145deg, #6a4631, #c88e58 50%, #efd1a0); }
+    .art.mint { background: linear-gradient(145deg, #24514d, #56c1a4 50%, #d0e4b4); }
+    .art.sunset { background: linear-gradient(145deg, #713e55, #ed936e 48%, #ffd38c); }
+
+    .prompt-header { margin-bottom: 9px; }
+    .prompt-box { min-height: 130px; padding: 13px; border: 1px solid rgba(137, 168, 195, .22); border-radius: 14px; color: #b8c7d6; background: rgba(13, 27, 46, .88); font-size: 10px; line-height: 1.7; }
+    .prompt-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .prompt-tags span { padding: 5px 7px; border-radius: 7px; color: #7f94aa; background: #17283e; font-size: 8px; }
+    .prompt-tags span:first-child { color: #b8f5e4; background: rgba(65, 183, 153, .13); }
+    .magic { color: #98ead3; font-size: 10px; font-weight: 800; }
+    .settings-grid { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr; gap: 8px; }
+    .setting { padding: 9px 10px; border-radius: 10px; background: rgba(16, 32, 54, .72); }
+    .single-input { display: grid; grid-template-rows: 54px auto auto auto 78px; }
+    .generate-footer { min-height: 78px; justify-content: space-between; padding: 0 14px 0 16px; border-top: 1px solid var(--line); background: rgba(5, 14, 25, .72); }
+    .estimate span { display: block; color: var(--muted-2); font-size: 8px; }
+    .estimate strong { display: block; margin-top: 4px; color: #a8f0da; font-size: 11px; }
+
+    .result-panel { display: grid; grid-template-rows: 54px 1fr; }
+    .result-stage { min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 174px; gap: 10px; padding: 12px; }
+    .hero-result { position: relative; min-height: 0; overflow: hidden; border-radius: 15px; background: linear-gradient(145deg, #173b4b, #5cb4a5 43%, #e2bb73); }
+    .hero-result::before { content: ""; position: absolute; width: 25%; height: 67%; left: 38%; top: 14%; border-radius: 44% 44% 17% 17%; background: linear-gradient(#f9fffd, #a6d0c5); box-shadow: 0 30px 70px rgba(5, 28, 34, .35); }
+    .hero-result::after { content: "PIC365\A MINERAL WATER"; white-space: pre; position: absolute; left: 26px; bottom: 28px; color: white; font-size: 22px; font-weight: 900; line-height: 1.15; text-shadow: 0 2px 12px rgba(0,0,0,.28); }
+    .result-badges { position: absolute; left: 12px; top: 12px; display: flex; gap: 5px; }
+    .result-badges span { padding: 5px 7px; border-radius: 7px; color: #e8fff8; background: rgba(4, 20, 29, .72); font-size: 7px; }
+    .result-actions { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 6px; }
+    .result-actions button { height: 34px; padding: 0 10px; border: 0; border-radius: 9px; color: #dce8f2; background: rgba(5, 18, 29, .78); font-size: 8px; }
+    .variants { display: grid; grid-template-rows: repeat(3, 1fr); gap: 9px; min-height: 0; }
+    .variant { position: relative; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; }
+    .variant.selected { border-color: var(--mint-strong); box-shadow: 0 0 0 2px rgba(91, 220, 184, .10); }
+    .variant span { position: absolute; left: 7px; bottom: 6px; padding: 4px 6px; border-radius: 6px; background: rgba(4, 17, 27, .75); font-size: 7px; }
+
+    .batch-sidebar { display: grid; grid-template-rows: 54px auto auto 1fr 82px; }
+    .source-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; }
+    .source-row > div, .source-row > button { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 11px; }
+    .source-row > button { border: 1px dashed rgba(103,218,188,.4); color: #86d9c1; background: rgba(59,170,143,.06); font-size: 8px; }
+    .batch-brief { min-height: 130px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; color: #b3c3d2; background: #0e1d31; font-size: 9px; line-height: 1.65; }
+    .small-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .shot-board { display: grid; grid-template-rows: 54px 1fr; }
+    .shot-grid { min-height: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); grid-auto-rows: 1fr; gap: 9px; padding: 11px; }
+    .shot-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: #0e1b2d; }
+    .shot-card.selected { border-color: rgba(104,225,192,.65); box-shadow: 0 0 0 2px rgba(91,220,184,.09); }
+    .shot-image { position: relative; height: calc(100% - 74px); min-height: 120px; overflow: hidden; }
+    .shot-check { position: absolute; right: 8px; top: 8px; width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; color: #092f35; background: #8ce7ce; font-size: 11px; font-weight: 900; }
+    .shot-index { position: absolute; left: 8px; top: 8px; padding: 4px 6px; border-radius: 7px; background: rgba(4,17,27,.72); font-size: 7px; }
+    .shot-info { height: 74px; padding: 9px 10px; }
+    .shot-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+    .shot-info p { margin: 6px 0 0; color: var(--muted-2); font-size: 7px; line-height: 1.45; }
+
+    .queue-sidebar { display: grid; grid-template-rows: 54px auto auto 1fr 74px; }
+    .stats { display: grid; gap: 8px; }
+    .stat { justify-content: space-between; padding: 10px 11px; border-radius: 11px; background: rgba(16,32,54,.75); }
+    .stat:first-child { background: rgba(40, 119, 100, .20); }
+    .stat strong { font-size: 20px; }
+    .filters { display: grid; gap: 4px; }
+    .filter { justify-content: space-between; min-height: 38px; padding: 0 10px; border-radius: 9px; color: #8da1b6; font-size: 9px; }
+    .filter.active { color: #c5f9e9; background: rgba(59,172,143,.14); }
+    .filter span { min-width: 24px; padding: 3px 6px; border-radius: 999px; text-align: center; background: rgba(117,226,197,.10); }
+    .queue-panel { display: grid; grid-template-rows: 54px 1fr; }
+    .queue-toolbar { display: flex; gap: 6px; }
+    .queue-list { min-height: 0; display: grid; align-content: start; gap: 9px; padding: 11px; overflow: auto; }
+    .task { display: grid; grid-template-columns: 106px minmax(0,1fr) 175px 130px; align-items: center; gap: 12px; min-height: 116px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,28,47,.72); }
+    .task-thumb { position: relative; height: 94px; overflow: hidden; border-radius: 11px; }
+    .task-info h3 { margin: 0 0 7px; font-size: 11px; }
+    .task-info p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
+    .task-info small { display: block; margin-top: 7px; color: var(--muted-2); font-size: 7px; }
+    .progress { height: 7px; overflow: hidden; border-radius: 999px; background: #172a42; }
+    .progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,var(--mint-strong),var(--blue)); }
+    .task-state strong { display: block; margin-top: 7px; color: #9ae8d2; font-size: 9px; }
+    .task-state small { color: var(--muted-2); font-size: 7px; }
+    .task-buttons { display: flex; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+    .task-buttons button { min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: #91a5ba; background: #101f34; font-size: 8px; }
+    .task.completed .task-state strong { color: #9be5d0; }
+    .task.waiting .task-state strong { color: var(--orange); }
+    .task.failed { border-color: rgba(255,135,151,.30); }
+    .task.failed .task-state strong { color: #ff9aaa; }
+
+    .cat {
+      position: fixed; right: 18px; bottom: 17px; width: 48px; height: 48px; display: grid; place-items: center;
+      border: 2px solid rgba(140,235,210,.72); border-radius: 50%; color: #12363a;
+      background: linear-gradient(145deg,#d3fff3,#a5c7ff); box-shadow: 0 0 28px rgba(89,217,184,.28); font-size: 21px;
+    }
+
+    @media (max-width: 760px) {
+      .topbar { height: 58px; grid-template-columns: 100px 1fr auto; padding: 0 10px; }
+      .brand span, .autosave, .credit, .nav a:not(.active) { display: none; }
+      .nav { justify-content: flex-end; }
+      .nav a.active { padding: 8px 9px; font-size: 9px; }
+      .logo { width: 29px; height: 29px; border-radius: 9px; }
+      .avatar { width: 31px; height: 31px; font-size: 11px; }
+      .hero { min-height: 132px; align-items: flex-start; flex-direction: column; padding: 15px 12px; }
+      .hero h1 { font-size: 24px; }
+      .hero p { font-size: 9px; }
+      .mode-tabs { width: 100%; }
+      .mode-tabs button { min-width: 0; flex: 1; height: 38px; padding: 0 5px; font-size: 9px; }
+      .workspace { height: auto; min-height: 0; padding: 0 8px 78px; }
+      .single-view, .batch-view, .tasks-view { grid-template-columns: 1fr; }
+      .panel { min-height: 620px; }
+      .result-panel { min-height: 590px; }
+      .result-stage { grid-template-columns: 1fr; }
+      .variants { position: absolute; left: 24px; right: 24px; bottom: 24px; height: 94px; grid-template-columns: repeat(3,1fr); grid-template-rows: 1fr; }
+      .result-stage { position: relative; }
+      .hero-result { min-height: 500px; }
+      .shot-grid { grid-template-columns: repeat(2,minmax(0,1fr)); grid-auto-rows: 220px; }
+      .task { grid-template-columns: 74px minmax(0,1fr); min-height: 90px; }
+      .task-thumb { height: 70px; }
+      .task-state, .task-buttons { display: none; }
+      .cat { width: 40px; height: 40px; right: 10px; bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><div class="logo">P</div><div><strong>pic365</strong><span> AI 视觉工作台</span></div></div>
+      <nav class="nav"><a class="active">灵感生图</a><a>无限画布</a><a>电商套图</a><a>视频创作</a></nav>
+      <div class="top-actions"><span class="autosave">所有修改已自动保存</span><span class="credit">1,280 积分</span><div class="avatar">陶</div></div>
+    </header>
+
+    <section class="hero">
+      <div><h1 id="page-title">灵感生图</h1><p id="page-subtitle">先放入参考图片，再描述你想看到的画面；复杂约束由系统处理。</p></div>
+      <div class="mode-tabs" role="tablist">
+        <button type="button" data-view="single">▧ 单图创作</button>
+        <button type="button" data-view="batch">✦ 批量生图</button>
+        <button type="button" data-view="tasks">☷ 任务排队 <span class="count">3</span></button>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="view single-view" data-panel="single">
+        <article class="panel single-input">
+          <header class="panel-head"><strong>创作输入</strong><small>参考关系已自动识别</small></header>
+          <section class="section">
+            <div class="section-head"><strong>参考图片</strong><span>1 张母版 · 2/9 其他参考图</span></div>
+            <div class="reference-layout">
+              <div class="master"><div class="art"></div><span class="tag">母版 · 保持商品一致</span></div>
+              <div class="ref-side">
+                <div class="ref-row">
+                  <div class="ref"><div class="art pink"></div><span class="tag">光线</span></div>
+                  <div class="ref"><div class="art earth"></div><span class="tag">场景</span></div>
+                  <div class="upload-tile">＋<br>上传 / 粘贴<br>资产库</div>
+                </div>
+                <div class="upload-hint">可粘贴、拖拽或选择图片。系统自动判断母版、风格和场景参考。</div>
+              </div>
+            </div>
+          </section>
+          <section class="section">
+            <div class="section-head prompt-header"><strong>提示词</strong><span class="magic">✦ AI 魔笔 · 1 积分</span></div>
+            <div class="prompt-box">为 Pic365 矿泉水制作一张自然清新的夏日广告。透明瓶身放在溪边岩石上，晨光穿过水雾，突出纯净、轻盈和真实质感。保持瓶型、标签、颜色与母版一致。
+              <div class="prompt-tags"><span>@ 母版</span><span>自然光</span><span>商业摄影</span><span>＋ 添加约束</span></div>
+            </div>
+          </section>
+          <section class="section">
+            <div class="section-head"><strong>常用设置</strong><span>更多设置 ›</span></div>
+            <div class="settings-grid">
+              <div class="setting"><div class="label">生图服务</div><div class="value">GPT（默认）⌄</div></div>
+              <div class="setting"><div class="label">画布比例</div><div class="value">4:5 · 1024×1280</div></div>
+              <div class="setting"><div class="label">质量</div><div class="value">☑ 低　□ 中　□ 高</div></div>
+              <div class="setting"><div class="label">生成数量</div><div class="value">4 张　−　＋</div></div>
+            </div>
+          </section>
+          <footer class="generate-footer row"><div class="estimate"><span>本次创作</span><strong>4 张 · 预计 88 积分</strong></div><button class="primary-btn">✦ 开始生成</button></footer>
+        </article>
+
+        <article class="panel result-panel">
+          <header class="panel-head"><div><strong>生成结果</strong> <small>已完成 4/4</small></div><div class="inline" style="gap:6px"><button class="ghost-btn">对比</button><button class="ghost-btn">全部下载</button><button class="soft-btn">加入画布</button></div></header>
+          <div class="result-stage">
+            <div class="hero-result"><div class="result-badges"><span>已采用</span><span>4:5</span><span>低质量</span></div><div class="result-actions"><button>精修</button><button>生成视频</button><button>下载原图</button></div></div>
+            <div class="variants"><div class="variant selected"><div class="art"></div><span>版本 1</span></div><div class="variant"><div class="art blue"></div><span>版本 2</span></div><div class="variant"><div class="art pink"></div><span>版本 3</span></div></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="view batch-view" data-panel="batch">
+        <article class="panel batch-sidebar">
+          <header class="panel-head"><strong>批次设置</strong><small>共同部分只填一次</small></header>
+          <section class="section">
+            <div class="section-head"><strong>共同参考图</strong><span>2/9 · 每张≤7 MB</span></div>
+            <div class="source-row"><div><div class="art"></div></div><div><div class="art earth"></div></div><button>粘贴<br>拖入</button><button>资产库</button></div>
+          </section>
+          <section class="section">
+            <div class="section-head"><strong>批量创作目标</strong><span class="magic">✦ 生成清单</span></div>
+            <div class="batch-brief">围绕 Pic365 矿泉水制作一组夏日广告：产品主视觉、户外饮用、冰爽细节、露营氛围和社交媒体海报。保持瓶型、标签、颜色和材质一致。</div>
+          </section>
+          <section class="section">
+            <div class="section-head"><strong>输出设置</strong><span>更多 ›</span></div>
+            <div class="small-settings"><div class="setting"><div class="label">生图服务</div><div class="value">GPT</div></div><div class="setting"><div class="label">质量</div><div class="value">低</div></div><div class="setting"><div class="label">默认比例</div><div class="value">4:5</div></div><div class="setting"><div class="label">每个画面</div><div class="value">1 张</div></div></div>
+          </section>
+          <footer class="generate-footer row"><div class="estimate"><span>本次批量生成</span><strong>已选 5 张 · 预计 110 积分</strong></div><button class="primary-btn">一键生成</button></footer>
+        </article>
+
+        <article class="panel shot-board">
+          <header class="panel-head"><div><strong>创作清单</strong> <small>系统已拆分 6 个画面，可单独调整</small></div><div class="inline" style="gap:6px"><button class="ghost-btn">取消全选</button><button class="ghost-btn">批量设置</button><button class="soft-btn">＋ 添加画面</button></div></header>
+          <div class="shot-grid">
+            <article class="shot-card selected"><div class="shot-image"><div class="art"></div><span class="shot-index">画面 01</span><span class="shot-check">✓</span></div><div class="shot-info"><strong>自然溪谷产品主视觉</strong><p>晨光、水雾与岩石，突出纯净质感。</p></div></article>
+            <article class="shot-card selected"><div class="shot-image"><div class="art mint"></div><span class="shot-index">画面 02</span><span class="shot-check">✓</span></div><div class="shot-info"><strong>户外饮用生活场景</strong><p>年轻人在林间自然饮水，主体无遮挡。</p></div></article>
+            <article class="shot-card selected"><div class="shot-image"><div class="art blue"></div><span class="shot-index">画面 03</span><span class="shot-check">✓</span></div><div class="shot-info"><strong>冰爽水珠细节特写</strong><p>冷调微距展示瓶身与标签细节。</p></div></article>
+            <article class="shot-card selected"><div class="shot-image"><div class="art sunset"></div><span class="shot-index">画面 04</span><span class="shot-check">✓</span></div><div class="shot-info"><strong>夕阳露营氛围图</strong><p>暖色夕阳与远山形成生活感画面。</p></div></article>
+            <article class="shot-card selected"><div class="shot-image"><div class="art pink"></div><span class="shot-index">画面 05</span><span class="shot-check">✓</span></div><div class="shot-info"><strong>社交媒体传播海报</strong><p>轻快构图并为标题预留安全区域。</p></div></article>
+            <article class="shot-card"><div class="shot-image"><div class="art earth"></div><span class="shot-index">画面 06</span></div><div class="shot-info"><strong>包装与规格展示图</strong><p>准确展示单瓶和组合包装数量关系。</p></div></article>
+          </div>
+        </article>
+      </div>
+
+      <div class="view tasks-view" data-panel="tasks">
+        <aside class="panel queue-sidebar">
+          <header class="panel-head"><strong>任务概览</strong><small>自动更新</small></header>
+          <section class="section stats"><div class="stat row"><div><div class="value">进行中</div><div class="label">生成服务正在处理</div></div><strong>3</strong></div><div class="stat row"><div><div class="value">等待中</div><div class="label">达到并发后自动开始</div></div><strong>2</strong></div><div class="stat row"><div><div class="value">今日完成</div><div class="label">失败任务已退积分</div></div><strong>18</strong></div></section>
+          <section class="section"><div class="section-head"><strong>筛选任务</strong></div><div class="filters"><div class="filter active row">全部任务 <span>23</span></div><div class="filter row">进行中 <span>3</span></div><div class="filter row">等待中 <span>2</span></div><div class="filter row">已完成 <span>18</span></div><div class="filter row">失败 / 取消 <span>0</span></div></div></section>
+          <section class="section"><div class="section-head"><strong>排队规则</strong></div><div class="upload-hint" style="min-height:104px;align-items:flex-start;padding-top:12px">最多保留 20 个未完成任务。生成成功后按实际结果结算；失败或取消自动退回预占积分。</div></section>
+          <footer class="generate-footer row" style="justify-content:center"><button class="soft-btn">＋ 返回继续创作</button></footer>
+        </aside>
+
+        <article class="panel queue-panel">
+          <header class="panel-head"><div><strong>任务列表</strong> <small>23 条记录</small></div><div class="queue-toolbar"><button class="ghost-btn">仅看我的</button><button class="ghost-btn">清理已完成</button></div></header>
+          <div class="queue-list">
+            <article class="task"><div class="task-thumb"><div class="art blue"></div></div><div class="task-info"><h3>夏日矿泉水广告 · 4 张</h3><p>晨光、水雾、溪边岩石，保持商品母版一致。</p><small>GPT · 4:5 · 低质量 · 预计 88 积分</small></div><div class="task-state"><div class="progress"><i style="width:72%"></i></div><strong>生成中 72%</strong><small>已完成 3 / 4</small></div><div class="task-buttons"><button>取消任务</button></div></article>
+            <article class="task completed"><div class="task-thumb"><div class="art mint"></div></div><div class="task-info"><h3>自然光批量生图 · 6 张</h3><p>统一自然光与色温，保持原始主体结构。</p><small>批量生图 · 跟随原图 · 实扣 132 积分</small></div><div class="task-state"><div class="progress"><i style="width:100%"></i></div><strong>已完成 6 / 6</strong><small>刚刚完成</small></div><div class="task-buttons"><button>查看结果</button><button>下载</button></div></article>
+            <article class="task waiting"><div class="task-thumb"><div class="art sunset"></div></div><div class="task-info"><h3>露营生活方式系列 · 4 张</h3><p>保留商品外观，切换四种户外生活场景。</p><small>GPT · 4:5 · 中质量 · 预占 144 积分</small></div><div class="task-state"><div class="progress"><i style="width:18%"></i></div><strong>等待中 · 第 2 位</strong><small>预计 2 分钟后开始</small></div><div class="task-buttons"><button>取消任务</button></div></article>
+            <article class="task failed"><div class="task-thumb"><div class="art earth"></div></div><div class="task-info"><h3>包装展示图 · 2 张</h3><p>上游服务响应超时，未生成有效结果。</p><small>积分已全部退回 · 可直接重试</small></div><div class="task-state"><div class="progress"><i style="width:0%"></i></div><strong>生成失败</strong><small>服务超时</small></div><div class="task-buttons"><button>查看原因</button><button>重试</button></div></article>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <button class="cat" aria-label="打开聊天精灵">🐱</button>
+  <script>
+    const titles = {
+      single: ['灵感生图', '先放入参考图片，再描述你想看到的画面；复杂约束由系统处理。'],
+      batch: ['批量生图', '一次定义共同目标，系统拆分画面；每张仍然可以单独调整。'],
+      tasks: ['任务排队', '清楚查看生成状态、积分占用和结果；失败任务可以直接重试。']
+    };
+    function showView(view) {
+      if (!titles[view]) view = 'single';
+      document.querySelectorAll('[data-panel]').forEach(el => el.classList.toggle('active', el.dataset.panel === view));
+      document.querySelectorAll('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
+      document.getElementById('page-title').textContent = titles[view][0];
+      document.getElementById('page-subtitle').textContent = titles[view][1];
+      const url = new URL(location.href); url.searchParams.set('view', view); history.replaceState(null, '', url);
+    }
+    document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.view)));
+    showView(new URLSearchParams(location.search).get('view') || 'single');
+  </script>
+</body>
+</html>

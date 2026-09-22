@@ -64,6 +64,7 @@ function nodeMetadata(node = {}) {
     mediaType: node.mediaType === 'video' ? 'video' : node.mediaType === 'image' ? 'image' : '',
     videoGenerationId: cleanId(node.videoGenerationId),
     mimeType: cleanText(node.mimeType, 120),
+    fileSize: Math.max(0, Math.round(finiteNumber(node.fileSize || node.byteLength, 0, 0, 1_000_000_000))),
     size: cleanText(node.size, 40),
     quality: cleanText(node.quality, 30),
     count: Math.max(1, Math.min(4, Math.round(finiteNumber(node.count, 1, 1, 4)))),

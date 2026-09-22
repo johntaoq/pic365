@@ -21,7 +21,13 @@ export function batchPromptLayout(imageCount, promptCount, mode = 'paired') {
   const images = boundedCount(imageCount);
   const prompts = boundedCount(promptCount);
   if (!images) {
-    return { activeCount: 0, visibleCount: prompts, minimumCount: 0, canAdd: false };
+    const visibleCount = Math.max(1, prompts);
+    return {
+      activeCount: visibleCount,
+      visibleCount,
+      minimumCount: 1,
+      canAdd: visibleCount < MAX_BATCH_IMAGE_PROMPTS
+    };
   }
   if (images === 1) {
     const visibleCount = Math.max(1, prompts);
@@ -52,7 +58,14 @@ export function batchPromptLayout(imageCount, promptCount, mode = 'paired') {
 export function createBatchPromptAssignments(images = [], prompts = [], mode = 'paired') {
   const sourceImages = Array.isArray(images) ? images.slice(0, MAX_BATCH_IMAGE_PROMPTS) : [];
   const promptItems = Array.isArray(prompts) ? prompts.slice(0, MAX_BATCH_IMAGE_PROMPTS) : [];
-  if (!sourceImages.length) return [];
+  if (!sourceImages.length) {
+    return promptItems.map((promptItem, promptIndex) => ({
+      image: null,
+      imageIndex: -1,
+      promptItem,
+      promptIndex
+    }));
+  }
   if (sourceImages.length === 1) {
     return promptItems.map((promptItem, promptIndex) => ({
       image: sourceImages[0],

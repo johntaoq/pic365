@@ -27,6 +27,7 @@ import {
   Calculator,
   Cat,
   ChevronDown,
+  ChevronUp,
   Check,
   Circle,
   Coins,
@@ -65,7 +66,12 @@ import './styles.css';
 import { authClient } from './authClient';
 import CreateWorkspace from './create-workspace';
 import { fetchImageGeneration } from './image-generation-client.js';
-import { SITE_NOTICE_EXAMPLES } from '../shared/site-notice.js';
+import {
+  createSiteNoticeSnoozeValue,
+  isSiteNoticeSnoozedToday,
+  SITE_NOTICE_EXAMPLES,
+  SITE_NOTICE_SNOOZE_STORAGE_KEY
+} from '../shared/site-notice.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import AdminChatProvider from './admin-chat-provider.jsx';
 import AdminSystemGroups from './admin-system-groups.jsx';
@@ -1238,6 +1244,22 @@ function getAuthHeaders(session) {
 
 function isAuthenticatedSession(session) {
   return Boolean(session?.user || session?.access_token);
+}
+
+function getSiteNoticeVersion(notice) {
+  const updatedAt = String(notice?.updatedAt || '').trim();
+  if (updatedAt) return updatedAt;
+  return [notice?.title, notice?.body, notice?.format, notice?.audience]
+    .map((value) => String(value || ''))
+    .join('\n');
+}
+
+function isEligibleForSiteNotice(notice, session, profile) {
+  if (!notice) return false;
+  const audience = notice.audience || 'all';
+  if (audience === 'all') return true;
+  if (!isAuthenticatedSession(session)) return false;
+  return audience !== 'members' || Number(profile?.creditBalance || 0) > 0;
 }
 
 function getGenerationQuotaText(profile, language, requiredCredits = 0) {
@@ -2741,7 +2763,7 @@ function createNotificationDraft(value = {}) {
     siteNoticeTitle: String(value.siteNoticeTitle || ''),
     siteNoticeBody: String(value.siteNoticeBody || ''),
     siteNoticeFormat: ['markdown', 'html'].includes(value.siteNoticeFormat) ? value.siteNoticeFormat : 'markdown',
-    siteNoticePlacement: ['banner', 'modal'].includes(value.siteNoticePlacement) ? value.siteNoticePlacement : 'banner',
+    siteNoticePlacement: ['banner', 'modal'].includes(value.siteNoticePlacement) ? value.siteNoticePlacement : 'modal',
     audience: ['all', 'signed-in', 'members'].includes(value.audience) ? value.audience : 'all',
     notifyGenerationFailure: value.notifyGenerationFailure !== false,
     notifyLowCredits: value.notifyLowCredits !== false,
@@ -2755,6 +2777,51 @@ function RichSiteNoticeContent({ body, format, className = '' }) {
     <Suspense fallback={<div className={className}>通知内容加载中…</div>}>
       <SiteNoticeContent className={className} body={body} format={format} />
     </Suspense>
+  );
+}
+
+function SiteNoticeModal({ notice, language, onClose, onSnooze }) {
+  const closeButtonRef = useRef(null);
+  const labels = language === 'zh'
+    ? { eyebrow: 'Pic365 更新通知', snooze: '当日静默', close: '关闭', dialog: '站内公告' }
+    : { eyebrow: 'Pic365 update', snooze: 'Mute for today', close: 'Close', dialog: 'Site notice' };
+
+  useBodyScrollLock(Boolean(notice));
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [notice, onClose]);
+
+  if (!notice) return null;
+
+  return (
+    <div className="siteNoticeModalBackdrop">
+      <section className="siteNoticeModal" role="dialog" aria-modal="true" aria-label={labels.dialog} aria-labelledby="site-notice-modal-title" aria-describedby="site-notice-modal-content">
+        <header className="siteNoticeModalHeader">
+          <span className="siteNoticeModalKicker"><Bell size={16} />{labels.eyebrow}</span>
+        </header>
+        <div className="siteNoticeModalBody">
+          <div className="siteNoticeModalIcon" aria-hidden="true"><Bell size={22} /></div>
+          <strong id="site-notice-modal-title">{notice.title || labels.dialog}</strong>
+          <div id="site-notice-modal-content">
+            <RichSiteNoticeContent className="siteNoticeRichContent" body={notice.body} format={notice.format} />
+          </div>
+        </div>
+        <footer className="siteNoticeModalActions">
+          <button className="siteNoticeSnoozeButton" type="button" onClick={onSnooze}><Moon size={16} />{labels.snooze}</button>
+          <button className="siteNoticeDismissButton" type="button" onClick={onClose} ref={closeButtonRef}>{labels.close}</button>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -2798,6 +2865,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
   const [providerPricingReferenceCount, setProviderPricingReferenceCount] = useState(0);
   const [providerEditorMode, setProviderEditorMode] = useState('auto');
   const [providerMessage, setProviderMessage] = useState('');
+  const [providerOrderSaving, setProviderOrderSaving] = useState(false);
   const [promptLogging, setPromptLogging] = useState({ enabled: false, updatedAt: null });
   const [promptLogs, setPromptLogs] = useState([]);
   const [promptLoggingStatus, setPromptLoggingStatus] = useState('idle');
@@ -3220,6 +3288,34 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
     }
     if (providerDraft.id === provider.id) resetProviderDraft();
     await loadProviders();
+  }
+
+  async function moveProvider(providerId, direction) {
+    if (providerOrderSaving) return;
+    const currentIndex = providers.findIndex((provider) => provider.id === providerId);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= providers.length) return;
+    const reordered = [...providers];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setProviders(reordered.map((provider, index) => ({ ...provider, sortOrder: index })));
+    setProviderOrderSaving(true);
+    setProviderMessage('');
+    try {
+      const response = await fetch('/api/admin/image-providers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
+        body: JSON.stringify({ action: 'reorder', orderedIds: reordered.map((provider) => provider.id) })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'PROVIDER_ORDER_FAILED');
+      setProviders(payload.providers || reordered);
+      setProviderMessage(language === 'zh' ? '生图服务顺序已更新。' : 'Image service order updated.');
+    } catch {
+      await loadProviders();
+      setProviderMessage(language === 'zh' ? '排序保存失败，请重试。' : 'The new order could not be saved. Try again.');
+    } finally {
+      setProviderOrderSaving(false);
+    }
   }
 
   async function loadAdminData(nextRange = range, nextStart = customStart, nextEnd = customEnd) {
@@ -3752,7 +3848,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
               <label><span>{language === 'zh' ? '公告标题' : 'Notice title'}</span><input value={notificationDraft.siteNoticeTitle} maxLength={120} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeTitle: event.target.value }))} /></label>
               <label><span>{language === 'zh' ? '显示对象' : 'Audience'}</span><select value={notificationDraft.audience} onChange={(event) => setNotificationDraft((current) => ({ ...current, audience: event.target.value }))}><option value="all">{language === 'zh' ? '所有访客' : 'All visitors'}</option><option value="signed-in">{language === 'zh' ? '已登录用户' : 'Signed-in users'}</option><option value="members">{language === 'zh' ? '有积分用户' : 'Users with credits'}</option></select></label>
               <label><span>{language === 'zh' ? '内容格式' : 'Content format'}</span><select value={notificationDraft.siteNoticeFormat} onChange={(event) => setNotificationDraft((current) => ({ ...current, siteNoticeFormat: event.target.value }))}><option value="markdown">Markdown</option><option value="html">HTML</option></select></label>
-              <label><span>{language === 'zh' ? '显示位置' : 'Placement'}</span><input value={language === 'zh' ? '顶部铃铛通知中心' : 'Top notification bell'} disabled /></label>
+              <label><span>{language === 'zh' ? '显示位置' : 'Placement'}</span><input value={language === 'zh' ? '登录弹窗（支持当日静默）' : 'Login modal with daily mute'} disabled /></label>
             </div>
             <label className="adminNotificationBody">
               <span>{language === 'zh' ? '公告内容' : 'Notice content'}</span>
@@ -3856,7 +3952,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         {activeSection === 'channels' ? (
           <div className="adminDashboard">
           <section className="adminBlock adminProviderBlock adminChannelSection">
-            <div className="adminSectionHeading"><div><h3><ImageIcon size={18} />{language === 'zh' ? '图片渠道配置' : 'Image channels'}</h3><p>{language === 'zh' ? '编辑区每行四项；渠道名称、模型、接口、掩码 Key、启停和默认状态在下方表格统一查看。' : 'The editor uses four fields per row. Review names, models, endpoints, masked keys, and status in the table below.'}</p></div><button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><Plus size={15} />{language === 'zh' ? '新增图片渠道' : 'Add image channel'}</button></div>
+            <div className="adminSectionHeading"><div><h3><ImageIcon size={18} />{language === 'zh' ? '图片渠道配置' : 'Image channels'}</h3><p>{language === 'zh' ? '使用排序按钮调整用户看到的生图服务顺序；默认服务只决定首次选择，不会强制排在第一位。' : 'Use the order controls to arrange services for users. The default controls initial selection without forcing the first position.'}</p></div><button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><Plus size={15} />{language === 'zh' ? '新增图片渠道' : 'Add image channel'}</button></div>
             <form className="adminProviderForm adminChannelForm adminChannelEditor" onSubmit={saveProvider}>
               <label><span>{language === 'zh' ? '显示名称' : 'Display name'}</span><input required value={providerDraft.name} onChange={(event) => setProviderDraft((current) => ({ ...current, name: event.target.value }))} placeholder="GPT Image 2 / Gemini Banana" /></label>
               <label><span>{language === 'zh' ? '接口类型' : 'Provider type'}</span><select value={providerDraft.providerType} onChange={(event) => setProviderDraft((current) => ({ ...current, providerType: event.target.value }))}>
@@ -3872,7 +3968,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
               <label><span>{language === 'zh' ? '计费规则' : 'Pricing rule'}</span><input value={providerPricingLabel(providerDraft, language)} disabled /></label>
               <div className="adminChannelEditorActions"><button className="adminProviderAction adminProviderSave" type="submit"><Settings size={16} />{providerDraft.id ? (language === 'zh' ? '保存图片渠道' : 'Save image channel') : (language === 'zh' ? '新增图片渠道' : 'Add image channel')}</button>{providerDraft.id ? <button className="adminProviderAction adminProviderCancel" type="button" onClick={resetProviderDraft}><X size={16} />{language === 'zh' ? '取消编辑' : 'Cancel edit'}</button> : null}</div>
             </form>
-            <div className="adminChannelTableWrap"><table className="adminChannelTable"><thead><tr><th>{language === 'zh' ? '渠道名称' : 'Channel'}</th><th>{language === 'zh' ? '模型与协议' : 'Model & protocol'}</th><th>{language === 'zh' ? '接口与密钥' : 'Endpoint & key'}</th><th>{language === 'zh' ? '计费规则' : 'Pricing'}</th><th>{language === 'zh' ? '状态' : 'Status'}</th><th>{language === 'zh' ? '操作' : 'Actions'}</th></tr></thead><tbody>{providers.map((provider) => <tr key={provider.id}><td><strong>{provider.name}</strong></td><td><span>{provider.model}</span><small>{provider.providerType}</small></td><td><span>{provider.baseUrl}</span><small>{provider.apiKeyMasked || (language === 'zh' ? '未配置 Key' : 'No key')}</small></td><td><span>{providerPricingLabel(provider, language)}</span><small>{language === 'zh' ? '100 积分 = 1 元' : '100 credits = RMB 1'}</small></td><td><div className="adminChannelStatus"><i className={provider.enabled ? 'enabled' : 'disabled'}>{provider.enabled ? (language === 'zh' ? '启用' : 'Enabled') : (language === 'zh' ? '停用' : 'Disabled')}</i>{provider.isDefault ? <i className="default">{language === 'zh' ? '默认' : 'Default'}</i> : null}</div></td><td><div className="adminChannelRowActions"><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除图片渠道' : 'Delete image channel'}><Trash2 size={15} /></button></div></td></tr>)}</tbody></table></div>
+            <div className="adminChannelTableWrap"><table className="adminChannelTable"><thead><tr><th className="adminChannelOrderColumn">{language === 'zh' ? '排序' : 'Order'}</th><th>{language === 'zh' ? '渠道名称' : 'Channel'}</th><th>{language === 'zh' ? '模型与协议' : 'Model & protocol'}</th><th>{language === 'zh' ? '接口与密钥' : 'Endpoint & key'}</th><th>{language === 'zh' ? '计费规则' : 'Pricing'}</th><th>{language === 'zh' ? '状态' : 'Status'}</th><th>{language === 'zh' ? '操作' : 'Actions'}</th></tr></thead><tbody>{providers.map((provider, index) => <tr key={provider.id}><td><div className="adminChannelOrder"><span>{index + 1}</span><div><button type="button" onClick={() => moveProvider(provider.id, -1)} disabled={providerOrderSaving || index === 0} aria-label={language === 'zh' ? `上移${provider.name}` : `Move ${provider.name} up`} title={language === 'zh' ? '上移' : 'Move up'}><ChevronUp size={14} /></button><button type="button" onClick={() => moveProvider(provider.id, 1)} disabled={providerOrderSaving || index === providers.length - 1} aria-label={language === 'zh' ? `下移${provider.name}` : `Move ${provider.name} down`} title={language === 'zh' ? '下移' : 'Move down'}><ChevronDown size={14} /></button></div></div></td><td><strong>{provider.name}</strong></td><td><span>{provider.model}</span><small>{provider.providerType}</small></td><td><span>{provider.baseUrl}</span><small>{provider.apiKeyMasked || (language === 'zh' ? '未配置 Key' : 'No key')}</small></td><td><span>{providerPricingLabel(provider, language)}</span><small>{language === 'zh' ? '100 积分 = 1 元' : '100 credits = RMB 1'}</small></td><td><div className="adminChannelStatus"><i className={provider.enabled ? 'enabled' : 'disabled'}>{provider.enabled ? (language === 'zh' ? '启用' : 'Enabled') : (language === 'zh' ? '停用' : 'Disabled')}</i>{provider.isDefault ? <i className="default">{language === 'zh' ? '默认' : 'Default'}</i> : null}</div></td><td><div className="adminChannelRowActions"><button className="adminProviderRowAction adminProviderEdit" type="button" onClick={() => editProvider(provider)}><Settings size={14} />{language === 'zh' ? '编辑' : 'Edit'}</button><button className="adminProviderRowAction adminProviderRemove" type="button" onClick={() => removeProvider(provider)} aria-label={language === 'zh' ? '删除图片渠道' : 'Delete image channel'}><Trash2 size={15} /></button></div></td></tr>)}</tbody></table></div>
             {providerMessage ? <p className="adminNotice">{providerMessage}</p> : null}
           </section>
           <AdminVideoProvider language={language} session={session} imageProviders={providers} />
@@ -4588,7 +4684,7 @@ function PreviewDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section className="previewDialog" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+      <section className={cx('previewDialog', isTemplate && 'templatePreviewDialog')} role="dialog" aria-modal="true" aria-labelledby="preview-title">
         <button className="previewClose" type="button" onClick={onClose} aria-label={t.closePreview}>
           <X size={20} />
         </button>
@@ -4832,7 +4928,6 @@ function PublicNavigation({
       <div className="homeNavActions">
         <a className="guideButton homeGuideButton" href="/content/platform-guides/index.html" target="_blank" rel="noopener noreferrer" title={labels.guide} aria-label={labels.guide}>
           <BookOpen size={17} />
-          <span>{labels.guide}</span>
         </a>
         <LanguageSwitch language={language} setLanguage={setLanguage} />
         <NotificationBell language={language} session={session} profile={profile} onProfileChange={onProfileChange} onSignIn={onSignIn} />
@@ -4874,6 +4969,10 @@ function App() {
   const [accountInitialSection, setAccountInitialSection] = useState('overview');
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
+  const [siteNotice, setSiteNotice] = useState(null);
+  const [siteNoticeDismissed, setSiteNoticeDismissed] = useState(false);
+  const [siteNoticeSnoozed, setSiteNoticeSnoozed] = useState(false);
+  const [siteNoticeSnoozeVersion, setSiteNoticeSnoozeVersion] = useState('');
   const [menuSettings, setMenuSettings] = useState({
     global: { ecommerce: true, templates: true, cases: true, api: true },
     personal: { hideEcommerce: false, hideTemplates: false, hideCases: false, hideApi: false },
@@ -4901,6 +5000,21 @@ function App() {
       .catch(() => undefined)
       .finally(() => {
         if (!cancelled) setCaseIndexLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/site-notice?t=${Date.now()}`, { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!cancelled) setSiteNotice(payload?.ok ? payload.notice || null : null);
+      })
+      .catch(() => {
+        if (!cancelled) setSiteNotice(null);
       });
     return () => {
       cancelled = true;
@@ -4971,6 +5085,30 @@ function App() {
       unsubscribe();
     };
   }, []);
+
+  const siteNoticeVersion = useMemo(() => getSiteNoticeVersion(siteNotice), [siteNotice]);
+
+  useEffect(() => {
+    if (!siteNoticeVersion) {
+      setSiteNoticeSnoozed(false);
+      setSiteNoticeSnoozeVersion('');
+      return;
+    }
+    try {
+      setSiteNoticeSnoozed(isSiteNoticeSnoozedToday(
+        localStorage.getItem(SITE_NOTICE_SNOOZE_STORAGE_KEY),
+        siteNoticeVersion
+      ));
+    } catch {
+      setSiteNoticeSnoozed(false);
+    }
+    setSiteNoticeSnoozeVersion(siteNoticeVersion);
+    setSiteNoticeDismissed(false);
+  }, [siteNoticeVersion]);
+
+  useEffect(() => {
+    setSiteNoticeDismissed(false);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!isAuthenticatedSession(session)) return;
@@ -5384,6 +5522,26 @@ function App() {
   }
 
   const isPublicPage = PUBLIC_PAGES.has(activePage);
+  const siteNoticeOpen = isEligibleForSiteNotice(siteNotice, session, profile)
+    && siteNoticeSnoozeVersion === siteNoticeVersion
+    && !siteNoticeDismissed
+    && !siteNoticeSnoozed;
+
+  function handleSnoozeSiteNotice() {
+    if (siteNoticeVersion) {
+      try {
+        localStorage.setItem(
+          SITE_NOTICE_SNOOZE_STORAGE_KEY,
+          createSiteNoticeSnoozeValue(siteNoticeVersion)
+        );
+      } catch {
+        // Keep the current session quiet even if browser storage is unavailable.
+      }
+    }
+    setSiteNoticeSnoozed(true);
+    setSiteNoticeDismissed(true);
+  }
+
   const openWorkspace = () => {
     setWorkspaceMode('single');
     handlePageChange('create');
@@ -5484,7 +5642,6 @@ function App() {
             aria-label={language === 'zh' ? '使用手册' : 'Guide'}
           >
             <BookOpen size={17} />
-            <span>{language === 'zh' ? '使用手册' : 'Guide'}</span>
           </a>
           <ThemePicker language={language} siteTheme={siteTheme} setSiteTheme={setSiteTheme} />
           <UserMenu
@@ -5737,6 +5894,12 @@ function App() {
           setBillingOpen(true);
         }}
         onProfileChange={handleProfileChange}
+      />
+      <SiteNoticeModal
+        notice={siteNoticeOpen ? siteNotice : null}
+        language={language}
+        onClose={() => setSiteNoticeDismissed(true)}
+        onSnooze={handleSnoozeSiteNotice}
       />
       <AuthModal
         open={authOpen}

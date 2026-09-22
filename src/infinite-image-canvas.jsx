@@ -76,7 +76,8 @@ import {
 } from '../shared/infinite-canvas.js';
 import {
   getImageModelConstraints,
-  IMAGE_REFERENCE_MAX_BYTES,
+  imageReferenceByteLength,
+  isImageReferenceTooLarge,
   validateImageReferenceInputsForModel,
   validateImageSizeForModel
 } from '../shared/image-generation.js';
@@ -91,12 +92,16 @@ import {
 import FreeImageReferenceEditor from './free-image-reference-editor.jsx';
 import { ImageCreditPrice, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
 import { videoSizeForSource } from '../shared/video-generation.js';
+import { orderImageProviders, resolveImageProviderId } from '../shared/image-provider-selection.js';
+import { clampFloatingPosition, normalizeFloatingPosition } from '../shared/floating-position.js';
+import { referenceImageDisplayLabel } from '../shared/reference-image-naming.js';
 import { VideoCreditPrice, requestVideoPricing, useVideoPricing } from './video-pricing-client.jsx';
 import './infinite-image-canvas.css';
 
-const MAX_UPLOAD_BYTES = IMAGE_REFERENCE_MAX_BYTES;
 const STORAGE_PREFIX = 'pic365.infinite-image-canvas.v2';
 const ACTIVE_TASK_STATUSES = new Set(['queued', 'running', 'cancelling']);
+const TOP_TOOLBAR_MARGIN = 8;
+const TOP_TOOLBAR_DEFAULT_POSITION = Object.freeze({ x: TOP_TOOLBAR_MARGIN, y: TOP_TOOLBAR_MARGIN });
 
 const copy = {
   zh: {
@@ -123,7 +128,7 @@ const copy = {
     generate: '生成分支', submitting: '正在提交', signIn: '登录后可保存画布、上传素材并生成图片。', creditsRequired: '积分不足，请先充值。',
     providerMissing: '当前没有可用的生图服务。', videoProviderMissing: '当前没有可用的视频服务。', promptRequired: '请先输入创作要求。', videoSourceUnsupported: '首版只支持从想法或单张图片生成视频。', referenceUnsupported: '当前服务不支持这张参考图，请切换服务或取消选择。',
     sizeUnsupported: '当前服务不支持这个尺寸，请选择其他尺寸。', taskListFull: '任务列表已满，请先删除已完成或失败的任务。', failed: '生成任务提交失败，请稍后重试。', videoFailed: '视频任务提交失败，请稍后重试。', contentModerationBlocked: '参考图未通过视频服务的内容审核。若图片包含真人或可识别人物，请改用不含人物的图片，或使用纯文字生成。本次积分已自动退回。',
-    uploadedTooLarge: '图片不能超过 7 MB。', uploadedInvalid: '无法读取或上传这张图片。', refine: '到灵感生图精修', useAsBranch: '基于此图创作',
+    uploadedTooLarge: '单张参考图不能超过 15 MB。', uploadedTooLargeBadge: '超过 15 MB', uploadedInvalid: '无法读取或上传这张图片。', refine: '到灵感生图精修', useAsBranch: '基于此图创作',
     download: '下载原图', preview: '预览', localEdit: '标记局部', adopt: '设为最终稿', adopted: '当前最终稿', lock: '锁定', unlock: '解锁', favorite: '收藏',
     compare: '对比', compareHint: '再选择一张图片进行对比。', compareTitle: '版本对比', remove: '移出画布', chooseIdea: '选中创作', cancelTask: '取消任务',
     comparisonPosition: '对比分割线', adoptedDownload: '下载最终稿', originalSize: '原始尺寸',
@@ -135,8 +140,8 @@ const copy = {
     branchPresets: ['更换为高级商业背景，保持主体完全不变', '扩展画面并保持原图风格与主体一致', '生成一个构图不同但主体一致的新方案', '优化光影、质感和商业摄影表现，其他内容不变'],
     zoomHint: '空白处拖动平移 · 滚轮缩放 · 选中实体后用手掌拖动', home: '首页', backStudio: '灵感生图', hideAssets: '隐藏素材栏', showAssets: '显示素材栏',
     ratio: '比例', saveSizeTemplate: '保存为此服务的默认尺寸', confirmAction: '确认', cancelAction: '取消', minimapMove: '拖动导航框',
-    assetLibrary: '资源库', referenceTray: '参考图', referenceHint: '系统已自动判断参考用途，需要时可展开修改。', referencePromptHint: '提示词称呼：当前选中图是“母版 / 参考图1 / 图1”；右侧图片依次为“参考图2 / 图2、参考图3 / 图3……”。不要使用文件名表示图片角色。', addReference: '加入参考', addReferenceImages: '添加参考图', removeReference: '移出参考', referenceLimit: '参考图数量已达到当前模型上限。', referenceTooMany: '参考图数量超过当前模型上限，请移除后再生成。', noAssets: '资源库中还没有可用图片。', assetSearch: '搜索资源库图片', addAssetReference: '加入画布并设为参考', assetAdd: '添加', assetRemove: '移除', closeLibrary: '关闭资源库', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`,
-    roleGeneral: '普通', roleSubject: '主体', roleStyle: '风格', roleComposition: '构图', roleColor: '色彩', dropReference: '松开后加入画布和参考图', primaryImage: '母版', primaryImageNumbered: '母版 · 图1', imageNumber: (number) => `图${number}`, dragToReference: '拖动链条连接到目标图片', dropIntoReference: '松开后设为目标图片的参考', pasteReferenceDone: '剪贴板图片已加入参考图。', referenceTo: (name) => `引用到 ${name}`, removeReferenceFrom: (name) => `取消对 ${name} 的引用`, referenceCount: (count, limit) => `参考 ${count}/${limit}`, batchReference: '批量引用', finishBatchReference: '完成引用', batchReferenceHint: (name) => `正在为 ${name} 选择参考图：点击其他图片添加或移除，按 Esc 结束`, referenceDetails: '参考图管理', connectReference: '拖到目标图片建立引用', assetReferenceTo: (name) => `引用到 ${name}`
+    assetLibrary: '资源库', referenceTray: '参考图', referenceHint: '参考图1固定为主体，其他参考图按连接顺序编号；用途可展开调整。', referencePromptHint: '提示词称呼：当前选中图固定为“参考图1 / 图1 / 主图 / 母版”；其他图片按顺序称为“参考图2 / 图2、参考图3 / 图3……”。画布名称不参与编号。', addReference: '加入参考', addReferenceImages: '添加参考图', removeReference: '移出参考', referenceLimit: '参考图数量已达到当前模型上限。', referenceTooMany: '参考图数量超过当前模型上限，请移除后再生成。', noAssets: '资源库中还没有可用图片。', assetSearch: '搜索资源库图片', addAssetReference: '加入画布并设为参考', assetAdd: '添加', assetRemove: '移除', closeLibrary: '关闭资源库', assetSelected: (count, limit) => `已选 ${count}/${limit}`, confirmAssets: (count) => `确认加入${count ? `（${count}）` : ''}`,
+    roleGeneral: '普通', roleSubject: '主体', roleStyle: '风格', roleComposition: '构图', roleColor: '色彩', dropReference: '松开后加入画布和参考图', primaryImage: '主图 / 母版', primaryImageNumber: '参考图1', primaryImageNumbered: referenceImageDisplayLabel(1, 'zh'), primaryImageAliases: '主图 / 母版 / 图1 = 参考图1', imageNumber: (number) => referenceImageDisplayLabel(number, 'zh'), dragToReference: '拖动链条连接到目标图片', dropIntoReference: '松开后设为目标图片的参考', pasteReferenceDone: '剪贴板图片已加入参考图。', referenceTo: (name) => `引用到 ${name}`, removeReferenceFrom: (name) => `取消对 ${name} 的引用`, referenceCount: (count, limit) => `参考 ${count}/${limit}`, batchReference: '批量引用', finishBatchReference: '完成引用', batchReferenceHint: (name) => `正在为 ${name} 选择参考图：点击其他图片添加或移除，按 Esc 结束`, referenceDetails: '参考图管理', connectReference: '拖到目标图片建立引用', assetReferenceTo: (name) => `引用到 ${name}`
   },
   en: {
     eyebrow: 'PIC365 CANVAS', title: 'Infinite Canvas', subtitle: 'Generate, refine, compare, and choose one final image without losing the creative trail.',
@@ -160,7 +165,7 @@ const copy = {
     allNodes: 'All nodes', favoriteNodes: 'Favorites', lockedNodes: 'Locked', adoptedNodes: 'Final only', activeTasks: 'Active tasks', failedTasks: 'Failed tasks',
     signIn: 'Sign in to save canvases, upload assets, and generate images.', creditsRequired: 'Not enough credits. Recharge first.', providerMissing: 'No image service is available.', videoProviderMissing: 'No video service is available.', videoSourceUnsupported: 'The first release supports video from an idea or one image only.',
     promptRequired: 'Enter a creation request first.', referenceUnsupported: 'This service cannot use the selected reference image.', sizeUnsupported: 'This service does not support the selected size.',
-    taskListFull: 'The task list is full. Remove completed or failed tasks first.', failed: 'The generation task could not be submitted.', videoFailed: 'The video task could not be submitted.', contentModerationBlocked: 'The reference image did not pass the video service content review. If it contains a real or identifiable person, use an image without people or generate from text only. The reserved credits were returned automatically.', uploadedTooLarge: 'Images must be no larger than 7 MB.',
+    taskListFull: 'The task list is full. Remove completed or failed tasks first.', failed: 'The generation task could not be submitted.', videoFailed: 'The video task could not be submitted.', contentModerationBlocked: 'The reference image did not pass the video service content review. If it contains a real or identifiable person, use an image without people or generate from text only. The reserved credits were returned automatically.', uploadedTooLarge: 'Each reference image must be no larger than 15 MB.', uploadedTooLargeBadge: 'Over 15 MB',
     uploadedInvalid: 'This image could not be read or uploaded.', refine: 'Refine in Image Studio', useAsBranch: 'Create from this image', download: 'Download original', preview: 'Preview',
     localEdit: 'Mark region', adopt: 'Set as final', adopted: 'Current final', lock: 'Lock', unlock: 'Unlock', favorite: 'Favorite', compare: 'Compare', compareHint: 'Choose one more image to compare.',
     comparisonPosition: 'Comparison divider', adoptedDownload: 'Download final', originalSize: 'Original size',
@@ -173,8 +178,8 @@ const copy = {
     branchPresets: ['Replace the background with a premium commercial scene while preserving the subject', 'Extend the canvas while preserving the original style and subject', 'Create a different composition with the same subject', 'Improve lighting, texture, and commercial polish without changing other content'],
     zoomHint: 'Drag empty space to pan · wheel to zoom · select an entity, then drag with the hand cursor', home: 'Home', backStudio: 'Image Studio', hideAssets: 'Hide assets', showAssets: 'Show assets',
     ratio: 'Ratio', saveSizeTemplate: 'Save as the default size for this service', confirmAction: 'Confirm', cancelAction: 'Cancel', minimapMove: 'Drag minimap',
-    assetLibrary: 'Library', referenceTray: 'References', referenceHint: 'Reference roles are inferred automatically and can be adjusted here.', referencePromptHint: 'Prompt names: the selected image is “Master / Reference 1 / Image 1”; images on the right continue as “Reference 2 / Image 2, Reference 3 / Image 3…”. Do not use filenames as image roles.', addReference: 'Add reference', addReferenceImages: 'Add references', removeReference: 'Remove reference', referenceLimit: 'This model has reached its reference-image limit.', referenceTooMany: 'Too many reference images for this model. Remove some before generating.', noAssets: 'No usable images are available in the library.', assetSearch: 'Search library images', addAssetReference: 'Add to canvas as reference', assetAdd: 'Add', assetRemove: 'Remove', closeLibrary: 'Close library', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`,
-    roleGeneral: 'General', roleSubject: 'Subject', roleStyle: 'Style', roleComposition: 'Composition', roleColor: 'Color', dropReference: 'Drop to add to canvas and references', primaryImage: 'Master', primaryImageNumbered: 'Master · Image 1', imageNumber: (number) => `Image ${number}`, dragToReference: 'Drag the link handle to a target image', dropIntoReference: 'Drop to reference the target image', pasteReferenceDone: 'Clipboard image added as a reference.', referenceTo: (name) => `Reference to ${name}`, removeReferenceFrom: (name) => `Remove reference from ${name}`, referenceCount: (count, limit) => `${count}/${limit} references`, batchReference: 'Pick references', finishBatchReference: 'Done', batchReferenceHint: (name) => `Picking references for ${name}: click images to add or remove; press Esc to finish`, referenceDetails: 'Manage references', connectReference: 'Drag to a target image to create a reference', assetReferenceTo: (name) => `Reference to ${name}`
+    assetLibrary: 'Library', referenceTray: 'References', referenceHint: 'Reference 1 is the primary subject; remaining references follow connection order. Roles can be adjusted here.', referencePromptHint: 'Prompt names: the selected image is always “Reference 1 / Image 1 / Primary image / Master”; other images continue as “Reference 2 / Image 2, Reference 3 / Image 3…”. Canvas names do not affect numbering.', addReference: 'Add reference', addReferenceImages: 'Add references', removeReference: 'Remove reference', referenceLimit: 'This model has reached its reference-image limit.', referenceTooMany: 'Too many reference images for this model. Remove some before generating.', noAssets: 'No usable images are available in the library.', assetSearch: 'Search library images', addAssetReference: 'Add to canvas as reference', assetAdd: 'Add', assetRemove: 'Remove', closeLibrary: 'Close library', assetSelected: (count, limit) => `${count}/${limit} selected`, confirmAssets: (count) => `Add selected${count ? ` (${count})` : ''}`,
+    roleGeneral: 'General', roleSubject: 'Subject', roleStyle: 'Style', roleComposition: 'Composition', roleColor: 'Color', dropReference: 'Drop to add to canvas and references', primaryImage: 'Primary / Master', primaryImageNumber: 'Reference 1', primaryImageNumbered: referenceImageDisplayLabel(1, 'en'), primaryImageAliases: 'Primary / Master / Image 1 = Reference 1', imageNumber: (number) => referenceImageDisplayLabel(number, 'en'), dragToReference: 'Drag the link handle to a target image', dropIntoReference: 'Drop to reference the target image', pasteReferenceDone: 'Clipboard image added as a reference.', referenceTo: (name) => `Reference to ${name}`, removeReferenceFrom: (name) => `Remove reference from ${name}`, referenceCount: (count, limit) => `${count}/${limit} references`, batchReference: 'Pick references', finishBatchReference: 'Done', batchReferenceHint: (name) => `Picking references for ${name}: click images to add or remove; press Esc to finish`, referenceDetails: 'Manage references', connectReference: 'Drag to a target image to create a reference', assetReferenceTo: (name) => `Reference to ${name}`
   }
 };
 
@@ -210,6 +215,11 @@ function formatCanvasProjectTime(value, language) {
 function normalizedMimeType(value) {
   const type = String(value || '').split(';')[0].trim().toLowerCase();
   return type === 'image/jpg' ? 'image/jpeg' : type;
+}
+
+function referenceSizeMegabytes(value) {
+  const bytes = imageReferenceByteLength(value);
+  return bytes ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : '';
 }
 
 async function imageBlobAsPng(blob) {
@@ -379,6 +389,21 @@ function loadMinimapPosition(storageKey = `${STORAGE_PREFIX}.minimap-position`) 
   }
 }
 
+function loadTopToolbarPosition(storageKey = `${STORAGE_PREFIX}.top-toolbar-position`, legacyStorageKey = `${STORAGE_PREFIX}.top-toolbar-top`) {
+  try {
+    const stored = globalThis.localStorage?.getItem(storageKey);
+    const parsed = normalizeFloatingPosition(JSON.parse(stored || 'null'));
+    if (parsed) return parsed;
+    const legacyTop = Number(globalThis.localStorage?.getItem(legacyStorageKey));
+    return {
+      x: TOP_TOOLBAR_DEFAULT_POSITION.x,
+      y: Number.isFinite(legacyTop) ? Math.max(0, legacyTop) : TOP_TOOLBAR_DEFAULT_POSITION.y
+    };
+  } catch {
+    return { ...TOP_TOOLBAR_DEFAULT_POSITION };
+  }
+}
+
 function CanvasRatioGraphic({ ratioWidth, ratioHeight }) {
   const availableWidth = 42;
   const availableHeight = 26;
@@ -390,6 +415,8 @@ function CanvasRatioGraphic({ ratioWidth, ratioHeight }) {
 
 export default function InfiniteImageCanvas({ language, theme = 'dark', session, profile, onSignIn, onBilling, onProfileChange, onOpenInStudio }) {
   const t = copy[language] || copy.en;
+  const layoutRef = useRef(null);
+  const topToolbarRef = useRef(null);
   const stageRef = useRef(null);
   const referenceTrayRef = useRef(null);
   const uploadRef = useRef(null);
@@ -419,6 +446,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const hasFullWorkspace = isSignedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
   const guestStorageKey = `${STORAGE_PREFIX}:${profile?.id || session?.user?.id || 'guest'}`;
   const minimapStorageKey = `${STORAGE_PREFIX}.minimap-position.v2`;
+  const topToolbarStorageKey = `${STORAGE_PREFIX}.top-toolbar-position.v2`;
+  const legacyTopToolbarStorageKey = `${STORAGE_PREFIX}.top-toolbar-top.v1`;
 
   const [projects, setProjects] = useState([]);
   const [currentProjectId, setCurrentProjectId] = useState('');
@@ -476,6 +505,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const [canvasFilter, setCanvasFilter] = useState('all');
   const [minimapOpen, setMinimapOpen] = useState(true);
   const [minimapPosition, setMinimapPosition] = useState(() => loadMinimapPosition(minimapStorageKey));
+  const [topToolbarPosition, setTopToolbarPosition] = useState(() => loadTopToolbarPosition(topToolbarStorageKey, legacyTopToolbarStorageKey));
   const [confirmation, setConfirmation] = useState(null);
   const [imageContextMenu, setImageContextMenu] = useState(null);
   const [copyingImageId, setCopyingImageId] = useState('');
@@ -529,6 +559,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const supportReferenceNodes = useMemo(() => referenceSelected ? orderedCanvasReferenceNodes(nodes, selectedNode.id).slice(1) : [], [nodes, referenceSelected, selectedNode?.id]);
   const supportReferenceIds = useMemo(() => new Set(supportReferenceNodes.map((node) => node.id)), [supportReferenceNodes]);
   const activeReferenceNodes = useMemo(() => orderedCanvasReferenceNodes(nodes, referenceSelected ? selectedNode.id : ''), [nodes, referenceSelected, selectedNode?.id]);
+  const oversizedReferenceNodes = useMemo(() => activeReferenceNodes.filter((node) => isImageReferenceTooLarge(node)), [activeReferenceNodes]);
+  const oversizedReferenceIds = useMemo(() => new Set(oversizedReferenceNodes.map((node) => node.id)), [oversizedReferenceNodes]);
   const maxSupportReferenceImages = Math.max(0, modelConstraints.maxReferenceImages - (referenceSelected ? 1 : 0));
   const assetPickerSelectionLimit = referenceSelected
     ? Math.max(0, maxSupportReferenceImages - supportReferenceNodes.length)
@@ -635,6 +667,38 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       globalThis.localStorage?.setItem(minimapStorageKey, serialized);
     } catch { /* best effort */ }
   }, [minimapPosition, minimapStorageKey]);
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(topToolbarStorageKey, JSON.stringify(topToolbarPosition));
+    } catch { /* best effort */ }
+  }, [topToolbarPosition, topToolbarStorageKey]);
+  useEffect(() => {
+    const layout = layoutRef.current;
+    const toolbar = topToolbarRef.current;
+    if (!layout || !toolbar) return undefined;
+    const keepToolbarInBounds = () => {
+      const layoutBounds = layout.getBoundingClientRect();
+      const toolbarBounds = toolbar.getBoundingClientRect();
+      setTopToolbarPosition((current) => {
+        const next = clampFloatingPosition(
+          current,
+          { width: toolbarBounds.width, height: toolbarBounds.height },
+          { width: layoutBounds.width, height: layoutBounds.height },
+          TOP_TOOLBAR_MARGIN
+        );
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
+    };
+    keepToolbarInBounds();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(keepToolbarInBounds) : null;
+    observer?.observe(layout);
+    observer?.observe(toolbar);
+    globalThis.addEventListener?.('resize', keepToolbarInBounds);
+    return () => {
+      observer?.disconnect();
+      globalThis.removeEventListener?.('resize', keepToolbarInBounds);
+    };
+  }, []);
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return undefined;
@@ -840,9 +904,9 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       .then((response) => response.json())
       .then((payload) => {
         if (!payload?.ok) return;
-        const nextProviders = payload.providers || [];
+        const nextProviders = orderImageProviders(payload.providers);
         setProviders(nextProviders);
-        setProviderId((current) => current || nextProviders.find((provider) => provider.isDefault)?.id || nextProviders[0]?.id || '');
+        setProviderId((current) => resolveImageProviderId(nextProviders, current));
       })
       .catch(() => undefined);
     fetch('/api/video-providers', { cache: 'no-store' })
@@ -1155,6 +1219,10 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
 
   function addAssetReference(asset, placementIndex = 0) {
     if (!asset || projectReadOnly) return;
+    if (isImageReferenceTooLarge(asset)) {
+      setMessage(t.uploadedTooLarge);
+      return;
+    }
     if (selectedNode?.assetId && selectedNode.assetId === asset.id) return;
     const activeReference = supportReferenceByAssetId.get(asset.id);
     if (activeReference) {
@@ -1178,6 +1246,11 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   }
 
   function toggleAssetPickerSelection(assetId) {
+    const asset = assetPickerItems.find((item) => item.id === assetId);
+    if (isImageReferenceTooLarge(asset)) {
+      setMessage(t.uploadedTooLarge);
+      return;
+    }
     setAssetPickerSelectedIds((current) => {
       if (current.includes(assetId)) return current.filter((id) => id !== assetId);
       if (current.length >= assetPickerSelectionLimit) return current;
@@ -1226,6 +1299,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
         type: 'image', ...placement, prompt: task.canvasDisplayPrompt || task.prompt || '', draftPrompt: existing?.draftPrompt || '', imageUrl: item.imageUrl,
         thumbnailUrl: item.thumbnailUrl || item.imageUrl, downloadUrl: item.imageUrl, generationId: item.generationId || '', taskId: task.id,
         mimeType: item.mimeType || 'image/png', size: item.size || task.size, quality: item.quality || task.quality, providerId: task.providerId || '',
+        fileSize: Number(item.fileSize || 0),
         title: `${compactText(task.canvasDisplayPrompt || task.prompt, 22)}${Number(task.count || task.results?.length || 1) > 1 ? ` · ${index + 1}` : ''}`,
         status: 'completed', batchId: task.id, batchSize: Number(task.count || task.results?.length || 1), variantIndex: index, referenceNodeIds: baseNode?.referenceNodeIds || task.canvasReferenceNodeIds || [],
         creditsCharged: Number(item.creditsCharged || 0), downloadAllowed: Boolean(item.downloadAllowed), cloudSaved: Boolean(item.cloudSaved), createdAt: task.completedAt || task.createdAt || new Date().toISOString()
@@ -1479,7 +1553,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     const node = {
       id: randomId('image'), type: 'image', x: center.x, y: center.y, parentId: '', prompt: item.prompt || '', draftPrompt: '', imageUrl: item.imageUrl,
       thumbnailUrl: item.thumbnailUrl || item.imageUrl, downloadUrl: item.imageUrl, generationId: item.id, mimeType: item.mimeType || '', size: item.size || '',
-      quality: item.quality || '', status: 'completed', createdAt: item.createdAt || new Date().toISOString()
+      fileSize: Number(item.fileSize || 0), quality: item.quality || '', status: 'completed', createdAt: item.createdAt || new Date().toISOString()
     };
     if (referenceSelected) addImportedNodes([node], { asReferences: true, preservePrimary: true });
     else {
@@ -1493,7 +1567,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       id: randomId('upload'), type: 'image', x: position.x, y: position.y, parentId: '', prompt: asset.name || fallbackName || '', draftPrompt: '',
       imageUrl: asset.originalUrl || asset.previewUrl, thumbnailUrl: asset.thumbnailUrl || asset.previewUrl || asset.originalUrl, downloadUrl: asset.downloadUrl || asset.originalUrl, assetId: asset.id,
       mimeType: asset.mimeType || 'image/png', width: asset.width, height: asset.height, size: asset.width && asset.height ? `${asset.width}x${asset.height}` : '',
-      status: 'completed', createdAt: asset.createdAt || new Date().toISOString(), ...overrides
+      fileSize: Number(asset.fileSize || 0), status: 'completed', createdAt: asset.createdAt || new Date().toISOString(), ...overrides
     };
   }
 
@@ -1533,10 +1607,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     if (!imageFiles.length) { setMessage(t.uploadedInvalid); return false; }
     if (projectReadOnly) return false;
     if (!isSignedIn) { onSignIn?.(); setMessage(t.signIn); return false; }
-    if (imageFiles.some((file) => file.size > MAX_UPLOAD_BYTES)) {
-      setMessage(t.uploadedTooLarge);
-      return false;
-    }
     if (asReferences && activeReferenceNodes.length + imageFiles.length > modelConstraints.maxReferenceImages) {
       setMessage(t.referenceTooMany);
       return false;
@@ -1559,12 +1629,12 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
         }
         const base = anchor || canvasCenter();
         const position = nextOpenPosition({ x: base.x + index * 42, y: base.y + index * 42 }, [...occupied, ...imported]);
-        imported.push(nodeFromAsset(payload.asset, file.name, position, { mimeType: payload.asset.mimeType || file.type }));
+        imported.push(nodeFromAsset(payload.asset, file.name, position, { mimeType: payload.asset.mimeType || file.type, fileSize: Number(payload.asset.fileSize || file.size || 0) }));
         occupied = [...occupied, imported.at(-1)];
       }
       if (imported.length) addImportedNodes(imported, { asReferences, preservePrimary });
       setFailedUpload(failedFile);
-      setMessage(failedFile ? t.uploadedInvalid : t.uploadDone);
+      setMessage(failedFile ? t.uploadedInvalid : imported.some((node) => isImageReferenceTooLarge(node)) ? t.uploadedTooLarge : t.uploadDone);
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -1885,6 +1955,75 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       maxX: Math.max(8, stageBounds.width - panelBounds.width - 8),
       maxY: Math.max(8, stageBounds.height - panelBounds.height - 8)
     };
+  }
+
+  function beginTopToolbarDrag(event) {
+    if (event.button !== 0) return;
+    const layoutBounds = layoutRef.current?.getBoundingClientRect();
+    const toolbarBounds = topToolbarRef.current?.getBoundingClientRect();
+    if (!layoutBounds || !toolbarBounds) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    interactionRef.current = {
+      type: 'top-toolbar',
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: toolbarBounds.left - layoutBounds.left,
+      originY: toolbarBounds.top - layoutBounds.top,
+      elementWidth: toolbarBounds.width,
+      elementHeight: toolbarBounds.height,
+      viewportWidth: layoutBounds.width,
+      viewportHeight: layoutBounds.height
+    };
+  }
+
+  function moveTopToolbar(event) {
+    const interaction = interactionRef.current;
+    if (interaction?.type !== 'top-toolbar') return;
+    event.preventDefault();
+    setTopToolbarPosition(clampFloatingPosition(
+      {
+        x: interaction.originX + event.clientX - interaction.startX,
+        y: interaction.originY + event.clientY - interaction.startY
+      },
+      { width: interaction.elementWidth, height: interaction.elementHeight },
+      { width: interaction.viewportWidth, height: interaction.viewportHeight },
+      TOP_TOOLBAR_MARGIN
+    ));
+  }
+
+  function endTopToolbarDrag(event) {
+    if (interactionRef.current?.type !== 'top-toolbar') return;
+    event.preventDefault();
+    interactionRef.current = null;
+  }
+
+  function handleTopToolbarKeyDown(event) {
+    const directions = {
+      ArrowLeft: { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+      ArrowUp: { x: 0, y: -1 },
+      ArrowDown: { x: 0, y: 1 }
+    };
+    if (event.key === 'Home') {
+      event.preventDefault();
+      setTopToolbarPosition({ ...TOP_TOOLBAR_DEFAULT_POSITION });
+      return;
+    }
+    const direction = directions[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const layoutBounds = layoutRef.current?.getBoundingClientRect();
+    const toolbarBounds = topToolbarRef.current?.getBoundingClientRect();
+    if (!layoutBounds || !toolbarBounds) return;
+    const step = event.shiftKey ? 24 : 8;
+    setTopToolbarPosition((current) => clampFloatingPosition(
+      { x: current.x + direction.x * step, y: current.y + direction.y * step },
+      { width: toolbarBounds.width, height: toolbarBounds.height },
+      { width: layoutBounds.width, height: layoutBounds.height },
+      TOP_TOOLBAR_MARGIN
+    ));
   }
 
   function movePointer(event) {
@@ -2231,6 +2370,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
       mimeTypes: referenceSources.map((node) => node.mimeType)
     });
     if (!requestSizeCheck.valid) return setMessage(t.sizeUnsupported);
+    if (referenceSources.some((node) => isImageReferenceTooLarge(node))) return setMessage(t.uploadedTooLarge);
     if (!requestReferenceCheck.valid) return setMessage(t.referenceUnsupported);
     const imageCount = Math.max(1, Math.min(4, Math.round(Number(requestCount) || 1)));
     let confirmedPricing;
@@ -2503,7 +2643,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     </article>;
   }
 
-  const projectDock = <div className="infiniteCanvasProjectDock" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}>
+  const projectDock = <div className="infiniteCanvasProjectDock infiniteCanvasToolbarProjectDock">
     <input value={projectName} maxLength={120} disabled={projectDeleted} onChange={(event) => setProjectName(event.target.value)} aria-label={language === 'zh' ? '画布项目名称' : 'Canvas project name'} />
     <button type="button" onClick={() => void createProject()} title={t.newProject} aria-label={t.newProject}><FolderPlus size={15} /></button>
     {isSignedIn && currentProjectId ? <>
@@ -2520,6 +2660,29 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     {adoptedNode?.imageUrl ? <a className="infiniteCanvasAdoptedDownload" href={adoptedNode.downloadUrl || adoptedNode.imageUrl} download={canvasImageDownloadFilename(adoptedNode, language)} title={t.adoptedDownload} aria-label={t.adoptedDownload}><Download size={15} /></a> : null}
   </div>;
 
+  const canvasTools = <div className="infiniteCanvasTools infiniteCanvasToolbarCanvasTools">
+    <button type="button" onClick={undoCanvas} disabled={!undoStackRef.current.length} title={t.undo} aria-label={t.undo}><Undo2 size={17} /></button>
+    <button type="button" onClick={redoCanvas} disabled={!redoStackRef.current.length} title={t.redo} aria-label={t.redo}><Redo2 size={17} /></button>
+    <button type="button" onClick={() => changeZoom(viewport.zoom - 0.1)} aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut size={17} /></button>
+    <span>{Math.round(viewport.zoom * 100)}%</span>
+    <button type="button" onClick={() => changeZoom(viewport.zoom + 0.1)} aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn size={17} /></button>
+    <button type="button" onClick={fitContent} title={t.fitView} aria-label={t.fitView}><Focus size={17} /></button>
+    <button type="button" onClick={focusSelected} title={t.focusSelected} aria-label={t.focusSelected}><MousePointer2 size={17} /></button>
+    <button type="button" className={boxSelectMode ? 'active boxSelectActive' : ''} onClick={() => setBoxSelectMode((value) => !value)} title={t.boxSelectHint} aria-label={t.boxSelect} aria-pressed={boxSelectMode}><BoxSelect size={17} /></button>
+    <button type="button" className={canvasSearchOpen ? 'active' : ''} onClick={() => setCanvasSearchOpen((value) => !value)} title={t.searchCanvas} aria-label={t.searchCanvas}><Search size={17} /></button>
+    <button type="button" className={minimapOpen ? 'active' : ''} onClick={() => setMinimapOpen((value) => !value)} title={t.minimap} aria-label={t.minimap}><MapIcon size={17} /></button>
+    <button type="button" onClick={autoArrange} disabled={projectReadOnly} title={t.arrange} aria-label={t.arrange}><LayoutGrid size={17} /></button>
+    <button type="button" onClick={clearCanvas} disabled={projectReadOnly || Boolean(lockedNodes.length)} title={lockedNodes.length ? t.lockedCanvasCannotClear(lockedNodes.length) : t.clearCanvas} aria-label={lockedNodes.length ? t.lockedCanvasCannotClear(lockedNodes.length) : t.clearCanvas}><Trash2 size={17} /></button>
+  </div>;
+
+  const topToolbarMoveLabel = language === 'zh' ? '拖动工具栏，可上下左右移动' : 'Drag toolbar in any direction';
+  const floatingToolbar = <div ref={topToolbarRef} className="infiniteCanvasFloatingToolbar" data-canvas-ui="true" role="toolbar" aria-label={language === 'zh' ? '画布工具栏' : 'Canvas toolbar'} style={{ left: `${topToolbarPosition.x}px`, top: `${topToolbarPosition.y}px` }} onPointerDown={stopCanvasUiPointer}>
+    <button className="infiniteCanvasToolbarHandle" type="button" title={topToolbarMoveLabel} aria-label={topToolbarMoveLabel} onPointerDown={beginTopToolbarDrag} onPointerMove={moveTopToolbar} onPointerUp={endTopToolbarDrag} onPointerCancel={endTopToolbarDrag} onKeyDown={handleTopToolbarKeyDown}><GripHorizontal size={16} /></button>
+    {projectDock}
+    <span className="infiniteCanvasToolbarDivider" aria-hidden="true" />
+    {canvasTools}
+  </div>;
+
   const hoveredGenerationNode = hoveredGenerationNodeId ? nodeById.get(hoveredGenerationNodeId) : null;
   const hoveredGenerationParent = hoveredGenerationNode?.parentId ? nodeById.get(hoveredGenerationNode.parentId) : null;
   const hoveredGenerationPosition = hoveredGenerationParent && hoveredGenerationNode
@@ -2531,8 +2694,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
 
   return (
     <section className={`infiniteCanvasPage ${theme === 'light' ? 'themeLight' : theme === 'black' ? 'themeBlack' : 'themeDark'} ${projectReadOnly ? 'projectArchived' : ''}`} data-theme={theme} aria-label={t.title}>
-      <div className={`infiniteCanvasLayout ${sidebarOpen ? '' : 'sidebarCollapsed'}`} aria-busy={projectLoading}>
-        {projectDock}
+      <div ref={layoutRef} className={`infiniteCanvasLayout ${sidebarOpen ? '' : 'sidebarCollapsed'}`} aria-busy={projectLoading}>
+        {floatingToolbar}
         {sidebarOpen ? <aside className="infiniteCanvasSidebar">
           <header className="infiniteCanvasSidebarHeader">
             <strong>{t.sidebarTitle}</strong>
@@ -2632,8 +2795,9 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                   </g>;
                 })}
                 {referenceEdges.map((edge) => {
-                  const path = canvasReferenceConnectorPath(edge.source, edge.target);
-                  const midpoint = canvasReferenceConnectorMidpoint(edge.source, edge.target);
+                  const connectorOptions = { targetIndex: edge.targetIndex, targetCount: edge.targetCount };
+                  const path = canvasReferenceConnectorPath(edge.source, edge.target, connectorOptions);
+                  const midpoint = canvasReferenceConnectorMidpoint(edge.source, edge.target, connectorOptions);
                   const label = `${t.removeReference}: ${nodeLabel(edge.source, t)} → ${nodeLabel(edge.target, t)}`;
                   return <g className="infiniteCanvasReferenceConnection" key={`reference-${edge.source.id}-${edge.target.id}`}>
                     <path className="referenceLink" aria-hidden="true" focusable="false" d={path} />
@@ -2648,7 +2812,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
                 {referenceConnectionSource && referenceConnection?.point ? <path className="referenceLink referenceDraft" aria-hidden="true" focusable="false" d={canvasReferenceDraftPath(referenceConnectionSource, referenceConnection.point)} /> : null}
               </svg>
               {nodes.map((node) => <article
-                className={`infiniteCanvasNode ${node.type} ${selectedIdSet.has(node.id) ? 'selected' : ''} ${!node.locked && !projectReadOnly ? 'draggableNode' : ''} ${node.id === selectedId ? 'primarySelected' : ''} ${node.id === selectedId && node.type === 'image' ? 'primaryImageSelected' : ''} ${referencedSourceIds.has(node.id) ? 'referencedEntity' : ''} ${node.id === adoptedNodeId ? 'adopted' : ''} ${node.locked ? 'locked' : ''} ${node.id === lockedDragNodeId ? 'lockedDragAttempt' : ''} ${node.id === referencePickTargetId ? 'referencePickTarget' : referencePickTargetId && node.type === 'image' ? 'referencePickCandidate' : ''} ${referencePickIds.has(node.id) ? 'referencePickLinked' : ''} ${node.id === referenceConnection?.targetId ? 'referenceConnectTarget' : ''}`}
+                className={`infiniteCanvasNode ${node.type} ${selectedIdSet.has(node.id) ? 'selected' : ''} ${!node.locked && !projectReadOnly ? 'draggableNode' : ''} ${node.id === selectedId ? 'primarySelected' : ''} ${node.id === selectedId && node.type === 'image' ? 'primaryImageSelected' : ''} ${referencedSourceIds.has(node.id) ? 'referencedEntity' : ''} ${oversizedReferenceIds.has(node.id) ? 'oversizedReference' : ''} ${node.id === adoptedNodeId ? 'adopted' : ''} ${node.locked ? 'locked' : ''} ${node.id === lockedDragNodeId ? 'lockedDragAttempt' : ''} ${node.id === referencePickTargetId ? 'referencePickTarget' : referencePickTargetId && node.type === 'image' ? 'referencePickCandidate' : ''} ${referencePickIds.has(node.id) ? 'referencePickLinked' : ''} ${node.id === referenceConnection?.targetId ? 'referenceConnectTarget' : ''}`}
                 data-node-id={node.id} tabIndex="0" aria-label={nodeLabel(node, t)} style={{ left: node.x, top: node.y }} key={node.id} onPointerDown={(event) => { if (event.target.closest?.('button, a, input, textarea, select, [contenteditable="true"]')) return; beginNodeDrag(event, node); }} onClick={(event) => { event.stopPropagation(); if (suppressNodeClickRef.current) { suppressNodeClickRef.current = false; return; } event.currentTarget.focus({ preventScroll: true }); setImageContextMenu(null); if (referencePickTargetId && node.type === 'image' && node.id !== referencePickTargetId) { setReferenceForTarget(referencePickTargetId, node, 'toggle'); return; } selectNode(node, event); }} onDoubleClick={() => { if (!referencePickTargetId && (node.type === 'image' || node.type === 'video')) setPreviewNode(node); }} onContextMenu={(event) => openImageContextMenu(event, node)} onKeyDown={(event) => {
                   if (node.type !== 'image' || (!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'c') return;
                   event.preventDefault();
@@ -2727,20 +2891,6 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
             {projectReadOnly ? <div className="infiniteCanvasArchivedNotice" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><strong>{projectDeleted ? t.deleted : t.archived}</strong><button type="button" onClick={() => void removeCurrentProject('active')}>{t.restoreProject}</button></div> : null}
             {projectLoading ? <div className="infiniteCanvasLoading" data-canvas-ui="true"><LoaderCircle className="spin" size={30} /></div> : null}
             {referencePickTarget ? <div className="infiniteCanvasReferencePickBanner" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><Link2 size={15} /><span>{t.batchReferenceHint(nodeLabel(referencePickTarget, t))}</span><button type="button" onClick={() => setReferencePickTargetId('')}>{t.finishBatchReference}</button></div> : null}
-            <div className="infiniteCanvasTools" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}>
-              <button type="button" onClick={undoCanvas} disabled={!undoStackRef.current.length} title={t.undo} aria-label={t.undo}><Undo2 size={17} /></button>
-              <button type="button" onClick={redoCanvas} disabled={!redoStackRef.current.length} title={t.redo} aria-label={t.redo}><Redo2 size={17} /></button>
-              <button type="button" onClick={() => changeZoom(viewport.zoom - 0.1)} aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut size={17} /></button>
-              <span>{Math.round(viewport.zoom * 100)}%</span>
-              <button type="button" onClick={() => changeZoom(viewport.zoom + 0.1)} aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn size={17} /></button>
-              <button type="button" onClick={fitContent} title={t.fitView} aria-label={t.fitView}><Focus size={17} /></button>
-              <button type="button" onClick={focusSelected} title={t.focusSelected} aria-label={t.focusSelected}><MousePointer2 size={17} /></button>
-              <button type="button" className={boxSelectMode ? 'active boxSelectActive' : ''} onClick={() => setBoxSelectMode((value) => !value)} title={t.boxSelectHint} aria-label={t.boxSelect} aria-pressed={boxSelectMode}><BoxSelect size={17} /></button>
-              <button type="button" className={canvasSearchOpen ? 'active' : ''} onClick={() => setCanvasSearchOpen((value) => !value)} title={t.searchCanvas} aria-label={t.searchCanvas}><Search size={17} /></button>
-              <button type="button" className={minimapOpen ? 'active' : ''} onClick={() => setMinimapOpen((value) => !value)} title={t.minimap} aria-label={t.minimap}><MapIcon size={17} /></button>
-              <button type="button" onClick={autoArrange} disabled={projectReadOnly} title={t.arrange} aria-label={t.arrange}><LayoutGrid size={17} /></button>
-              <button type="button" onClick={clearCanvas} disabled={projectReadOnly || Boolean(lockedNodes.length)} title={lockedNodes.length ? t.lockedCanvasCannotClear(lockedNodes.length) : t.clearCanvas} aria-label={lockedNodes.length ? t.lockedCanvasCannotClear(lockedNodes.length) : t.clearCanvas}><Trash2 size={17} /></button>
-            </div>
             {canvasSearchOpen ? <div className="infiniteCanvasSearchPanel" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer}><label><Search size={14} /><input autoFocus value={canvasQuery} onChange={(event) => setCanvasQuery(event.target.value)} placeholder={t.searchPlaceholder} /></label><select aria-label={language === 'zh' ? '筛选画布节点' : 'Filter canvas nodes'} value={canvasFilter} onChange={(event) => setCanvasFilter(event.target.value)}><option value="all">{t.allNodes}</option><option value="favorite">{t.favoriteNodes}</option><option value="locked">{t.lockedNodes}</option><option value="adopted">{t.adoptedNodes}</option><option value="active">{t.activeTasks}</option><option value="failed">{t.failedTasks}</option></select><div>{!canvasMatches.length ? <p>{t.noSearchResults}</p> : canvasMatches.map((node) => <button type="button" key={node.id} onClick={() => selectSearchResult(node)}><strong>{nodeLabel(node, t)}</strong><span>{compactText(node.prompt || node.draftPrompt, 52)}</span></button>)}</div></div> : null}
             {minimapOpen && nodes.length ? <div className="infiniteCanvasMinimap" data-canvas-ui="true" onPointerDown={stopCanvasUiPointer} style={minimapPosition ? { left: minimapPosition.x, top: minimapPosition.y, right: 'auto', bottom: 'auto' } : undefined} role="region" aria-label={t.minimap}>
               <button className="infiniteCanvasMinimapHandle" type="button" onPointerDown={beginMinimapDrag} title={t.minimapMove} aria-label={t.minimapMove}><GripHorizontal size={15} /><span>{t.minimap}</span></button>
@@ -2768,12 +2918,12 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
               <button className="infiniteCanvasComposerCollapse" type="button" aria-expanded={!composerCollapsed} title={composerCollapsed ? t.expandComposer : t.collapseComposer} aria-label={composerCollapsed ? t.expandComposer : t.collapseComposer} onClick={() => setComposerCollapsed((current) => !current)}>{composerCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
             </div>
             {referenceSelected && creationMode === 'image' ? <div ref={referenceTrayRef} className={`infiniteCanvasReferenceTray ${referenceDetailsVisible && showSupportingReferences ? 'hasSupportingReferences detailsOpen' : ''} ${referenceDropActive ? 'dropActive' : ''}`} onDragEnter={(event) => { event.preventDefault(); setReferenceDropActive(true); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setReferenceDropActive(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReferenceDropActive(false); }} onDrop={dropReferenceNode}>
-              <div className="infiniteCanvasPrimaryReference"><article><button type="button" onClick={() => { setPreviewZoom(1); setPreviewNode(selectedNode); }}><img src={selectedNode.thumbnailUrl || selectedNode.imageUrl} alt="" /><span>{t.primaryImageNumbered}</span></button><input aria-label={language === 'zh' ? '修改图片名称' : 'Rename image'} value={selectedNode.name || selectedNode.autoName || ''} maxLength={80} onFocus={rememberCanvasState} onChange={(event) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, name: event.target.value } : node))} /><button className="infiniteCanvasReferenceDetailsToggle" type="button" aria-expanded={referenceDetailsOpen} title={t.referenceDetails} onClick={() => setReferenceDetailsOpen((current) => !current)}><Link2 size={12} /><span>{t.referenceCount(supportReferenceNodes.length, maxSupportReferenceImages)}</span>{referenceDetailsOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</button></article></div>
+              <div className="infiniteCanvasPrimaryReference"><article className={isImageReferenceTooLarge(selectedNode) ? 'oversized' : ''}><button type="button" title={t.primaryImageNumbered} onClick={() => { setPreviewZoom(1); setPreviewNode(selectedNode); }}><img src={selectedNode.thumbnailUrl || selectedNode.imageUrl} alt="" /><span>{t.primaryImageNumber}</span>{isImageReferenceTooLarge(selectedNode) ? <b>{t.uploadedTooLargeBadge}</b> : null}</button><div className="infiniteCanvasPrimaryIdentity"><input aria-label={language === 'zh' ? '修改图片名称' : 'Rename image'} value={selectedNode.name || selectedNode.autoName || ''} maxLength={80} onFocus={rememberCanvasState} onChange={(event) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, name: event.target.value } : node))} /><small>{isImageReferenceTooLarge(selectedNode) ? `${t.uploadedTooLargeBadge} · ${referenceSizeMegabytes(selectedNode)}` : t.primaryImageAliases}</small></div><button className="infiniteCanvasReferenceDetailsToggle" type="button" aria-expanded={referenceDetailsOpen} title={t.referenceDetails} onClick={() => setReferenceDetailsOpen((current) => !current)}><Link2 size={12} /><span>{t.referenceCount(supportReferenceNodes.length, maxSupportReferenceImages)}</span>{referenceDetailsOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</button></article></div>
               {referenceDetailsVisible && showSupportingReferences ? <div className="infiniteCanvasSupportingReferences">
                 <header><span><Images size={14} />{t.referenceTray} <b>{supportReferenceNodes.length}/{maxSupportReferenceImages}</b></span><small>{t.referenceHint}</small></header>
                 <div>
-                  {supportReferenceNodes.filter((node) => node.id !== selectedId).map((node, index) => <article key={node.id}>
-                    <button className="infiniteCanvasReferenceThumb" type="button" onClick={() => { setPreviewZoom(1); setPreviewNode(node); }} title={`${t.imageNumber(index + 2)} · ${nodeLabel(node, t)}`}><img src={node.thumbnailUrl || node.imageUrl} alt="" /><i>{t.imageNumber(index + 2)}</i></button>
+                  {supportReferenceNodes.filter((node) => node.id !== selectedId).map((node, index) => <article className={isImageReferenceTooLarge(node) ? 'oversized' : ''} key={node.id}>
+                    <button className="infiniteCanvasReferenceThumb" type="button" onClick={() => { setPreviewZoom(1); setPreviewNode(node); }} title={`${t.imageNumber(index + 2)} · ${nodeLabel(node, t)}`}><img src={node.thumbnailUrl || node.imageUrl} alt="" /><i>{t.imageNumber(index + 2)}</i>{isImageReferenceTooLarge(node) ? <b>{t.uploadedTooLargeBadge}</b> : null}</button>
                     <select aria-label={`${t.imageNumber(index + 2)} ${t.referenceTray}`} value={node.referenceRole || 'general'} onChange={(event) => updateReferenceRole(node.id, event.target.value)}>{CANVAS_REFERENCE_ROLES.map((role) => <option value={role} key={role}>{referenceRoleLabel(role, t)}</option>)}</select>
                     <button className="danger" type="button" onClick={() => toggleReference(node)} aria-label={t.removeReference}><X size={13} /></button>
                   </article>)}
@@ -2794,7 +2944,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
               <label><span>{t.quality}</span><select value={quality} onChange={(event) => setQuality(event.target.value)}><option value="low">{t.low}</option><option value="medium">{t.medium}</option><option value="high">{t.high}</option></select></label>
               <label><span>{t.count}</span><select value={count} onChange={(event) => setCount(Number(event.target.value))}>{[1, 2, 3, 4].map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
               <div className="infiniteCanvasPrice">{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact /> : null}</div>
-              <button className="infiniteCanvasGenerate" type="button" onClick={() => void generateBranch()} disabled={projectReadOnly || submitting || pricingLoading || !providerId || !sizeCheck.valid || !referenceCheck.valid}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{submitting ? t.submitting : t.generate}</button>
+              <button className="infiniteCanvasGenerate" type="button" onClick={() => void generateBranch()} disabled={projectReadOnly || submitting || pricingLoading || !providerId || !sizeCheck.valid || !referenceCheck.valid || oversizedReferenceNodes.length > 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{submitting ? t.submitting : t.generate}</button>
             </div> : <div className="infiniteCanvasComposerFooter videoMode">
               {videoProviders.length > 1 ? <label><span>{t.videoProvider}</span><select value={videoProviderId} onChange={(event) => setVideoProviderId(event.target.value)}>{videoProviders.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}</select></label> : <label><span>{t.videoProvider}</span><strong className="infiniteCanvasReadOnlyValue">{selectedVideoProvider?.name || 'Sora 2'}</strong></label>}
               {videoModeOptions.length ? <label><span>{t.quality}</span><select value={videoOutputMode} onChange={(event) => setVideoOutputMode(event.target.value)}>{videoModeOptions.map((value) => <option value={value} key={value}>{value === 'std' ? '720P' : value === 'pro' ? '1080P' : '4K'}</option>)}</select></label> : null}
@@ -2803,7 +2953,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
               <div className="infiniteCanvasPrice">{hasFullWorkspace ? <VideoCreditPrice pricing={videoPricing} language={language} /> : null}</div>
               <button className="infiniteCanvasGenerate" type="button" onClick={() => void enqueueVideo()} disabled={projectReadOnly || submitting || videoPricingLoading || !videoProviderId || !videoSourceSupported}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Film size={17} />}{submitting ? t.submitting : t.generateVideo}</button>
             </div>}
-            {!sizeCheck.valid ? <p className="infiniteCanvasMessage">{t.sizeUnsupported}</p> : !referenceCheck.valid ? <p className="infiniteCanvasMessage">{referenceCheck.error === 'TOO_MANY_REFERENCE_IMAGES' ? t.referenceTooMany : t.referenceUnsupported}</p> : message ? <p className="infiniteCanvasMessage">{message}</p> : null}
+            {!sizeCheck.valid ? <p className="infiniteCanvasMessage">{t.sizeUnsupported}</p> : oversizedReferenceNodes.length ? <p className="infiniteCanvasMessage error">{t.uploadedTooLarge}</p> : !referenceCheck.valid ? <p className="infiniteCanvasMessage">{referenceCheck.error === 'TOO_MANY_REFERENCE_IMAGES' ? t.referenceTooMany : t.referenceUnsupported}</p> : message ? <p className="infiniteCanvasMessage">{message}</p> : null}
           </div>
         </div>
       </div>
@@ -2816,9 +2966,10 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
           const primaryAsset = selectedNode?.assetId === asset.id;
           const selected = assetPickerSelectedIds.includes(asset.id);
           const selectionFull = !referenceSelected && !selected && assetPickerSelectedIds.length >= assetPickerSelectionLimit;
-          return <button type="button" key={asset.id} className={`${activeReference ? 'active' : primaryAsset ? 'primary' : ''} ${selected ? 'selected' : ''}`.trim()} disabled={primaryAsset || selectionFull} aria-pressed={referenceSelected ? Boolean(activeReference) : selected} onClick={() => referenceSelected ? addAssetReference(asset) : activeReference ? addAssetReference(asset) : toggleAssetPickerSelection(asset.id)} title={primaryAsset ? t.primaryImage : activeReference ? t.assetRemove : referenceSelected ? t.assetReferenceTo(nodeLabel(selectedNode, t)) : t.addAssetReference}>
-            <span className="infiniteCanvasAssetPreview"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} />{activeReference || primaryAsset || selected ? <i>{activeReference ? t.assetRemove : primaryAsset ? t.primaryImage : t.assetAdd}</i> : null}</span>
-            <span className="infiniteCanvasAssetMeta"><strong>{asset.name}</strong><small>{asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.mimeType}</small></span>
+          const tooLarge = isImageReferenceTooLarge(asset);
+          return <button type="button" key={asset.id} className={`${activeReference ? 'active' : primaryAsset ? 'primary' : ''} ${selected ? 'selected' : ''} ${tooLarge ? 'oversized' : ''}`.trim()} disabled={primaryAsset || selectionFull || tooLarge} aria-pressed={referenceSelected ? Boolean(activeReference) : selected} onClick={() => referenceSelected ? addAssetReference(asset) : activeReference ? addAssetReference(asset) : toggleAssetPickerSelection(asset.id)} title={tooLarge ? t.uploadedTooLarge : primaryAsset ? t.primaryImage : activeReference ? t.assetRemove : referenceSelected ? t.assetReferenceTo(nodeLabel(selectedNode, t)) : t.addAssetReference}>
+            <span className="infiniteCanvasAssetPreview"><img src={asset.thumbnailUrl || asset.previewUrl || asset.originalUrl} alt={asset.name} />{tooLarge ? <i>{t.uploadedTooLargeBadge}</i> : activeReference || primaryAsset || selected ? <i>{activeReference ? t.assetRemove : primaryAsset ? t.primaryImage : t.assetAdd}</i> : null}</span>
+            <span className="infiniteCanvasAssetMeta"><strong>{asset.name}</strong><small>{tooLarge ? `${t.uploadedTooLargeBadge} · ${referenceSizeMegabytes(asset)}` : asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.mimeType}</small></span>
             <b className="infiniteCanvasAssetAction">{activeReference ? <X size={13} /> : primaryAsset || selected ? <Check size={13} /> : referenceSelected ? <Link2 size={13} /> : <Plus size={13} />}{activeReference ? t.assetRemove : primaryAsset ? t.primaryImage : referenceSelected ? t.referenceTo(nodeLabel(selectedNode, t)) : t.assetAdd}</b>
           </button>;
         })}</div>

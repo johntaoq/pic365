@@ -56,6 +56,8 @@ let session;
   };
 
   await page.goto(`${baseUrl}/#create`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  await clickIfVisible(page.getByRole('button', { name: '关闭' }));
   await page.locator('.freeImageWorkspace').waitFor({ state: 'visible' });
   await page.addStyleTag({ content: '.freeImageHistory,.createCaseLibrary{display:none!important}' });
   await record('image-single', page.locator('.freeImageWorkspace'), '01-image-studio/screens/01-single.png');

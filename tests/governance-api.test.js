@@ -249,9 +249,20 @@ test('operations can manage channels without gaining finance access or overridin
   assert.equal(provider.statusCode, 201);
   assert.notEqual(provider.payload.provider.pricingConfig?.fixedImageRmb, 999);
 
+  const providerList = await invoke(providersHandler, { headers: operationsHeaders });
+  const orderedIds = providerList.payload.providers.map((item) => item.id).reverse();
+  const reordered = await invoke(providersHandler, {
+    method: 'PATCH', headers: operationsHeaders,
+    body: { action: 'reorder', orderedIds }
+  });
+  assert.equal(reordered.statusCode, 200);
+  assert.deepEqual(reordered.payload.providers.map((item) => item.id), orderedIds);
+  assert.deepEqual(reordered.payload.providers.map((item) => item.sortOrder), orderedIds.map((_, index) => index));
+
   const operationsAudit = await invoke(auditHandler, { headers: operationsHeaders, query: { limit: 100 } });
   assert.equal(operationsAudit.statusCode, 200);
   assert.equal(operationsAudit.payload.events.some((event) => event.category === 'channels'), true);
+  assert.equal(operationsAudit.payload.events.some((event) => event.action === 'image_providers_reordered'), true);
   assert.equal(operationsAudit.payload.events.some((event) => event.category === 'credits'), false);
 
   const accountantAudit = await invoke(auditHandler, { headers: accountantHeaders, query: { limit: 100 } });

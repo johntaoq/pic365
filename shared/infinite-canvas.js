@@ -1,3 +1,5 @@
+import { referenceImageAliasText, referenceImageInterpretationRule } from './reference-image-naming.js';
+
 export const INFINITE_CANVAS_NODE_WIDTH = 292;
 export const INFINITE_CANVAS_NODE_HEIGHT = 270;
 export const CANVAS_REFERENCE_ROLES = Object.freeze(['general', 'subject', 'style', 'composition', 'color']);
@@ -168,6 +170,7 @@ export function normalizeCanvasState(value = {}) {
       generationId: String(node.generationId || ''),
       taskId: String(node.taskId || ''),
       mimeType: String(node.mimeType || ''),
+      fileSize: Math.max(0, Math.round(Number(node.fileSize || node.byteLength || 0) || 0)),
       size: String(node.size || ''),
       quality: String(node.quality || ''),
       providerId: String(node.providerId || ''),
@@ -279,11 +282,20 @@ export function inferCanvasReferenceRole(node = {}) {
 
 export function canvasReferenceEdges(nodes = []) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  return nodes.flatMap((target) => (target.referenceLinks || []).map((link) => {
-    const source = byId.get(link.nodeId);
-    if (!source || source.id === target.id) return null;
-    return { source, target, role: link.role || 'general', order: Number(link.order || 0) };
-  }).filter(Boolean));
+  return nodes.flatMap((target) => {
+    const links = (target.referenceLinks || [])
+      .map((link) => ({ link, source: byId.get(link.nodeId) }))
+      .filter(({ source }) => source && source.id !== target.id)
+      .sort((left, right) => Number(left.link.order || 0) - Number(right.link.order || 0));
+    return links.map(({ link, source }, targetIndex) => ({
+      source,
+      target,
+      role: link.role || 'general',
+      order: Number(link.order || 0),
+      targetIndex,
+      targetCount: links.length
+    }));
+  });
 }
 
 export function canvasReferenceRemovalImpact(nodes = [], nodeIds = []) {
@@ -337,20 +349,21 @@ export function canvasReferencePrompt(prompt, references = [], language = 'zh') 
   const labels = language === 'zh' ? zhLabels : enLabels;
   const lines = references.map((node, index) => {
     const canvasName = String(node?.name || node?.autoName || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    const referenceNumber = index + 1;
+    const aliases = referenceImageAliasText(referenceNumber, language);
     if (index === 0) {
       return language === 'zh'
-        ? `母版 / 参考图1 / 图1 = 输入图1${canvasName ? `（画布名：${canvasName}）` : ''}：唯一编辑对象；未明确要求修改的内容必须保留。`
-        : `Master / Reference 1 / Image 1 = input image 1${canvasName ? ` (canvas name: ${canvasName})` : ''}: the only image to edit; preserve everything not explicitly requested to change.`;
+        ? `${aliases} = 输入图1${canvasName ? `（画布名：${canvasName}）` : ''}：主体图，也是唯一默认编辑对象；未明确要求修改的内容必须保留。`
+        : `${aliases} = input image 1${canvasName ? ` (canvas name: ${canvasName})` : ''}: the primary subject image and the only default editing target; preserve everything not explicitly requested to change.`;
     }
-    const referenceNumber = index + 1;
     const role = labels[node.referenceRole || 'general'] || labels.general;
     return language === 'zh'
-      ? `参考图${referenceNumber} / 图${referenceNumber} = 输入图${referenceNumber}${canvasName ? `（画布名：${canvasName}）` : ''}：${role}；只提取用户指定的信息，不替换母版主体。`
-      : `Reference ${referenceNumber} / Image ${referenceNumber} = input image ${referenceNumber}${canvasName ? ` (canvas name: ${canvasName})` : ''}: ${role}; use only the requested information and do not replace the master subject.`;
+      ? `${aliases} = 输入图${referenceNumber}${canvasName ? `（画布名：${canvasName}）` : ''}：${role}；只提取用户指定的信息，不替换参考图1的主体。`
+      : `${aliases} = input image ${referenceNumber}${canvasName ? ` (canvas name: ${canvasName})` : ''}: ${role}; use only the requested information and do not replace the subject from Reference 1.`;
   });
   const composed = language === 'zh'
-    ? `图片称呼与输入顺序：\n${lines.join('\n')}\n解释规则：用户提示词中的“母版”“参考图N”与“图N”严格按同一编号映射理解；画布文件名只用于识别，不改变图片角色。\n\n用户修改要求：${base}`
-    : `Image names and input order:\n${lines.join('\n')}\nInterpretation rule: “Master”, “Reference N”, and “Image N” strictly follow the same numbered mapping above. Canvas filenames are identifiers only and never change image roles.\n\nUser edit request: ${base}`;
+    ? `图片称呼与输入顺序：\n${lines.join('\n')}\n解释规则：${referenceImageInterpretationRule('zh')}画布文件名只用于识别，不改变图片角色。\n\n用户修改要求：${base}`
+    : `Image names and input order:\n${lines.join('\n')}\nInterpretation rule: ${referenceImageInterpretationRule('en')} Canvas filenames are identifiers only and never change image roles.\n\nUser edit request: ${base}`;
   return composed.slice(0, 6000);
 }
 
@@ -451,11 +464,19 @@ export function canvasConnectorMidpoint(parent, child) {
   };
 }
 
-export function canvasReferenceConnectorPath(source, target) {
+function canvasReferenceTargetY(target, targetIndex = 0, targetCount = 1) {
+  const count = Math.max(1, Math.round(Number(targetCount) || 1));
+  if (count === 1) return Number(target?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const index = Math.max(0, Math.min(count - 1, Math.round(Number(targetIndex) || 0)));
+  const padding = 58;
+  return Number(target?.y || 0) + padding + ((INFINITE_CANVAS_NODE_HEIGHT - padding * 2) * index) / (count - 1);
+}
+
+export function canvasReferenceConnectorPath(source, target, { targetIndex = 0, targetCount = 1 } = {}) {
   const sourceCenterX = Number(source?.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
   const targetCenterX = Number(target?.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
   const sourceY = Number(source?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
-  const targetY = Number(target?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const targetY = canvasReferenceTargetY(target, targetIndex, targetCount);
   const leftToRight = sourceCenterX <= targetCenterX;
   const startX = Number(source?.x || 0) + (leftToRight ? INFINITE_CANVAS_NODE_WIDTH : 0);
   const endX = Number(target?.x || 0) + (leftToRight ? 0 : INFINITE_CANVAS_NODE_WIDTH);
@@ -464,11 +485,11 @@ export function canvasReferenceConnectorPath(source, target) {
   return `M ${startX} ${sourceY} C ${startX + bend * direction} ${sourceY}, ${endX - bend * direction} ${targetY}, ${endX} ${targetY}`;
 }
 
-export function canvasReferenceConnectorMidpoint(source, target) {
+export function canvasReferenceConnectorMidpoint(source, target, { targetIndex = 0, targetCount = 1 } = {}) {
   const sourceCenterX = Number(source?.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
   const targetCenterX = Number(target?.x || 0) + INFINITE_CANVAS_NODE_WIDTH / 2;
   const sourceY = Number(source?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
-  const targetY = Number(target?.y || 0) + INFINITE_CANVAS_NODE_HEIGHT / 2;
+  const targetY = canvasReferenceTargetY(target, targetIndex, targetCount);
   const leftToRight = sourceCenterX <= targetCenterX;
   const startX = Number(source?.x || 0) + (leftToRight ? INFINITE_CANVAS_NODE_WIDTH : 0);
   const endX = Number(target?.x || 0) + (leftToRight ? 0 : INFINITE_CANVAS_NODE_WIDTH);

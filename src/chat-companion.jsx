@@ -4,7 +4,7 @@ import { clampFloatingPosition, clampFloatingSize, normalizeFloatingPosition } f
 import foxAvatarUrl from './assets/chat-companion/pic265-fox-avatar.jpg';
 
 const MAX_IMAGES = 3;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const POSITION_STORAGE_KEYS = Object.freeze({
   collapsed: 'pic365-chat-companion-position-collapsed',
@@ -84,9 +84,9 @@ function errorText(code, language) {
     CHAT_PROVIDER_NOT_CONFIGURED: '聊天引擎暂未配置。',
     CHAT_PROVIDER_TIMEOUT: '精灵思考超时，请重试。',
     CHAT_USAGE_UNAVAILABLE: '渠道没有返回实际用量，本次未扣费。',
-    INVALID_CHAT_IMAGE: '图片仅支持 PNG、JPG、WebP，单张不超过 5 MB。',
+    INVALID_CHAT_IMAGE: '图片仅支持 PNG、JPG、WebP，单张不超过 15 MB。',
     IMAGE_TYPE: '图片仅支持 PNG、JPG、WebP。',
-    IMAGE_SIZE: '单张图片不能超过 5 MB。'
+    IMAGE_SIZE: '单张图片不能超过 15 MB。'
   };
   const en = {
     AUTH_REQUIRED: 'Sign in to chat.',
@@ -98,9 +98,9 @@ function errorText(code, language) {
     CHAT_PROVIDER_NOT_CONFIGURED: 'The chat engine is not configured.',
     CHAT_PROVIDER_TIMEOUT: 'The assistant timed out. Please retry.',
     CHAT_USAGE_UNAVAILABLE: 'The provider returned no usage data, so nothing was charged.',
-    INVALID_CHAT_IMAGE: 'Use PNG, JPG, or WebP images up to 5 MB each.',
+    INVALID_CHAT_IMAGE: 'Use PNG, JPG, or WebP images up to 15 MB each.',
     IMAGE_TYPE: 'Use PNG, JPG, or WebP images.',
-    IMAGE_SIZE: 'Each image must be 5 MB or smaller.'
+    IMAGE_SIZE: 'Each image must be 15 MB or smaller.'
   };
   return (language === 'zh' ? zh : en)[code] || (language === 'zh' ? '发送失败，请稍后重试。' : 'Unable to send. Please try again.');
 }
@@ -152,7 +152,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     signIn: '登录后开始聊天',
     recharge: '去充值',
     context: '最多携带最近 24 条消息',
-    imageLimit: '最多 3 张，单张不超过 5 MB',
+    imageLimit: '最多 3 张，单张不超过 15 MB',
     thinking: 'Pic365精灵正在思考…',
     drag: '拖动调整位置',
     resize: '拖动调整精灵窗口大小',
@@ -175,7 +175,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     signIn: 'Sign in to chat',
     recharge: 'Add credits',
     context: 'Uses up to the latest 24 messages',
-    imageLimit: 'Up to 3 images, 5 MB each',
+    imageLimit: 'Up to 3 images, 15 MB each',
     thinking: 'Thinking…',
     drag: 'Drag to move',
     resize: 'Drag to resize the chat window',

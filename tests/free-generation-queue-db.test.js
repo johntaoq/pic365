@@ -69,6 +69,13 @@ test('queue claiming never runs more than three tasks for one user', () => {
 
 test('completed task results survive reload and active tasks cannot be deleted', () => {
   const user = createTestUser('queue-results');
+  const generationId = `generation-${Date.now()}-${Math.random()}`;
+  const storedFileSize = 15 * 1024 * 1024 + 1;
+  localDb.getDb().prepare(`
+    INSERT INTO generations
+      (id, user_id, prompt, model, size, quality, provider, status, storage_path, file_size, created_at, completed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)
+  `).run(generationId, user.id, 'queued image 1', 'provider-test', '1024x1024', 'low', 'provider-test', 'generated/test.png', storedFileSize, new Date().toISOString(), new Date().toISOString());
   const created = queue.createFreeGenerationTask(user.id, taskRequest(1));
   assert.throws(() => queue.deleteFreeGenerationTask(user.id, created.id), (error) => error?.code === 'TASK_ACTIVE');
   const [claimed] = queue.claimFreeGenerationTasks(1);
@@ -76,13 +83,14 @@ test('completed task results survive reload and active tasks cannot be deleted',
     status: 'completed',
     result: {
       ok: true,
-      images: [{ generationId: 'generation-1', image: '/api/generated?id=generation-1', size: '1024x1024', quality: 'low', downloadAllowed: true }]
+      images: [{ generationId, image: `/api/generated?id=${generationId}`, size: '1024x1024', quality: 'low', downloadAllowed: true }]
     }
   });
   const reloaded = queue.getFreeGenerationTask(user.id, created.id);
   assert.equal(reloaded.status, 'completed');
   assert.equal(reloaded.results.length, 1);
-  assert.equal(reloaded.results[0].generationId, 'generation-1');
+  assert.equal(reloaded.results[0].generationId, generationId);
+  assert.equal(reloaded.results[0].fileSize, storedFileSize);
   assert.equal(queue.deleteFreeGenerationTask(user.id, created.id).id, created.id);
 });
 
@@ -245,6 +253,25 @@ test('batch repair tasks are created atomically with source metadata and preflig
   const claimed = queue.claimFreeGenerationTasks(12).filter((task) => task.userId === user.id);
   assert.equal(claimed.length, 2);
   assert.equal(claimed.some((task) => task.id === tasks[2].id), false);
+});
+
+test('prompt-only batch tasks retain their batch order without requiring references', () => {
+  const user = createTestUser('queue-batch-text-only');
+  const batchId = `text-batch-${Date.now()}`;
+  const tasks = queue.createFreeGenerationTasks(user.id, [0, 1, 2].map((index) => ({
+    ...taskRequest(100 + index),
+    batchId,
+    batchIndex: index,
+    references: []
+  })));
+  assert.equal(tasks.length, 3);
+  assert.deepEqual(tasks.map((task) => task.taskMode), ['single', 'single', 'single']);
+  assert.deepEqual(tasks.map((task) => task.batchId), [batchId, batchId, batchId]);
+  assert.deepEqual(tasks.map((task) => task.batchIndex), [0, 1, 2]);
+  const stored = queue.getFreeGenerationTask(user.id, tasks[1].id, { includeRequest: true });
+  assert.equal(stored.request.batchId, batchId);
+  assert.equal(stored.request.batchIndex, 1);
+  assert.deepEqual(stored.request.references, []);
 });
 
 test('batch repair active capacity is all-or-nothing', () => {

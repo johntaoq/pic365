@@ -2,6 +2,7 @@ import { authenticateRequest } from './_lib/local-auth.js';
 import { createUploadedAsset, emptyAssetTrash, getAssetStats, listAssets, repairMissingAssetFileMetadata } from './_lib/media-assets.js';
 import { readBufferBody } from './_lib/request.js';
 import { startMediaProcessingWorker } from '../server/media-processing-worker.js';
+import { getAssetDateRange } from '../shared/asset-search.js';
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
@@ -18,6 +19,17 @@ export default async function handler(req, res) {
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
 
   if (req.method === 'GET') {
+    const dateFilter = {
+      dateMode: req.query?.dateMode || 'all',
+      dateValue: req.query?.dateValue || '',
+      dateFrom: req.query?.dateFrom || '',
+      dateTo: req.query?.dateTo || ''
+    };
+    try {
+      getAssetDateRange(dateFilter);
+    } catch {
+      return json(res, 400, { ok: false, error: 'INVALID_ASSET_DATE_FILTER' });
+    }
     await repairMissingAssetFileMetadata(auth.user.id);
     const result = listAssets(auth.user.id, {
       limit: req.query?.limit,
@@ -29,6 +41,9 @@ export default async function handler(req, res) {
       teamId: req.query?.teamId,
       collectionType: req.query?.collectionType,
       tag: req.query?.tag,
+      ...dateFilter,
+      sort: req.query?.sort,
+      includeFacets: req.query?.facets === '1',
       favorite: req.query?.favorite === '1',
       deleted: req.query?.deleted === '1',
       shared: req.query?.shared === '1',

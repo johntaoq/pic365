@@ -1,0 +1,97 @@
+.mediaAssetCenter {
+  --asset-search-ink: #dce7f2;
+  --asset-search-muted: #9eb0c6;
+  --asset-search-surface: #101a2a;
+  --asset-search-line: #33465b;
+  --asset-search-active: #183d37;
+  --asset-search-accent: #9aefd9;
+  --asset-search-error: #ffb6bf;
+}
+.siteThemeLight .mediaAssetCenter {
+  --asset-search-ink: #30445a;
+  --asset-search-muted: #526980;
+  --asset-search-surface: #f7f9fb;
+  --asset-search-line: #cddae2;
+  --asset-search-active: #e2f2ed;
+  --asset-search-accent: #116657;
+  --asset-search-error: #b4233b;
+}
+.siteThemeBlack .mediaAssetCenter {
+  --asset-search-ink: #e5eee9;
+  --asset-search-muted: #a5b7ad;
+  --asset-search-surface: #0b100d;
+  --asset-search-line: #294434;
+  --asset-search-active: #122b1c;
+  --asset-search-accent: #76f3a2;
+  --asset-search-error: #ffb6bf;
+}
+.assetExplorerSearch { display: grid; gap: 12px; margin: 14px 0; color: var(--asset-search-ink); }
+.assetExplorerSearch input, .assetExplorerSearch select, .assetExplorerSearch button,
+.assetTagEditor input, .assetTagEditor button, .assetExplorerConditions button, .assetCardTags button {
+  font: inherit; font-size: 12px; letter-spacing: 0; min-width: 0; box-sizing: border-box;
+}
+.assetExplorerSearch select, .assetExplorerDateFields input, .assetExplorerDateFields button {
+  height: 36px; padding: 0 10px; border: 1px solid var(--asset-search-line); border-radius: 8px;
+  background: var(--asset-search-surface); color: var(--asset-search-ink);
+}
+.assetExplorerSearch select { width: 100%; text-overflow: ellipsis; cursor: pointer; }
+.assetExplorerKeyword { display: flex; gap: 8px; align-items: center; min-width: 0; min-height: 42px; padding: 4px 5px 4px 12px; border: 1px solid var(--asset-search-line); border-radius: 8px; background: var(--asset-search-surface); }
+.assetExplorerKeyword > svg { flex: 0 0 auto; color: var(--asset-search-muted); }
+.assetExplorerKeyword > input { flex: 1; width: 0; min-width: 0; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--asset-search-ink); outline: none; box-shadow: none; }
+.assetExplorerKeyword:focus-within { border-color: var(--asset-search-accent); box-shadow: inset 0 0 0 1px var(--asset-search-accent); }
+.assetExplorerKeyword > input:focus { outline: none; box-shadow: none; }
+.assetExplorerKeyword input::placeholder { color: var(--asset-search-muted); }
+.assetExplorerKeyword button { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; cursor: pointer; }
+.assetExplorerIcon { color: var(--asset-search-muted); background: transparent; }
+.assetExplorerSubmit { color: var(--asset-search-accent); background: var(--asset-search-active); }
+.assetExplorerFilters { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); gap: 12px; }
+.assetExplorerFilters label { min-width: 0; display: grid; gap: 5px; }
+.assetExplorerFilters label > span { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--asset-search-muted); }
+.assetExplorerDate { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--asset-search-line); }
+.assetExplorerDateLabel { display: flex; align-items: center; gap: 5px; color: var(--asset-search-muted); font-size: 11px; }
+.assetExplorerDateLabel small { font-size: 10px; }
+.assetExplorerDateModes { display: flex; max-width: 100%; padding: 3px; border: 1px solid var(--asset-search-line); border-radius: 8px; background: var(--asset-search-surface); }
+.assetExplorerDateModes button { flex: 1 1 auto; min-height: 30px; border: 0; border-radius: 5px; padding: 4px 10px; color: var(--asset-search-muted); background: transparent; cursor: pointer; white-space: nowrap; }
+.assetExplorerDateModes button[aria-pressed="true"] { color: var(--asset-search-accent); background: var(--asset-search-active); font-weight: 700; }
+.assetExplorerDateFields { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; }
+.assetExplorerDateFields input { width: 146px; color-scheme: dark; }
+.siteThemeLight .assetExplorerDateFields input { color-scheme: light; }
+.assetExplorerDateFields input[type="number"] { width: 90px; }
+.assetExplorerDateFields button { display: grid; place-items: center; width: 36px; padding: 0; color: var(--asset-search-accent); cursor: pointer; }
+.assetExplorerDateFields button:disabled { opacity: .45; cursor: default; }
+.assetExplorerDateError { width: 100%; color: var(--asset-search-error); font-size: 11px; }
+.assetExplorerConditions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
+.assetExplorerConditions button { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 4px 8px; border: 1px solid var(--asset-search-line); border-radius: 7px; background: var(--asset-search-active); color: var(--asset-search-accent); cursor: pointer; }
+.assetExplorerConditions button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assetExplorerConditions button > svg { flex-shrink: 0; }
+.assetExplorerConditions .assetExplorerReset { background: transparent; }
+.assetExplorerEmpty h2 { color: var(--asset-search-ink); font-size: 18px; }
+.assetExplorerEmpty p { color: var(--asset-search-muted); font-size: 13px; }
+.assetExplorerEmpty button { margin-top: 14px; padding: 8px 14px; border: 1px solid var(--asset-search-line); border-radius: 8px; color: var(--asset-search-accent); background: var(--asset-search-active); cursor: pointer; }
+.assetCardTags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 12px; min-height: 26px; }
+.assetCardTags button { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 24px; padding: 2px 6px; border: 1px solid var(--asset-search-line); border-radius: 6px; color: var(--asset-search-accent); background: var(--asset-search-active); cursor: pointer; }
+.assetCardTags button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assetCardTags button > svg { flex-shrink: 0; }
+.assetCardTags .assetCardNoTags { color: var(--asset-search-muted); font-size: 10px; }
+.mediaAssetCard .assetCardDate { display: block; padding: 3px 12px; color: var(--asset-search-muted); font-size: 10px; }
+.assetTagField { display: grid; gap: 6px; margin: 11px 0; color: var(--asset-search-muted); font-size: 12px; }
+.assetTagField > span { display: flex; align-items: center; gap: 5px; }
+.assetTagTokens { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.assetTagToken { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 4px 6px; border: 1px solid var(--asset-search-line); border-radius: 7px; background: var(--asset-search-active); color: var(--asset-search-accent); }
+.assetTagToken > span { overflow-wrap: anywhere; min-width: 0; }
+.assetTagToken > svg { flex: 0 0 auto; }
+.assetTagToken button { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.assetTagToken button:disabled, .assetCardTags button:disabled { opacity: .5; cursor: default; }
+.assetTagEmpty { color: var(--asset-search-muted); font-size: 11px; }
+.mediaAssetInspector .assetTagEditor > input { width: 100%; margin-top: 7px; height: 36px; padding: 0 9px; border: 1px solid var(--asset-search-line); border-radius: 8px; background: var(--asset-search-surface); color: var(--asset-search-ink); }
+.assetExplorerSearch :is(button, select, input):focus-visible, .assetExplorerConditions button:focus-visible,
+.assetTagEditor :is(button, input):focus-visible, .assetCardTags button:focus-visible { outline: 2px solid var(--asset-search-accent); outline-offset: 2px; }
+.assetExplorerKeyword > input:focus-visible { outline: none; }
+@media (max-width: 600px) {
+  .assetExplorerFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .assetExplorerFilters label:first-child { grid-column: 1 / -1; }
+  .assetExplorerDateModes { width: 100%; }
+  .assetExplorerDateModes button { padding-inline: 6px; }
+  .assetExplorerDateFields { width: 100%; }
+  .assetExplorerDateFields input { flex: 1 1 120px; width: 120px; max-width: 100%; }
+}

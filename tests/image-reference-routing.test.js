@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   imageReferenceIdentity,
   moveImageReferenceToPrimary,
+  resolveImagePreviewIdentity,
   splitImageReferences,
   resolveImageReferenceTarget
 } from '../src/image-reference-routing.js';
@@ -21,6 +22,17 @@ test('generated image identity is stable across result and history shapes', () =
   assert.equal(imageReferenceIdentity({ id: 'row-1', generationId: 'generation-1' }), 'generation-1');
   assert.equal(imageReferenceIdentity({ id: 'row-1' }), 'row-1');
   assert.equal(imageReferenceIdentity({ assetId: 'asset-1' }), 'asset-1');
+});
+
+test('image preview keeps a manual selection until that image is no longer available', () => {
+  const results = [
+    { id: 'latest' },
+    { id: 'manual-selection' },
+    { id: 'older' }
+  ];
+  assert.equal(resolveImagePreviewIdentity(results, 'manual-selection'), 'manual-selection');
+  assert.equal(resolveImagePreviewIdentity(results, 'missing'), 'latest');
+  assert.equal(resolveImagePreviewIdentity([], 'manual-selection'), '');
 });
 
 test('single-image references keep one primary image separate from supporting references', () => {

@@ -53,3 +53,21 @@ test('blank key updates preserve the encrypted provider key', () => {
   db.saveImageProviderConfig({ ...current, name: 'Gemini Banana Pro', apiKey: '' });
   assert.equal(db.getImageProviderConfig(current.id).apiKey, 'secret-provider-key');
 });
+
+test('administrator ordering controls public display order without changing the default provider', () => {
+  const defaultProvider = db.listImageProviderConfigs({ admin: true })[0];
+  const secondProvider = db.saveImageProviderConfig({
+    name: 'Second image service',
+    providerType: 'openai-compatible',
+    baseUrl: 'https://second.example.com',
+    apiKey: 'second-provider-key',
+    model: 'gpt-image-2',
+    enabled: true,
+    isDefault: false
+  });
+  const reordered = db.reorderImageProviderConfigs([secondProvider.id, defaultProvider.id]);
+  assert.deepEqual(reordered.map((provider) => provider.id), [secondProvider.id, defaultProvider.id]);
+  assert.deepEqual(reordered.map((provider) => provider.sortOrder), [0, 1]);
+  assert.deepEqual(db.listImageProviderConfigs().map((provider) => provider.id), [secondProvider.id, defaultProvider.id]);
+  assert.equal(db.getImageProviderConfig().id, defaultProvider.id);
+});

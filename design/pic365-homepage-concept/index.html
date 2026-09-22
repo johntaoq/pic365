@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pic365 首页概念稿</title>
+  <style>
+    :root {
+      --ink: #14233a;
+      --muted: #62728a;
+      --line: #d8e3ed;
+      --mint: #70d8c1;
+      --mint-deep: #267f70;
+      --blue: #7aa8ff;
+      --violet: #8a72ed;
+      --paper: #f7fafc;
+      --card: rgba(255,255,255,.86);
+      --shadow: 0 24px 70px rgba(31,63,91,.12);
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", Inter, ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+      background: #eef5f7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: linear-gradient(180deg,#f5fbfc 0,#fff 26%,#f4f8fc 100%); }
+    button { font: inherit; }
+    .page { overflow: hidden; min-width: 1180px; }
+    .wrap { width: 1240px; margin: 0 auto; }
+    .nav-shell { padding: 24px 0 0; }
+    .nav {
+      height: 76px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; border: 1px solid rgba(190,208,220,.82); border-radius: 22px;
+      background: rgba(255,255,255,.84); box-shadow: 0 14px 40px rgba(51,77,102,.09); backdrop-filter: blur(18px);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 850; color: #4e66ef; letter-spacing: -.7px; }
+    .brand-mark { width: 42px; height: 42px; border: 3px solid #6f62ec; border-radius: 14px; display: grid; place-items: center; position: relative; background: linear-gradient(145deg,#fff,#eafbff); }
+    .brand-mark::before { content: "P"; font: 900 23px/1 Arial; color: #4e66ef; }
+    .brand-mark::after { content: "✦"; position: absolute; right: -5px; top: -7px; color: #59cbb5; font-size: 16px; }
+    .nav-links { display:flex; gap: 8px; align-items:center; padding: 7px; border-radius: 16px; background:#f4f7fa; }
+    .nav-links span { padding: 11px 18px; border-radius: 12px; color:#56667e; font-weight: 700; font-size: 15px; }
+    .nav-links .active { color:#236e63; background:#e1f3ee; box-shadow: inset 0 -2px #55bdaa; }
+    .nav-actions { display:flex; align-items:center; gap:10px; }
+    .ghost, .primary { border:0; border-radius: 13px; padding: 12px 18px; font-weight: 800; }
+    .ghost { color:#3e526e; background:#f1f5f8; }
+    .primary { color:#092f36; background: linear-gradient(135deg,#a8efd8,#95c7ff); box-shadow:0 10px 24px rgba(85,190,169,.23); }
+
+    .hero { position: relative; padding: 96px 0 90px; }
+    .hero::before { content:""; position:absolute; width:760px; height:760px; right:-180px; top:-250px; border-radius:50%; background:radial-gradient(circle,rgba(111,210,193,.23),rgba(126,167,255,.08) 48%,transparent 70%); }
+    .hero::after { content:""; position:absolute; width:520px; height:520px; left:-280px; top:10px; border-radius:50%; background:radial-gradient(circle,rgba(137,115,237,.13),transparent 70%); }
+    .hero-grid { position:relative; z-index:1; display:grid; grid-template-columns: 1.03fr .97fr; align-items:center; gap:72px; }
+    .eyebrow { display:inline-flex; align-items:center; gap:9px; padding:8px 13px; border:1px solid #bbe4da; border-radius:999px; color:#287968; background:#effbf7; font-size:14px; font-weight:800; }
+    .eyebrow i { width:8px; height:8px; border-radius:50%; background:#4ec9ad; box-shadow:0 0 0 5px rgba(78,201,173,.15); }
+    h1 { margin:22px 0 24px; font-size:68px; line-height:1.08; letter-spacing:-4px; }
+    h1 em { font-style:normal; color:transparent; background:linear-gradient(110deg,#258779,#4a88e8 58%,#7e61dc); -webkit-background-clip:text; background-clip:text; }
+    .hero-copy > p { width:570px; margin:0 0 30px; font-size:19px; line-height:1.85; color:#5e6f86; }
+    .hero-actions { display:flex; gap:13px; align-items:center; }
+    .hero-actions button { min-height:54px; padding:0 24px; border-radius:15px; font-weight:850; border:1px solid #d3dfe8; background:#fff; color:#3c4d64; }
+    .hero-actions .primary { border:0; background:linear-gradient(135deg,#9debd5,#8dc2ff); color:#0c3840; }
+    .proof { display:flex; gap:22px; margin-top:38px; color:#718198; font-size:13px; }
+    .proof b { color:#26384f; font-size:15px; }
+    .proof span { display:flex; flex-direction:column; gap:4px; padding-left:18px; border-left:2px solid #dce8ee; }
+
+    .hero-visual { position:relative; height:590px; }
+    .hero-window { position:absolute; overflow:hidden; border:1px solid rgba(185,205,217,.92); border-radius:24px; background:#fff; box-shadow:var(--shadow); }
+    .hero-window img { width:100%; height:100%; object-fit:cover; display:block; }
+    .hero-window.main { width:620px; height:340px; right:-40px; top:65px; transform:rotate(1.2deg); }
+    .hero-window.side { width:330px; height:240px; left:-5px; bottom:8px; transform:rotate(-2.8deg); }
+    .hero-window.mini { width:300px; height:170px; right:-14px; bottom:4px; transform:rotate(2.4deg); }
+    .window-bar { height:34px; display:flex; align-items:center; gap:7px; padding:0 13px; background:#f8fbfd; border-bottom:1px solid #dce6ee; }
+    .window-bar i { width:8px; height:8px; border-radius:50%; background:#c8d3dd; }
+    .window-bar i:first-child { background:#73d7bf; }
+    .window-body { height:calc(100% - 34px); overflow:hidden; }
+    .hero-window.main .window-body img { object-position:top center; }
+    .hero-window.side .window-body img { object-position:top center; }
+    .hero-window.mini .window-body img { object-position:center; }
+    .floating-note { position:absolute; left:8px; top:16px; z-index:4; width:238px; padding:18px; border-radius:20px; color:white; background:linear-gradient(150deg,#17263d,#224d5a); box-shadow:0 24px 50px rgba(30,52,78,.22); }
+    .floating-note strong { display:block; font-size:17px; margin-bottom:7px; }
+    .floating-note span { color:#bcd9dc; font-size:13px; line-height:1.55; }
+    .floating-chip { position:absolute; right:3px; top:23px; z-index:5; padding:10px 14px; border-radius:14px; background:#fff7ce; color:#7f5f13; font-weight:800; font-size:13px; box-shadow:0 10px 28px rgba(94,72,21,.15); transform:rotate(3deg); }
+
+    .trust { padding:0 0 100px; }
+    .trust-inner { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); background:rgba(255,255,255,.72); border-radius:24px; box-shadow:0 18px 44px rgba(54,82,107,.06); }
+    .trust article { padding:28px 30px; border-right:1px solid var(--line); }
+    .trust article:last-child { border:0; }
+    .trust strong { display:block; font-size:17px; margin-bottom:7px; }
+    .trust p { margin:0; color:#74849a; font-size:13px; line-height:1.65; }
+
+    .section { padding:100px 0; }
+    .section.tint { background:linear-gradient(180deg,#f1f8f8,#f8fbfc); border-top:1px solid #e1ebef; border-bottom:1px solid #e1ebef; }
+    .section-head { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:46px; }
+    .section-head small { color:#2f8a79; text-transform:uppercase; letter-spacing:2px; font-weight:900; }
+    .section-head h2 { margin:10px 0 0; font-size:45px; letter-spacing:-2px; }
+    .section-head p { width:440px; margin:0; color:#6d7c91; line-height:1.8; }
+
+    .audience-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    .audience-card { min-height:520px; padding:30px; border-radius:28px; border:1px solid #d5e1e9; background:var(--card); box-shadow:0 18px 42px rgba(40,67,91,.07); overflow:hidden; position:relative; }
+    .audience-card .label { display:inline-flex; align-items:center; gap:8px; padding:7px 11px; border-radius:999px; background:#ecf8f4; color:#287668; font-size:13px; font-weight:850; }
+    .audience-card h3 { margin:18px 0 10px; font-size:28px; letter-spacing:-1px; }
+    .audience-card > p { margin:0; color:#6d7c91; line-height:1.7; }
+    .audience-card ul { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0 24px; padding:0; list-style:none; }
+    .audience-card li { padding:8px 11px; border-radius:10px; background:#f2f6f8; color:#53647b; font-size:12px; font-weight:750; }
+    .shot { height:250px; overflow:hidden; border-radius:18px; border:1px solid #d9e3e9; background:#ecf3f6; box-shadow:0 16px 34px rgba(42,66,90,.09); }
+    .shot img { width:100%; height:100%; object-fit:cover; display:block; }
+    .design .shot img { object-position:top center; }
+    .ads .shot img { object-position:top center; }
+    .commerce .shot img { object-position:center; }
+    .story .shot img { object-position:top center; }
+    .audience-card.commerce { background:linear-gradient(150deg,#f8fffd,#eef8ff); }
+    .audience-card.story { background:linear-gradient(150deg,#fff,#f5f1ff); }
+
+    .workflow { display:grid; grid-template-columns:.88fr 1.12fr; gap:44px; align-items:stretch; }
+    .workflow-copy { padding:44px; border-radius:28px; background:#112039; color:#f4f8ff; position:relative; overflow:hidden; }
+    .workflow-copy::after { content:""; position:absolute; width:320px; height:320px; right:-140px; bottom:-150px; border-radius:50%; background:radial-gradient(circle,#3a8f86,transparent 68%); opacity:.55; }
+    .workflow-copy small { color:#92e4d0; font-weight:900; letter-spacing:1.7px; }
+    .workflow-copy h2 { margin:14px 0 18px; font-size:42px; line-height:1.2; letter-spacing:-2px; }
+    .workflow-copy p { color:#b7c5d6; line-height:1.8; }
+    .steps { margin-top:36px; display:grid; gap:16px; }
+    .step { display:grid; grid-template-columns:42px 1fr; gap:14px; align-items:start; position:relative; z-index:1; }
+    .step b { width:38px; height:38px; display:grid; place-items:center; border-radius:12px; color:#0d3340; background:linear-gradient(135deg,#a4ecd7,#91bdff); }
+    .step strong { display:block; margin:1px 0 4px; }
+    .step span { color:#9eafc2; font-size:13px; line-height:1.55; }
+    .workflow-visual { display:grid; grid-template-rows:1fr 1fr; gap:20px; height:620px; min-height:0; }
+    .workflow-shot { min-height:0; overflow:hidden; border-radius:26px; border:1px solid #d4e0e8; background:white; box-shadow:var(--shadow); position:relative; }
+    .workflow-shot img { width:100%; height:100%; object-fit:cover; display:block; }
+    .workflow-shot:first-child img { object-position:top center; }
+    .workflow-shot:last-child img { object-position:center; }
+    .shot-caption { position:absolute; left:18px; bottom:18px; padding:10px 13px; border-radius:12px; color:white; background:rgba(12,28,48,.84); backdrop-filter:blur(9px); font-size:13px; font-weight:800; }
+
+    .case-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+    .case { border:1px solid #d5e1e9; border-radius:25px; overflow:hidden; background:white; box-shadow:0 16px 36px rgba(45,70,95,.07); }
+    .case-image { height:230px; overflow:hidden; background:#edf2f5; }
+    .case-image img { width:100%; height:100%; object-fit:cover; display:block; }
+    .case:nth-child(1) .case-image img { object-position:center; }
+    .case:nth-child(2) .case-image img { object-position:top center; }
+    .case:nth-child(3) .case-image img { object-position:top center; }
+    .case-body { padding:24px; }
+    .case-body small { color:#27816f; font-weight:850; }
+    .case-body h3 { margin:10px 0 10px; font-size:21px; }
+    .case-body p { margin:0; min-height:70px; color:#728197; line-height:1.65; font-size:14px; }
+    .case-body footer { margin-top:18px; display:flex; justify-content:space-between; align-items:center; color:#4b5d74; font-size:13px; font-weight:750; }
+    .case-body footer b { color:#258474; }
+
+    .why { display:grid; grid-template-columns:1.05fr .95fr; gap:32px; }
+    .why-panel { padding:38px; border-radius:28px; border:1px solid #d4e0e8; background:white; box-shadow:0 18px 40px rgba(47,74,96,.07); }
+    .why-panel h3 { margin:0 0 22px; font-size:29px; }
+    .features { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .feature { padding:18px; border-radius:17px; background:#f2f7f8; }
+    .feature b { display:block; margin-bottom:6px; font-size:15px; }
+    .feature span { color:#76869a; font-size:12px; line-height:1.6; }
+    .quote { display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(145deg,#dff5ef,#e6efff); }
+    .quote blockquote { margin:0; font-size:27px; line-height:1.55; letter-spacing:-.6px; font-weight:750; }
+    .quote footer { display:flex; justify-content:space-between; align-items:center; color:#597086; }
+    .quote footer b { color:#236d62; }
+
+    .cta { padding:96px 0 110px; }
+    .cta-card { position:relative; overflow:hidden; padding:62px 68px; border-radius:34px; color:white; background:linear-gradient(120deg,#12233b,#143c4b 58%,#285a62); box-shadow:0 28px 70px rgba(17,43,64,.2); }
+    .cta-card::after { content:""; position:absolute; width:460px; height:460px; right:-120px; top:-210px; border-radius:50%; background:radial-gradient(circle,rgba(135,231,205,.62),transparent 68%); }
+    .cta-card small { color:#91e7d2; font-weight:850; letter-spacing:1.6px; }
+    .cta-card h2 { margin:12px 0 15px; font-size:43px; letter-spacing:-2px; }
+    .cta-card p { width:650px; margin:0 0 26px; color:#c2d1de; line-height:1.7; }
+    .cta-card .primary { position:relative; z-index:2; min-height:52px; padding:0 25px; }
+    .footer { padding:30px 0 44px; border-top:1px solid #dce6ec; color:#718096; font-size:13px; }
+    .footer .wrap { display:flex; justify-content:space-between; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="nav-shell wrap">
+      <nav class="nav">
+        <div class="brand"><span class="brand-mark"></span><span>pic365</span></div>
+        <div class="nav-links"><span>灵感生图</span><span>无限画布</span><span class="active">解决方案</span><span>电商套图</span><span>视频创作</span><span>范例</span></div>
+        <div class="nav-actions"><button class="ghost">登录</button><button class="primary">开始创作 →</button></div>
+      </nav>
+    </div>
+
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow"><i></i> 面向真实业务的 AI 视觉工作台</span>
+          <h1>从一张图，<br/>到一套<em>会卖、会动</em><br/>的内容。</h1>
+          <p>Pic365 把灵感生图、精准改图、电商套图、无限画布和视频创作连成一条工作流。少填参数，把商品、品牌和人物的一致性留给系统处理。</p>
+          <div class="hero-actions"><button class="primary">免费开始创作</button><button>看看适合我的场景</button></div>
+          <div class="proof"><span><b>图像 + 视频</b>统一创作入口</span><span><b>参考图约束</b>保持真实与一致</span><span><b>多模型渠道</b>质量与成本可选</span></div>
+        </div>
+        <div class="hero-visual">
+          <div class="floating-note"><strong>不仅是“生成一张图”</strong><span>把每次创作沉淀为可复用的素材、版本和画布关系。</span></div>
+          <div class="floating-chip">✦ 真实界面截图</div>
+          <div class="hero-window main"><div class="window-bar"><i></i><i></i><i></i></div><div class="window-body"><img src="assets/inspiration-gallery.png" alt="Pic365 灵感图库真实界面" /></div></div>
+          <div class="hero-window side"><div class="window-bar"><i></i><i></i><i></i></div><div class="window-body"><img src="assets/free-studio.png" alt="Pic365 灵感生图真实界面" /></div></div>
+          <div class="hero-window mini"><div class="window-bar"><i></i><i></i><i></i></div><div class="window-body"><img src="assets/ecommerce-generate.png" alt="Pic365 电商生图真实界面" /></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="trust wrap">
+      <div class="trust-inner">
+        <article><strong>灵感不是终点</strong><p>范例可直接进入创作，提示词、参考图和结果继续衔接。</p></article>
+        <article><strong>商品事实优先</strong><p>结构、颜色、材质、包装与配件约束自动进入生成链路。</p></article>
+        <article><strong>批量也能精细</strong><p>独立提示词、单张重做、版本采用与统一交付并行完成。</p></article>
+        <article><strong>创作资产可复用</strong><p>历史作品、媒资库、画布节点和引用关系长期保留。</p></article>
+      </div>
+    </section>
+
+    <section class="section tint" id="audiences">
+      <div class="wrap">
+        <div class="section-head"><div><small>Who it is for</small><h2>不同团队，都有清晰的使用入口</h2></div><p>首页不堆功能名，而是先回答“我能拿它做什么”。每个场景都给出典型任务、对应能力和真实产品界面。</p></div>
+        <div class="audience-grid">
+          <article class="audience-card design"><span class="label">01 · 图片设计</span><h3>设计师与内容创作者</h3><p>从灵感库开始，使用母版与多张参考图锁定主体，再通过单图创作和局部精修快速收敛结果。</p><ul><li>灵感范例</li><li>AI 魔笔</li><li>参考图编辑</li><li>多版本比较</li></ul><div class="shot"><img src="assets/free-studio.png" alt="图片设计场景" /></div></article>
+          <article class="audience-card ads"><span class="label">02 · 广告创作</span><h3>市场与品牌团队</h3><p>同一创意快速产出不同画幅、文案方向和渠道版本，适合广告素材测试、社交媒体和活动视觉。</p><ul><li>批量改图</li><li>独立提示词</li><li>多尺寸适配</li><li>任务列表</li></ul><div class="shot"><img src="assets/batch-edit.png" alt="广告批量创作场景" /></div></article>
+          <article class="audience-card commerce"><span class="label">03 · 电商运营</span><h3>商家、运营与商品团队</h3><p>上传真实商品素材后，系统自动识别品类、目标用户和使用场景，再按平台生成主图、卖点图与交付素材。</p><ul><li>商品母版</li><li>平台套图</li><li>自动约束</li><li>精修交付</li></ul><div class="shot"><img src="assets/ecommerce-delivery.png" alt="电商精修交付场景" /></div></article>
+          <article class="audience-card story"><span class="label">04 · 短剧创作</span><h3>编导、分镜与短视频团队</h3><p>把角色定妆、场景参考和镜头版本放进无限画布，保持人物关系清晰，再让选中的画面直接动起来。</p><ul><li>角色一致性</li><li>分镜画布</li><li>引用关系</li><li>图生视频</li></ul><div class="shot"><img src="assets/task-list.png" alt="短剧角色与任务版本场景" /></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap workflow">
+        <div class="workflow-copy"><small>ONE CONNECTED WORKFLOW</small><h2>创意、生产、管理<br/>不再分散在不同工具</h2><p>Pic365 让“生成结果”继续成为下一步的输入，而不是下载后重新开始。</p><div class="steps"><div class="step"><b>1</b><div><strong>从真实素材或灵感开始</strong><span>上传、粘贴、资源库或历史作品都可以进入创作。</span></div></div><div class="step"><b>2</b><div><strong>批量生成并保留版本关系</strong><span>参考图用途、提示词和任务状态都跟随作品保存。</span></div></div><div class="step"><b>3</b><div><strong>进入画布编排或视频创作</strong><span>选中实体即可引用、精修、衍生或转为动态内容。</span></div></div></div></div>
+        <div class="workflow-visual"><div class="workflow-shot"><img src="assets/canvas-history.png" alt="无限画布历史作品" /><span class="shot-caption">历史作品一键加入画布</span></div><div class="workflow-shot"><img src="assets/ecommerce-delivery.png" alt="电商交付工作台" /><span class="shot-caption">从生成结果继续精修与交付</span></div></div>
+      </div>
+    </section>
+
+    <section class="section tint">
+      <div class="wrap">
+        <div class="section-head"><div><small>Examples</small><h2>不是抽象能力，是可复用的生产结果</h2></div><p>用当前产品中的真实任务举例，帮助访客快速判断 Pic365 是否适合自己的工作。</p></div>
+        <div class="case-grid">
+          <article class="case"><div class="case-image"><img src="assets/ecommerce-delivery.png" alt="运动鞋电商交付案例" /></div><div class="case-body"><small>电商运营</small><h3>一组商品素材，完成平台套图</h3><p>商品母版约束结构和配件，按槽位生成主图、场景图、细节图，再统一进入精修交付。</p><footer><span>适合：品牌商家 / 代运营</span><b>查看工作流 →</b></footer></div></article>
+          <article class="case"><div class="case-image"><img src="assets/inspiration-gallery.png" alt="灵感广告案例" /></div><div class="case-body"><small>广告创作</small><h3>从范例风格快速生成营销视觉</h3><p>从饮品广告、海报和品牌图标范例进入创作，保留风格方向并替换为自己的主体。</p><footer><span>适合：市场 / 社媒 / 广告</span><b>浏览范例 →</b></footer></div></article>
+          <article class="case"><div class="case-image"><img src="assets/task-list.png" alt="短剧角色一致性案例" /></div><div class="case-body"><small>短剧创作</small><h3>角色参考贯穿多个镜头版本</h3><p>主编辑图与辅助参考图分工明确，批量镜头保持角色特征，再在画布中组合为分镜。</p><footer><span>适合：编导 / 分镜 / 短视频</span><b>进入画布 →</b></footer></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap why">
+        <div class="why-panel"><h3>为什么 Pic365 更适合持续创作？</h3><div class="features"><div class="feature"><b>真实素材约束</b><span>参考图用途与商品事实进入后台约束，减少主体漂移。</span></div><div class="feature"><b>版本不丢失</b><span>结果、子版本、任务与画布关系自动沉淀。</span></div><div class="feature"><b>成本可预期</b><span>按模型、质量、参考图与视频时长清晰计费。</span></div><div class="feature"><b>团队可管理</b><span>媒资、项目、通知和运营配置形成完整闭环。</span></div></div></div>
+        <div class="why-panel quote"><blockquote>“少填参数，不牺牲控制。<br/>让系统处理复杂约束，<br/>让用户专注创意判断。”</blockquote><footer><span>Pic365 产品原则</span><b>简单、真实、可持续</b></footer></div>
+      </div>
+    </section>
+
+    <section class="cta"><div class="wrap"><div class="cta-card"><small>START WITH ONE IDEA</small><h2>把今天的一张图，变成明天的一整套内容</h2><p>从灵感生图开始，或者直接上传真实商品、角色和场景素材。Pic365 会在同一个工作区里继续完成改图、套图、画布编排和视频创作。</p><button class="primary">开始免费创作 →</button></div></div></section>
+    <footer class="footer"><div class="wrap"><span>© 2026 Pic365 · AI 视觉内容工作台</span><span>灵感生图 · 无限画布 · 电商套图 · 视频创作</span></div></footer>
+  </main>
+</body>
+</html>

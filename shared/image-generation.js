@@ -5,8 +5,20 @@ export const IMAGE_MIN_PIXELS = 655_360;
 export const IMAGE_MAX_PIXELS = 8_294_400;
 export const IMAGE_MIN_ASPECT = 1 / 3;
 export const IMAGE_MAX_ASPECT = 3;
-export const IMAGE_REFERENCE_MAX_BYTES = 7 * 1024 * 1024;
-export const IMAGE_REFERENCE_MAX_MEGABYTES = 7;
+export const IMAGE_REFERENCE_MAX_BYTES = 15 * 1024 * 1024;
+export const IMAGE_REFERENCE_MAX_MEGABYTES = 15;
+// Ten base64-encoded 15 MiB references need roughly 200 MiB before the rest
+// of the JSON payload is counted.
+export const IMAGE_GENERATION_REQUEST_MAX_BYTES = 224 * 1024 * 1024;
+
+export function imageReferenceByteLength(value = {}) {
+  const bytes = Number(value?.byteLength ?? value?.fileSize ?? 0);
+  return Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
+}
+
+export function isImageReferenceTooLarge(value, maxBytes = IMAGE_REFERENCE_MAX_BYTES) {
+  return imageReferenceByteLength(value) > maxBytes;
+}
 
 export const MAI_IMAGE_MIN_SIDE = 768;
 export const MAI_IMAGE_MAX_PIXELS = 1_048_576;

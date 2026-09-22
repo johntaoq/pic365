@@ -30,3 +30,21 @@ test('images that fit the viewport remain centered', () => {
     zoom: 1
   }), { x: 0, y: 0 });
 });
+
+test('an oversized image remains pannable even at one hundred percent zoom', () => {
+  assert.deepEqual(imagePanBounds({
+    viewportWidth: 800,
+    viewportHeight: 600,
+    contentWidth: 1000,
+    contentHeight: 1200,
+    zoom: 1
+  }), { maxX: 100, maxY: 300 });
+
+  assert.deepEqual(clampImagePanOffset({ x: -500, y: 500 }, {
+    viewportWidth: 800,
+    viewportHeight: 600,
+    contentWidth: 1000,
+    contentHeight: 1200,
+    zoom: 1
+  }), { x: -100, y: 300 });
+});

@@ -31,6 +31,7 @@ import {
 import { deleteStoredFile, persistImage } from './_lib/storage.js';
 import { ensureFreeImageWatermark } from './_lib/free-image-watermark.js';
 import {
+  IMAGE_GENERATION_REQUEST_MAX_BYTES,
   normalizeImageCount,
   normalizeImageQuality,
   resolveProviderImageQuality,
@@ -183,6 +184,7 @@ async function runGenerationJob({
       generationId: job.generationId,
       image: storedImage.url,
       contentType: storedImage.contentType,
+      fileSize: storedImage.byteLength,
       size,
       quality,
       cloudSaved: storedImage.backend === 'azure-blob',
@@ -256,7 +258,7 @@ export default async function handler(req, res) {
 
   let body;
   try {
-    body = await readJsonBody(req, { maxBytes: 96 * 1024 * 1024 });
+    body = await readJsonBody(req, { maxBytes: IMAGE_GENERATION_REQUEST_MAX_BYTES });
   } catch (error) {
     return json(res, error?.status || 400, { ok: false, error: error?.code || 'INVALID_PROMPT' });
   }

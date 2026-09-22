@@ -73,6 +73,13 @@ test('canvas state rejects invalid nodes and repairs missing parents', () => {
   assert.equal(state.viewport.zoom, 1.8);
 });
 
+test('canvas state preserves reference image file sizes', () => {
+  const state = normalizeCanvasState({
+    nodes: [{ id: 'reference', type: 'image', imageUrl: '/image.png', fileSize: 15 * 1024 * 1024 + 1 }]
+  });
+  assert.equal(state.nodes[0].fileSize, 15 * 1024 * 1024 + 1);
+});
+
 test('canvas pipelines receive stable spreadsheet-style names with level copy suffixes', () => {
   assert.equal(canvasPipelineLabel(0), 'A');
   assert.equal(canvasPipelineLabel(25), 'Z');
@@ -208,9 +215,10 @@ test('reference tray keeps the primary first and supporting references ordered',
   const ordered = orderedCanvasReferenceNodes(nodes, 'primary');
   assert.deepEqual(ordered.map((node) => node.id), ['primary', 'subject', 'style']);
   const prompt = canvasReferencePrompt('保留产品并优化画面', ordered.map((node, index) => ({ ...node, isPrimaryReference: index === 0 })), 'zh');
-  assert.match(prompt, /母版 \/ 参考图1 \/ 图1 = 输入图1/);
+  assert.match(prompt, /参考图1 \/ 图1 \/ 主图 \/ 母版 = 输入图1.*主体图/);
   assert.match(prompt, /参考图2 \/ 图2 = 输入图2.*主体参考/);
   assert.match(prompt, /参考图3 \/ 图3 = 输入图3.*风格参考/);
+  assert.match(prompt, /“主图”和“母版”固定代表参考图1/);
   assert.match(prompt, /用户修改要求：保留产品并优化画面/);
 });
 
@@ -233,6 +241,18 @@ test('reference delete control is positioned on the reference curve midpoint', (
     x: (100 + 292 + 760) / 2,
     y: (80 + 270 / 2 + 360 + 270 / 2) / 2
   });
+});
+
+test('multiple references fan into separate target anchors instead of stacking into one thick line', () => {
+  const target = { x: 760, y: 360 };
+  const source = { x: 100, y: 80 };
+  const first = canvasReferenceConnectorMidpoint(source, target, { targetIndex: 0, targetCount: 2 });
+  const second = canvasReferenceConnectorMidpoint(source, target, { targetIndex: 1, targetCount: 2 });
+  assert.notEqual(first.y, second.y);
+  assert.notEqual(
+    canvasReferenceConnectorPath(source, target, { targetIndex: 0, targetCount: 2 }),
+    canvasReferenceConnectorPath(source, target, { targetIndex: 1, targetCount: 2 })
+  );
 });
 
 test('removing a reference connection never removes the generation relationship', () => {

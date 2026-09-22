@@ -44,7 +44,7 @@ foreach ($relativePath in $requiredPaths) {
 if (Test-Path $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
 Push-Location $repoRoot
 try {
-  & tar.exe -czf $archivePath --exclude='dist/images' --exclude='dist/images/*' @requiredPaths
+  & tar.exe -czf $archivePath --exclude='dist/images' --exclude='dist/images/*' --exclude='*/qa' --exclude='*/capture-summary*.json' --exclude='*/qa-summary.json' @requiredPaths
   if ($LASTEXITCODE -ne 0) { throw 'Failed to create pic365 code archive' }
 } finally {
   Pop-Location
@@ -54,6 +54,9 @@ $entries = & tar.exe -tzf $archivePath
 if ($LASTEXITCODE -ne 0) { throw 'Failed to inspect pic365 code archive' }
 if ($entries | Where-Object { $_ -match '(^|/)dist/images(/|$)' }) {
   throw 'Release archive unexpectedly contains the shared gallery'
+}
+if ($entries | Where-Object { $_ -match '(^|/)(\.env(?:\.[^/]*)?|[^/]*\.sqlite(?:-shm|-wal)?|[^/]*\.log|qa|capture-summary[^/]*\.json|qa-summary\.json)(/|$)' }) {
+  throw 'Release archive unexpectedly contains local state or QA artifacts'
 }
 if (-not ($entries | Where-Object { $_ -match '(^|/)dist/index\.html$' })) {
   throw 'Release archive does not contain dist/index.html'

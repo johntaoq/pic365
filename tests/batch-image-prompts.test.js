@@ -7,6 +7,25 @@ import {
   parseBatchPromptLines
 } from '../shared/batch-image-prompts.js';
 
+test('zero images enables prompt-first text-to-image rows', () => {
+  assert.deepEqual(batchPromptLayout(0, 0), {
+    activeCount: 1,
+    visibleCount: 1,
+    minimumCount: 1,
+    canAdd: true
+  });
+  assert.deepEqual(batchPromptLayout(0, 4), {
+    activeCount: 4,
+    visibleCount: 4,
+    minimumCount: 1,
+    canAdd: true
+  });
+  assert.deepEqual(
+    createBatchPromptAssignments([], [{ id: 'p1' }, { id: 'p2' }]).map(({ image, promptItem, promptIndex }) => [image, promptItem.id, promptIndex]),
+    [[null, 'p1', 0], [null, 'p2', 1]]
+  );
+});
+
 test('one image enables up to ten prompt rows', () => {
   assert.deepEqual(batchPromptLayout(1, 6), {
     activeCount: 6,

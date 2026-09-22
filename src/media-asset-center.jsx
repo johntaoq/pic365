@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import MediaAssetSearch, { AssetTagEditor } from './media-asset-search.jsx';
+import './media-asset-management-dialog.css';
+import { assetCalendarDate, normalizeAssetTags } from '../shared/asset-search.js';
 import {
   Check,
   ChevronDown,
@@ -46,7 +49,8 @@ const copy = {
   zh: {
     title: '媒体资产中心', subtitle: '图片、视频和音频统一管理', all: '全部', image: '图片', video: '视频', audio: '音频',
     upload: '我上传的', generated: 'AI 生成的', project: '项目素材', favorite: '收藏', shared: '团队共享', trash: '回收站',
-    search: '搜索资产名称或所属分类', uploadMedia: '上传媒体', uploading: '处理中', allSources: '全部来源', sourceUpload: '本地上传', sourceGenerated: 'AI 生成结果',
+    search: '搜索名称、分类、标签', uploadMedia: '上传媒体', uploading: '处理中', allSources: '全部来源', sourceUpload: '本地上传', sourceGenerated: 'AI 生成结果',
+    keyword: '关键词', searching: '检索中', clearFilters: '清除检索条件', noMatches: '没有匹配的资产', noMatchesHint: '当前关键词、标签或时间范围内没有结果。', noTags: '未添加标签', addedAt: '入库', dateScope: '入库时间', resultCount: (count, loaded) => `匹配 ${count} 项 · 已显示 ${loaded} 项`,
     folder: '新建分类', team: '管理团队', noAssets: '这里还没有资产', noAssetsHint: '上传媒体或完成一次生图后，资产会自动出现在这里。',
     loadMore: '加载更多', storage: '存储空间', assets: '项资产', rename: '名称', tags: '标签', collection: '分类（可多选）', noCollection: '未分类', save: '保存',
     download: '下载', useReference: 'AI修图', share: '共享', shareTeam: '共享到团队', shareIndividual: '共享给个人', selectTeam: '选择整个团队', selectTeamMember: '选择单个团队成员', userIdPlaceholder: '输入已注册用户 ID', removeShare: '移除权限',
@@ -63,7 +67,8 @@ const copy = {
   en: {
     title: 'Media Asset Center', subtitle: 'Manage images, video, and audio in one place', all: 'All', image: 'Images', video: 'Video', audio: 'Audio',
     upload: 'Uploads', generated: 'AI generated', project: 'Project assets', favorite: 'Favorites', shared: 'Shared', trash: 'Trash',
-    search: 'Search asset name or category', uploadMedia: 'Upload media', uploading: 'Processing', allSources: 'All sources', sourceUpload: 'Local upload', sourceGenerated: 'AI result',
+    search: 'Search names, categories, tags', uploadMedia: 'Upload media', uploading: 'Processing', allSources: 'All sources', sourceUpload: 'Local upload', sourceGenerated: 'AI result',
+    keyword: 'Keyword', searching: 'Searching', clearFilters: 'Clear search filters', noMatches: 'No matching assets', noMatchesHint: 'No results for the current keyword, tag, or period.', noTags: 'No tags', addedAt: 'Added', dateScope: 'Date added', resultCount: (count, loaded) => `${count} matches · ${loaded} shown`,
     folder: 'New category', team: 'Manage teams', noAssets: 'No assets here yet', noAssetsHint: 'Upload media or generate an image and it will appear here automatically.',
     loadMore: 'Load more', storage: 'Storage', assets: 'assets', rename: 'Name', tags: 'Tags', collection: 'Categories (multiple)', noCollection: 'Unsorted', save: 'Save',
     download: 'Download', useReference: 'AI Edit', share: 'Share', shareTeam: 'Share with team', shareIndividual: 'Share with person', selectTeam: 'Select the whole team', selectTeamMember: 'Select one team member', userIdPlaceholder: 'Enter a registered user ID', removeShare: 'Remove access',
@@ -136,7 +141,7 @@ function AssetMedia({ asset, detail = false }) {
 
 function AssetDetail({ asset, language, collections, teams, session, onClose, onUpdated, onPurged, onUseAsReference }) {
   const t = copy[language] || copy.en;
-  const [draft, setDraft] = useState({ name: asset.name, tags: asset.tags.join(', '), collectionIds: asset.collectionIds || (asset.collectionId ? [asset.collectionId] : []) });
+  const [draft, setDraft] = useState({ name: asset.name, tags: asset.tags || [], collectionIds: asset.collectionIds || (asset.collectionId ? [asset.collectionId] : []) });
   const [shareMode, setShareMode] = useState('team');
   const [shareTeamId, setShareTeamId] = useState('');
   const [shareMemberId, setShareMemberId] = useState('');
@@ -146,7 +151,7 @@ function AssetDetail({ asset, language, collections, teams, session, onClose, on
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setDraft({ name: asset.name, tags: asset.tags.join(', '), collectionIds: asset.collectionIds || (asset.collectionId ? [asset.collectionId] : []) });
+    setDraft({ name: asset.name, tags: asset.tags || [], collectionIds: asset.collectionIds || (asset.collectionId ? [asset.collectionId] : []) });
   }, [asset.id, asset.name, asset.tags, asset.collectionId, asset.collectionIds]);
   const teamMemberGroups = teams.map((team) => ({
     teamId: team.id,
@@ -185,7 +190,7 @@ function AssetDetail({ asset, language, collections, teams, session, onClose, on
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error);
       onUpdated(payload.asset);
-      setDraft({ name: payload.asset.name, tags: payload.asset.tags.join(', '), collectionIds: payload.asset.collectionIds || (payload.asset.collectionId ? [payload.asset.collectionId] : []) });
+      setDraft({ name: payload.asset.name, tags: payload.asset.tags || [], collectionIds: payload.asset.collectionIds || (payload.asset.collectionId ? [payload.asset.collectionId] : []) });
       setMessage(t.copied);
     } catch { setMessage(t.updateFailed); } finally { setBusy(false); }
   }
@@ -262,7 +267,7 @@ function AssetDetail({ asset, language, collections, teams, session, onClose, on
             <span>{assetStatusText(asset, t)}</span>
           </div>
           <label><span>{t.rename}</span><input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-          <label><span>{t.tags}</span><input value={draft.tags} onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value }))} placeholder="product, campaign" /></label>
+          <div className="assetTagField"><span><Tags size={14} />{t.tags}{asset.canEditMetadata === false ? ` · ${t.viewer}` : ''}</span><AssetTagEditor value={draft.tags} onChange={(tags) => setDraft((current) => ({ ...current, tags }))} language={language} disabled={busy || asset.canEditMetadata === false} /></div>
           <div className="mediaAssetCollectionPicker">
             <span>{t.collection}</span>
             {collections.length > 6 ? (
@@ -274,8 +279,9 @@ function AssetDetail({ asset, language, collections, teams, session, onClose, on
               <div className="mediaAssetCollectionOptions">{collections.map((item) => <label className={draft.collectionIds.includes(item.id) ? 'selected' : ''} key={item.id}><input type="checkbox" checked={draft.collectionIds.includes(item.id)} onChange={() => toggleCollection(item.id)} /><i style={{ background: item.color }} /><Folder size={14} /><b>{item.name}</b><Check size={14} /></label>)}</div>
             ) : <em>{t.noCollection}</em>}
           </div>
-          <button className="mediaAssetPrimary" type="button" disabled={busy} onClick={() => update({ ...draft, tags: draft.tags.split(',') })}><Check size={16} />{t.save}</button>
+          <button className="mediaAssetPrimary" type="button" disabled={busy} onClick={() => update({ ...draft, tags: normalizeAssetTags(draft.tags) })}><Check size={16} />{t.save}</button>
           <dl className="mediaAssetFacts">
+            <div><dt>{t.addedAt}</dt><dd>{assetCalendarDate(asset.createdAt) || '-'}</dd></div>
             <div><dt>{t.size}</dt><dd>{asset.width && asset.height ? `${asset.width}×${asset.height}` : '-'}</dd></div>
             <div><dt>{t.duration}</dt><dd>{asset.durationMs ? formatDuration(asset.durationMs) : '-'}</dd></div>
             <div><dt>{t.original}</dt><dd>{formatBytes(asset.fileSize)}</dd></div>
@@ -296,6 +302,63 @@ function AssetDetail({ asset, language, collections, teams, session, onClose, on
   );
 }
 
+function AssetManagementDialog({ title, closeLabel, busy, onClose, children, footer }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const trigger = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    const previousGutter = document.documentElement.style.scrollbarGutter;
+    document.documentElement.style.scrollbarGutter = 'stable';
+    dialog.showModal();
+    document.body.style.overflow = 'hidden';
+    dialog.querySelector('input')?.focus({ preventScroll: true });
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+      document.documentElement.style.scrollbarGutter = previousGutter;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="mediaAssetManagementDialog"
+      aria-labelledby="media-asset-management-title"
+      aria-modal="true"
+      onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab') return;
+        const controls = event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (!first) { event.preventDefault(); return; }
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget || busy) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
+      }}
+    >
+      <header>
+        <h2 id="media-asset-management-title">{title}</h2>
+        <button className="mediaAssetManagementClose" type="button" title={closeLabel} aria-label={closeLabel} disabled={busy} onClick={onClose}><X size={18} /></button>
+      </header>
+      <div className="mediaAssetManagementBody">{children}</div>
+      <footer>{footer}</footer>
+    </dialog>
+  );
+}
+
 export default function MediaAssetCenter({ language = 'zh', session, profile, onSignIn, onUseAsReference }) {
   const t = copy[language] || copy.en;
   const inputRef = useRef(null);
@@ -306,6 +369,13 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
   const [teamId, setTeamId] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [query, setQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [composing, setComposing] = useState(false);
+  const [tag, setTag] = useState('');
+  const [tagOptions, setTagOptions] = useState([]);
+  const [dateFilter, setDateFilter] = useState({ dateMode: 'all', dateValue: '', dateFrom: '', dateTo: '' });
+  const [sort, setSort] = useState('recent');
+  const [totalCount, setTotalCount] = useState(0);
   const [assets, setAssets] = useState([]);
   const [collections, setCollections] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -344,8 +414,14 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
   }, []);
 
   const queryParams = useMemo(() => {
-    const params = new URLSearchParams({ limit: '48', offset: '0' });
-    if (query.trim()) params.set('q', query.trim());
+    const params = new URLSearchParams({ limit: '48', offset: '0', facets: '1', sort });
+    if (searchQuery.trim()) params.set('q', searchQuery.trim());
+    if (tag) params.set('tag', tag);
+    if (dateFilter.dateMode !== 'all') {
+      for (const [key, value] of Object.entries(dateFilter)) {
+        if (value) params.set(key, value);
+      }
+    }
     if (['image', 'video', 'audio'].includes(filter)) params.set('mediaType', filter);
     const effectiveSource = ['upload', 'generated'].includes(filter) ? filter : sourceFilter;
     if (effectiveSource) params.set('sourceType', effectiveSource);
@@ -356,7 +432,7 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
     if (collectionId) params.set('collectionId', collectionId);
     if (teamId) params.set('teamId', teamId);
     return params;
-  }, [filter, query, collectionId, teamId, sourceFilter]);
+  }, [filter, searchQuery, tag, dateFilter, sort, collectionId, teamId, sourceFilter]);
 
   const loadAssets = useCallback(async ({ append = false } = {}) => {
     if (!signedIn) return;
@@ -379,6 +455,8 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
       if (sequence !== assetRequestRef.current.sequence) return;
       setAssets((current) => append ? [...current, ...payload.assets.filter((item) => !current.some((entry) => entry.id === item.id))] : payload.assets);
       setStats((current) => payload.stats || current);
+      setTotalCount(Number(payload.totalCount ?? payload.assets.length));
+      setTagOptions(payload.facets?.tags || []);
       setHasMore(Boolean(payload.hasMore));
       setOffset(Number(payload.nextOffset || 0));
     } catch (error) {
@@ -395,7 +473,7 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
     setHasMore(false);
     setOffset(0);
     setFilter(nextFilter);
-    if (['upload', 'generated'].includes(nextFilter)) setSourceFilter(nextFilter);
+    setSourceFilter('');
     setCollectionId(nextCollectionId);
     setTeamId(nextTeamId);
     setSelectionMode(false);
@@ -418,6 +496,15 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
     setRefreshNonce((current) => current + 1);
   }
 
+  function clearSearchFilters() {
+    setQuery('');
+    setSearchQuery('');
+    setTag('');
+    setDateFilter({ dateMode: 'all', dateValue: '', dateFrom: '', dateTo: '' });
+    setSourceFilter('');
+    if (['upload', 'generated'].includes(filter)) setFilter('all');
+  }
+
   const loadSupportData = useCallback(async () => {
     if (!signedIn) return;
     const [collectionResponse, teamResponse] = await Promise.all([
@@ -431,7 +518,19 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
     if (teamPayload.ok) setTeams(teamPayload.teams || []);
   }, [signedIn, session]);
 
-  useEffect(() => { loadAssets(); }, [queryParams, signedIn, refreshNonce]);
+  useEffect(() => {
+    if (composing) return undefined;
+    const timer = globalThis.setTimeout(() => setSearchQuery(query.trim()), 300);
+    return () => globalThis.clearTimeout(timer);
+  }, [query, composing]);
+  useEffect(() => {
+    setAssets([]);
+    setOffset(0);
+    setHasMore(false);
+    setSelectedAssetIds([]);
+    setTotalCount(0);
+    loadAssets();
+  }, [queryParams, signedIn, refreshNonce]);
   useEffect(() => { loadSupportData(); }, [signedIn]);
   useEffect(() => () => assetRequestRef.current.controller?.abort(), []);
   useEffect(() => () => {
@@ -498,26 +597,36 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
   }
 
   async function addMember() {
-    if (!createDraft.teamId || !createDraft.email) return;
-    const response = await fetch('/api/assets/teams', { method: 'PATCH', headers: authHeaders(session, true), body: JSON.stringify({ teamId: createDraft.teamId, email: createDraft.email, role: createDraft.role }) });
-    const payload = await response.json().catch(() => ({}));
-    if (response.ok) {
+    if (!createDraft.teamId || !createDraft.email.trim() || pendingAction) return;
+    setPendingAction('add-member');
+    try {
+      const response = await fetch('/api/assets/teams', { method: 'PATCH', headers: authHeaders(session, true), body: JSON.stringify({ teamId: createDraft.teamId, email: createDraft.email, role: createDraft.role }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error);
       setCreateDraft((current) => ({ ...current, email: '' }));
-      setMessage(t.memberAdded);
       await loadSupportData();
-    } else if (payload.error === 'USER_NOT_FOUND') setMessage(t.registeredUserRequired);
-    else if (payload.error === 'TEAM_OWNER_REQUIRED') setMessage(t.teamOwnerProtected);
-    else setMessage(t.updateFailed);
+      showToast('success', t.memberAdded);
+    } catch (error) {
+      showToast('error', error.message === 'USER_NOT_FOUND' ? t.registeredUserRequired : error.message === 'TEAM_OWNER_REQUIRED' ? t.teamOwnerProtected : t.updateFailed);
+    } finally {
+      setPendingAction('');
+    }
   }
 
   async function removeMember(teamId, userId) {
-    const response = await fetch('/api/assets/teams', { method: 'PATCH', headers: authHeaders(session, true), body: JSON.stringify({ action: 'remove-member', teamId, userId }) });
-    const payload = await response.json().catch(() => ({}));
-    if (response.ok) {
-      setMessage(t.memberRemoved);
+    if (pendingAction) return;
+    setPendingAction(`remove-member:${userId}`);
+    try {
+      const response = await fetch('/api/assets/teams', { method: 'PATCH', headers: authHeaders(session, true), body: JSON.stringify({ action: 'remove-member', teamId, userId }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error);
       await loadSupportData();
-    } else if (payload.error === 'TEAM_OWNER_REQUIRED') setMessage(t.teamOwnerProtected);
-    else setMessage(t.updateFailed);
+      showToast('success', t.memberRemoved);
+    } catch (error) {
+      showToast('error', error.message === 'TEAM_OWNER_REQUIRED' ? t.teamOwnerProtected : t.updateFailed);
+    } finally {
+      setPendingAction('');
+    }
   }
 
   async function confirmDelete() {
@@ -645,25 +754,29 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
   const activeFilter = FILTERS.find(([id]) => id === filter) || FILTERS[0];
   const ActiveBrowseIcon = activeTeam ? Users : activeCollection ? Folder : activeFilter[1];
   const activeBrowseTitle = activeTeam?.name || activeCollection?.name || t[activeFilter[0]];
+  const effectiveSource = ['upload', 'generated'].includes(filter) ? filter : sourceFilter;
+  const hasSearchFilters = Boolean(searchQuery || tag || effectiveSource || dateFilter.dateMode !== 'all');
+  const dateLabel = dateFilter.dateMode === 'range' ? `${dateFilter.dateFrom} – ${dateFilter.dateTo}` : dateFilter.dateValue;
   return (
     <section className="mediaAssetCenter">
       <header className="mediaAssetHero"><div><h1>{t.title}</h1></div><div className="mediaAssetUsage"><strong>{formatBytes(stats.totalBytes)} / {formatBytes(stats.quotaBytes)}</strong><span>{stats.totalCount} {t.assets}</span><i><b style={{ width: `${usagePercent}%` }} /></i></div></header>
       <div className="mediaAssetLayout">
         <aside className="mediaAssetSidebar">
-          <nav>{FILTERS.map(([id, Icon]) => <button className={filter === id && !collectionId && !teamId ? 'active' : ''} type="button" onClick={() => selectAssetScope({ nextFilter: id })} key={id}><Icon size={16} /><span>{t[id]}</span>{id === 'image' ? <em>{stats.imageCount || 0}</em> : id === 'video' ? <em>{stats.videoCount || 0}</em> : id === 'audio' ? <em>{stats.audioCount || 0}</em> : null}</button>)}</nav>
-          <div className="mediaAssetCollections"><strong>{t.folders}</strong>{collections.map((item) => <div className={collectionId === item.id && !teamId ? 'active' : ''} key={item.id}><button className="mediaAssetCollectionSelect" type="button" onClick={() => selectAssetScope({ nextCollectionId: item.id })}><span style={{ background: item.color }} /><Folder size={14} /><b>{item.name}</b><em>{item.assetCount}</em></button><button className="mediaAssetSidebarDelete" type="button" disabled={Boolean(pendingAction)} onClick={() => setDeleteTarget({ kind: 'collection', id: item.id, name: item.name })} aria-label={language === 'zh' ? `删除分类：${item.name}` : `Delete category: ${item.name}`}><Trash2 size={13} /></button></div>)}</div>
-          <div className="mediaAssetTeams"><strong>{t.teams}</strong>{teams.map((team) => <div className={teamId === team.id ? 'active' : ''} key={team.id}><button className="mediaAssetTeamSelect" type="button" onClick={() => selectAssetScope({ nextTeamId: team.id })}><Users size={14} /><span>{team.name}</span><em>{team.assetCount}</em></button>{team.role === 'owner' ? <button className="mediaAssetSidebarDelete" type="button" disabled={Boolean(pendingAction)} onClick={() => setDeleteTarget({ kind: 'team', id: team.id, name: team.name })} aria-label={language === 'zh' ? `删除团队：${team.name}` : `Delete team: ${team.name}`}><Trash2 size={13} /></button> : null}</div>)}</div>
+          <nav>{FILTERS.map(([id, Icon]) => <button className={filter === id && !collectionId && !teamId ? 'active' : ''} aria-current={filter === id && !collectionId && !teamId ? 'page' : undefined} type="button" onClick={() => selectAssetScope({ nextFilter: id })} key={id}><Icon size={16} /><span>{t[id]}</span>{id === 'image' ? <em>{stats.imageCount || 0}</em> : id === 'video' ? <em>{stats.videoCount || 0}</em> : id === 'audio' ? <em>{stats.audioCount || 0}</em> : null}</button>)}</nav>
+          <div className="mediaAssetCollections"><strong>{t.folders}</strong>{collections.map((item) => <div className={collectionId === item.id && !teamId ? 'active' : ''} key={item.id}><button className="mediaAssetCollectionSelect" aria-current={collectionId === item.id && !teamId ? 'page' : undefined} title={item.name} type="button" onClick={() => selectAssetScope({ nextCollectionId: item.id })}><span style={{ background: item.color }} /><Folder size={16} /><b>{item.name}</b><em>{item.assetCount}</em></button><button className="mediaAssetSidebarDelete" type="button" disabled={Boolean(pendingAction)} onClick={() => setDeleteTarget({ kind: 'collection', id: item.id, name: item.name })} aria-label={language === 'zh' ? `删除分类：${item.name}` : `Delete category: ${item.name}`}><Trash2 size={13} /></button></div>)}</div>
+          <div className="mediaAssetTeams"><strong>{t.teams}</strong>{teams.map((team) => <div className={teamId === team.id ? 'active' : ''} key={team.id}><button className="mediaAssetTeamSelect" aria-current={teamId === team.id ? 'page' : undefined} title={team.name} type="button" onClick={() => selectAssetScope({ nextTeamId: team.id })}><Users size={16} /><span>{team.name}</span><em>{team.assetCount}</em></button>{team.role === 'owner' ? <button className="mediaAssetSidebarDelete" type="button" disabled={Boolean(pendingAction)} onClick={() => setDeleteTarget({ kind: 'team', id: team.id, name: team.name })} aria-label={language === 'zh' ? `删除团队：${team.name}` : `Delete team: ${team.name}`}><Trash2 size={13} /></button> : null}</div>)}</div>
         </aside>
         <div className="mediaAssetMain">
           <div className="mediaAssetBrowseHeader"><span><ActiveBrowseIcon size={18} /></span><div><small>{t.currentView}</small><h2>{activeBrowseTitle}</h2></div></div>
+          <MediaAssetSearch language={language} query={query} onQuery={setQuery} onSearch={() => { if (!composing) setSearchQuery(query.trim()); }} onComposition={setComposing}
+            tag={tag} tagOptions={tagOptions} onTag={setTag} source={effectiveSource} onSource={changeSourceFilter}
+            sort={sort} onSort={setSort} dateFilter={dateFilter} onDate={setDateFilter} />
           <div className="mediaAssetToolbar">
-            <label className="mediaAssetSearch"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} /></label>
-            <select value={sourceFilter} aria-label={language === 'zh' ? '媒资来源过滤' : 'Asset source filter'} onChange={(event) => changeSourceFilter(event.target.value)}><option value="">{t.allSources}</option><option value="upload">{t.sourceUpload}</option><option value="generated">{t.sourceGenerated}</option></select>
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/mp4,audio/ogg" multiple hidden onChange={(event) => uploadFiles(event.target.files)} />
             <button className="mediaAssetUploadButton" type="button" disabled={uploading} onClick={() => inputRef.current?.click()}>{uploading ? <LoaderCircle className="spinIcon" size={17} /> : <UploadCloud size={17} />}{uploading ? t.uploading : t.uploadMedia}</button>
             {filter === 'trash' && assets.length ? <button className="danger" type="button" onClick={emptyTrash}><Trash2 size={16} />{language === 'zh' ? '清空回收站' : 'Empty trash'}</button> : null}
-            <button type="button" disabled={Boolean(pendingAction)} onClick={() => setCreatePanel('collection')}><FolderPlus size={16} />{t.folder}</button>
-            <button type="button" disabled={Boolean(pendingAction)} onClick={() => setCreatePanel('team')}><Users size={16} />{t.team}</button>
+            <button type="button" aria-haspopup="dialog" disabled={Boolean(pendingAction)} onClick={() => { setToast(null); setCreatePanel('collection'); }}><FolderPlus size={16} />{t.folder}</button>
+            <button type="button" aria-haspopup="dialog" disabled={Boolean(pendingAction)} onClick={() => { setToast(null); setCreatePanel('team'); }}><Users size={16} />{t.team}</button>
             {filter !== 'trash' ? <button className={selectionMode ? 'active' : ''} type="button" disabled={Boolean(pendingAction)} onClick={toggleSelectionMode}><Check size={16} />{selectionMode ? t.exitMultiSelect : t.multiSelect}</button> : null}
             <button className="mediaAssetRefreshButton" type="button" onClick={() => { loadAssets(); loadSupportData(); }} aria-label={t.refresh}><RefreshCw size={17} /><span>{t.refresh}</span></button>
           </div>
@@ -675,37 +788,69 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
             <button className="mediaAssetPrimary" type="button" disabled={!selectedAssetIds.length || !bulkCollectionId || Boolean(pendingAction)} onClick={assignSelectedAssetsToCollection}>{pendingAction === 'bulk-collection' ? <LoaderCircle className="spinIcon" size={15} /> : <Folder size={15} />}{pendingAction === 'bulk-collection' ? t.assigningCollection : t.assignCollection}</button>
             <button className="mediaAssetBulkDelete danger" type="button" disabled={!selectedAssetIds.length || Boolean(pendingAction)} onClick={requestBulkDelete}><Trash2 size={15} />{t.bulkDelete}</button>
           </div> : null}
-          {createPanel ? <div className={`mediaAssetCreatePanel ${createPanel === 'team' ? 'teamManager' : ''}`}>
-            <div><strong>{createPanel === 'team' ? t.createTeam : t.folder}</strong><button type="button" disabled={Boolean(pendingAction)} onClick={() => setCreatePanel('')}><X size={15} /></button></div>
-            <label><span>{t.name}</span><input value={createDraft.name} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-            {createPanel !== 'team' ? <label><span>{t.color}</span><input type="color" value={createDraft.color} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, color: event.target.value }))} /></label> : null}
-            <button className="mediaAssetPrimary" type="button" disabled={!createDraft.name.trim() || Boolean(pendingAction)} onClick={createCollectionOrTeam}>{pendingAction === `create:${createPanel}` ? <LoaderCircle className="spinIcon" size={15} /> : <Check size={15} />}{pendingAction === `create:${createPanel}` ? t.creating : t.create}</button>
-            {createPanel === 'team' && ownedTeams.length ? <div className="mediaAssetMemberForm">
-              <select value={createDraft.teamId} onChange={(event) => setCreateDraft((current) => ({ ...current, teamId: event.target.value }))}><option value="">{t.team}</option>{ownedTeams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select>
-              <input type="email" value={createDraft.email} onChange={(event) => setCreateDraft((current) => ({ ...current, email: event.target.value }))} placeholder={t.memberEmail} />
-              <select value={createDraft.role} onChange={(event) => setCreateDraft((current) => ({ ...current, role: event.target.value }))}><option value="member">{t.viewer}</option><option value="editor">{t.editor}</option></select>
-              <button type="button" disabled={!createDraft.teamId || !createDraft.email.trim()} onClick={addMember}>{t.addMember}</button>
-              {managedTeam ? <div className="mediaAssetMemberList">{manageableMembers.length ? manageableMembers.map((member) => <div className="mediaAssetMemberRow" key={member.userId}><span><b>{member.fullName || member.email}</b><small>{member.email}{member.fullName ? ` · ${member.userId}` : ` · ID ${member.userId}`}</small></span><em>{member.role === 'editor' ? t.editor : t.viewer}</em><button type="button" onClick={() => removeMember(managedTeam.id, member.userId)} aria-label={`${t.memberRemoved}: ${member.email}`}><X size={13} /></button></div>) : <p>{t.noTeamMembers}</p>}</div> : null}
-            </div> : null}
-          </div> : null}
           <div className="mediaAssetMetaBar">
-            <span>{assets.length} / {stats.accessibleCount ?? stats.totalCount} {t.assets}</span>
+            <span role="status">{loading ? t.searching : t.resultCount(totalCount, assets.length)}</span>
             <small>{t.image} {formatBytes(stats.imageBytes)} · {t.video} {formatBytes(stats.videoBytes)} · {t.audio} {formatBytes(stats.audioBytes)}</small>
           </div>
+          {hasSearchFilters ? <div className="assetExplorerConditions">
+            {searchQuery ? <button type="button" title={`${t.keyword}: ${searchQuery}`} onClick={() => { setQuery(''); setSearchQuery(''); }}><Search size={13} /><span>{searchQuery}</span><X size={13} /></button> : null}
+            {tag ? <button type="button" title={`${t.tags}: ${tag}`} onClick={() => setTag('')}><Tags size={13} /><span>{tag}</span><X size={13} /></button> : null}
+            {effectiveSource ? <button type="button" onClick={() => changeSourceFilter('')}><span>{effectiveSource === 'upload' ? t.sourceUpload : t.sourceGenerated}</span><X size={13} /></button> : null}
+            {dateFilter.dateMode !== 'all' ? <button type="button" title={t.dateScope} onClick={() => setDateFilter({ dateMode: 'all', dateValue: '', dateFrom: '', dateTo: '' })}><span>{dateLabel}</span><X size={13} /></button> : null}
+            <button type="button" className="assetExplorerReset" onClick={clearSearchFilters}><RotateCcw size={13} />{t.clearFilters}</button>
+          </div> : null}
           {message ? <p className="mediaAssetPageMessage">{message}</p> : null}
           {loading && !assets.length ? <div className="mediaAssetLoading"><LoaderCircle className="spinIcon" size={28} /></div> : null}
-          {!loading && !assets.length ? <div className="mediaAssetEmpty"><HardDrive size={34} /><h2>{t.noAssets}</h2><p>{t.noAssetsHint}</p></div> : null}
+          {!loading && !assets.length && !message ? <div className="mediaAssetEmpty assetExplorerEmpty"><HardDrive size={34} /><h2>{hasSearchFilters ? t.noMatches : t.noAssets}</h2><p>{hasSearchFilters ? t.noMatchesHint : t.noAssetsHint}</p>{hasSearchFilters ? <button type="button" onClick={clearSearchFilters}><RotateCcw size={14} /> {t.clearFilters}</button> : null}</div> : null}
           <div className="mediaAssetGrid">{assets.map((asset) => {
             const selected = selectedAssetIds.includes(asset.id);
             const collectionNames = (asset.collections || []).map((collection) => collection.name).join(' · ');
-            return <article className={`mediaAssetCard ${asset.status} ${selectionMode ? 'selectionMode' : ''} ${selected ? 'selected' : ''}`} key={asset.id} onClick={() => selectionMode ? toggleAssetSelection(asset.id) : setSelectedAsset(asset)}><div className="mediaAssetCardMedia"><AssetMedia asset={asset} /><span className={`mediaTypeBadge ${asset.mediaType}`}>{t[asset.mediaType]}</span>{asset.favorite ? <Heart className="mediaAssetFavorite" size={16} fill="currentColor" /> : null}{filter !== 'trash' ? <button className="mediaAssetSelectionToggle" type="button" aria-pressed={selected} aria-label={selected ? t.clearSelection : t.multiSelect} onClick={(event) => { event.stopPropagation(); selectAssetFromCard(asset.id); }}>{selected ? <Check size={17} /> : null}</button> : null}</div><div className="mediaAssetCardBody"><strong title={asset.name}>{asset.name}</strong><span title={collectionNames}>{collectionNames || (asset.sourceType === 'generated' ? t.generated : t.upload)}</span><small>{asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.durationMs ? formatDuration(asset.durationMs) : formatBytes(asset.fileSize)}</small></div><button type="button">{selectionMode ? (selected ? `${t.selectedCount} 1` : t.multiSelect) : t.clickPreview}</button></article>;
+            const isMatchedTag = (value) => (tag && value.toLowerCase() === tag.toLowerCase()) || (searchQuery && value.toLowerCase().includes(searchQuery.toLowerCase()));
+            const previewTags = [...(asset.tags || [])].sort((a, b) => Number(Boolean(isMatchedTag(b))) - Number(Boolean(isMatchedTag(a)))).slice(0, 2);
+            return <article className={`mediaAssetCard ${asset.status} ${selectionMode ? 'selectionMode' : ''} ${selected ? 'selected' : ''}`} key={asset.id} onClick={() => selectionMode ? toggleAssetSelection(asset.id) : setSelectedAsset(asset)}>
+              <div className="mediaAssetCardMedia"><AssetMedia asset={asset} /><span className={`mediaTypeBadge ${asset.mediaType}`}>{t[asset.mediaType]}</span>{asset.favorite ? <Heart className="mediaAssetFavorite" size={16} fill="currentColor" /> : null}{filter !== 'trash' ? <button className="mediaAssetSelectionToggle" type="button" aria-pressed={selected} aria-label={selected ? t.clearSelection : t.multiSelect} onClick={(event) => { event.stopPropagation(); selectAssetFromCard(asset.id); }}>{selected ? <Check size={17} /> : null}</button> : null}</div>
+              <div className="mediaAssetCardBody"><strong title={asset.name}>{asset.name}</strong><span title={collectionNames}>{collectionNames || (asset.sourceType === 'generated' ? t.generated : t.upload)}</span><small>{asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.durationMs ? formatDuration(asset.durationMs) : formatBytes(asset.fileSize)}</small></div>
+              <div className="assetCardTags">
+                {previewTags.map(value => <button type="button" disabled={selectionMode} key={value} title={`${t.tags}: ${value}`} onClick={event => { event.stopPropagation(); setTag(value); }}><Tags size={11} /><span>{value}</span></button>)}
+                {asset.tags?.length > 2 ? <button type="button" title={asset.tags.join(', ')} onClick={event => { event.stopPropagation(); setSelectedAsset(asset); }}>+{asset.tags.length - 2}</button> : null}
+                {!asset.tags?.length ? <span className="assetCardNoTags">{t.noTags}</span> : null}
+              </div>
+              <time className="assetCardDate" dateTime={asset.createdAt}>{t.addedAt} {assetCalendarDate(asset.createdAt)}</time>
+              <button type="button">{selectionMode ? (selected ? `${t.selectedCount} 1` : t.multiSelect) : t.clickPreview}</button>
+            </article>;
           })}</div>
           {hasMore ? <button className="mediaAssetLoadMore" type="button" disabled={loading} onClick={() => loadAssets({ append: true })}>{loading ? <LoaderCircle className="spinIcon" size={16} /> : null}{t.loadMore}</button> : null}
         </div>
       </div>
+      {createPanel ? <AssetManagementDialog
+        title={createPanel === 'team' ? t.createTeam : t.folder}
+        closeLabel={t.close}
+        busy={Boolean(pendingAction)}
+        onClose={() => setCreatePanel('')}
+        footer={<>
+          <button type="button" disabled={Boolean(pendingAction)} onClick={() => setCreatePanel('')}>{createPanel === 'team' ? t.close : t.cancel}</button>
+          {createPanel === 'collection' ? <button className="mediaAssetManagementPrimary" type="submit" form="media-asset-create-form" disabled={!createDraft.name.trim() || Boolean(pendingAction)}>{pendingAction === 'create:collection' ? <LoaderCircle className="spinIcon" size={15} /> : <Check size={15} />}{pendingAction === 'create:collection' ? t.creating : t.create}</button> : null}
+        </>}
+      >
+        {toast ? <p className={`mediaAssetManagementNotice ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}>{toast.text}</p> : null}
+        <form id="media-asset-create-form" className="mediaAssetManagementForm" onSubmit={(event) => { event.preventDefault(); createCollectionOrTeam(); }}>
+          <label><span>{createPanel === 'team' ? t.teamName : t.name}</span><input autoFocus value={createDraft.name} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+          {createPanel === 'collection' ? <label><span>{t.color}</span><input type="color" value={createDraft.color} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, color: event.target.value }))} /></label> : <button className="mediaAssetManagementPrimary" type="submit" disabled={!createDraft.name.trim() || Boolean(pendingAction)}>{pendingAction === 'create:team' ? <LoaderCircle className="spinIcon" size={15} /> : <Check size={15} />}{pendingAction === 'create:team' ? t.creating : t.create}</button>}
+        </form>
+        {createPanel === 'team' && ownedTeams.length ? <section className="mediaAssetManagementMembers">
+          <h3>{t.team}</h3>
+          <form className="mediaAssetManagementForm" onSubmit={(event) => { event.preventDefault(); addMember(); }}>
+            <label className="mediaAssetManagementFull"><span>{t.teamName}</span><select value={createDraft.teamId} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, teamId: event.target.value }))}><option value="">{t.team}</option>{ownedTeams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></label>
+            <label className="mediaAssetManagementFull"><span>{t.memberEmail}</span><input type="email" value={createDraft.email} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, email: event.target.value }))} placeholder={t.memberEmail} /></label>
+            <label><span>{t.memberRole}</span><select value={createDraft.role} disabled={Boolean(pendingAction)} onChange={(event) => setCreateDraft((current) => ({ ...current, role: event.target.value }))}><option value="member">{t.viewer}</option><option value="editor">{t.editor}</option></select></label>
+            <button type="submit" disabled={!createDraft.teamId || !createDraft.email.trim() || Boolean(pendingAction)}>{pendingAction === 'add-member' ? <LoaderCircle className="spinIcon" size={15} /> : <Users size={15} />}{t.addMember}</button>
+          </form>
+          {managedTeam ? <div className="mediaAssetManagementMemberList">{manageableMembers.length ? manageableMembers.map((member) => <div className="mediaAssetManagementMemberRow" key={member.userId}><span><b>{member.fullName || member.email}</b><small>{member.email}{member.fullName ? ` · ${member.userId}` : ` · ID ${member.userId}`}</small></span><em>{member.role === 'editor' ? t.editor : t.viewer}</em><button type="button" disabled={Boolean(pendingAction)} onClick={() => removeMember(managedTeam.id, member.userId)} title={`${t.removeShare}: ${member.email}`} aria-label={`${t.removeShare}: ${member.email}`}><X size={15} /></button></div>) : <p>{t.noTeamMembers}</p>}</div> : null}
+        </section> : null}
+      </AssetManagementDialog> : null}
       {selectedAsset ? <AssetDetail asset={selectedAsset} language={language} collections={collections} teams={teams} session={session} onClose={() => setSelectedAsset(null)} onUpdated={(asset) => { updateAssetInState(asset); loadSupportData(); loadAssets(); }} onPurged={(assetId) => { setAssets((current) => current.filter((asset) => asset.id !== assetId)); setSelectedAsset(null); loadAssets(); }} onUseAsReference={(asset) => { onUseAsReference?.(asset); setSelectedAsset(null); }} /> : null}
       {deleteTarget ? <div className="mediaAssetConfirmOverlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !pendingAction && setDeleteTarget(null)}><div className="mediaAssetConfirmDialog" role="alertdialog" aria-modal="true" aria-labelledby="media-asset-delete-title"><span><Trash2 size={20} /></span><h2 id="media-asset-delete-title">{deleteTarget.kind === 'assets' ? t.bulkDeleteTitle : deleteTarget.kind === 'team' ? t.deleteTeamTitle : t.deleteCollectionTitle}</h2><strong>{deleteTarget.name}</strong><p>{deleteTarget.kind === 'assets' ? t.bulkDeleteHint : deleteTarget.kind === 'team' ? t.deleteTeamHint : t.deleteCollectionHint}</p><div><button type="button" disabled={Boolean(pendingAction)} onClick={() => setDeleteTarget(null)}>{t.cancel}</button><button className="danger" type="button" disabled={Boolean(pendingAction)} onClick={confirmDelete}>{pendingAction ? <LoaderCircle className="spinIcon" size={15} /> : <Trash2 size={15} />}{pendingAction ? t.deleting : t.confirmDelete}</button></div></div></div> : null}
-      {toast ? <div className={`mediaAssetToast ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}>{toast.type === 'error' ? <CircleAlert size={17} /> : <Check size={17} />}<span>{toast.text}</span></div> : null}
+      {toast && !createPanel ? <div className={`mediaAssetToast ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}>{toast.type === 'error' ? <CircleAlert size={17} /> : <Check size={17} />}<span>{toast.text}</span></div> : null}
     </section>
   );
 }

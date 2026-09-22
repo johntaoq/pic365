@@ -1,5 +1,6 @@
 export const ECOMMERCE_PROJECT_ASSET_LIMIT = 9;
-export const ECOMMERCE_PROJECT_ASSET_MAX_BYTES = 5 * 1024 * 1024;
+export const ECOMMERCE_PROJECT_ASSET_MAX_BYTES = 15 * 1024 * 1024;
+export const ECOMMERCE_PROJECT_ASSET_REQUEST_MAX_BYTES = 24 * 1024 * 1024;
 export const ECOMMERCE_PROJECT_ASSET_MIME_TYPES = Object.freeze([
   'image/png',
   'image/jpeg',

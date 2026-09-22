@@ -5,6 +5,7 @@ import { getGeneration } from './local-db.js';
 import { getVariantRecord } from './media-assets.js';
 import { readStoredFile, readStoredImage } from './storage.js';
 import { IMAGE_REFERENCE_MAX_BYTES, validateImageReferenceInputsForModel } from '../../shared/image-generation.js';
+import { referenceImageAliasText, referenceImageInterpretationRule } from '../../shared/reference-image-naming.js';
 
 export const MAX_REFERENCE_IMAGES = 9;
 const MAX_ANNOTATIONS_PER_IMAGE = 64;
@@ -216,14 +217,17 @@ export function buildReferencePrompt(prompt, references, { includeNumberedMap = 
     .map((reference, index) => reference.annotations.length ? index + 1 : null)
     .filter(Boolean);
   const numberedMap = includeNumberedMap
-    ? references.map((reference, index) => index === 0
-      ? 'Image 1 / Reference 1 / 图1 / 参考图1 / 母版 = supplied reference image 1. This is the primary image and the default editing subject.'
-      : `Image ${index + 1} / Reference ${index + 1} / 图${index + 1} / 参考图${index + 1} = supplied reference image ${index + 1}.`
-    ).join('\n')
+    ? references.map((reference, index) => {
+      const number = index + 1;
+      const aliases = `${referenceImageAliasText(number, 'en')} / ${referenceImageAliasText(number, 'zh')}`;
+      return index === 0
+        ? `${aliases} = supplied reference image 1. This is the primary subject image and the default editing target.`
+        : `${aliases} = supplied reference image ${number}.`;
+    }).join('\n')
     : '';
   return [
     `Use the ${references.length} supplied reference image${references.length === 1 ? '' : 's'} in their given order.`,
-    numberedMap ? `Fixed image naming and input order:\n${numberedMap}\nInterpret the same number as the same supplied image whenever the user says Image N, Reference N, 图N, or 参考图N. “Master” and “母版” always mean Image 1.` : '',
+    numberedMap ? `Fixed image naming and input order:\n${numberedMap}\n${referenceImageInterpretationRule('en')} ${referenceImageInterpretationRule('zh')}` : '',
     markedIndexes.length
       ? 'This is a localized image-editing task, not a new image composition.'
       : 'Preserve the visual facts the user is referring to, but follow the written request for composition and changes.',

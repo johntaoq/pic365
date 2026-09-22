@@ -3,8 +3,9 @@ export function orderImageProviders(providers = []) {
     .map((provider, index) => ({ provider, index }))
     .filter(({ provider }) => provider?.id)
     .sort((left, right) => {
-      const defaultOrder = Number(Boolean(right.provider.isDefault)) - Number(Boolean(left.provider.isDefault));
-      return defaultOrder || left.index - right.index;
+      const leftOrder = Number.isFinite(Number(left.provider.sortOrder)) ? Number(left.provider.sortOrder) : left.index;
+      const rightOrder = Number.isFinite(Number(right.provider.sortOrder)) ? Number(right.provider.sortOrder) : right.index;
+      return leftOrder - rightOrder || left.index - right.index;
     })
     .map(({ provider }) => provider);
 }
@@ -13,5 +14,5 @@ export function resolveImageProviderId(providers = [], requestedId = '') {
   const available = orderImageProviders(providers);
   const requested = String(requestedId || '').trim();
   if (requested && available.some((provider) => provider.id === requested)) return requested;
-  return available[0]?.id || '';
+  return available.find((provider) => provider.isDefault)?.id || available[0]?.id || '';
 }

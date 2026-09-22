@@ -4,6 +4,7 @@ import {
   LoaderCircle, RotateCcw, Settings, ShieldCheck, Ticket, Trash2, UserCog, X
 } from 'lucide-react';
 import { ADMIN_PERMISSIONS, ROLE_LABELS, USER_ROLES } from '../shared/admin-permissions.js';
+import { auditActorLabel } from '../shared/audit-actor-label.js';
 
 function apiError(payload, fallback) {
   return payload?.error || fallback;
@@ -418,6 +419,11 @@ export function FinancialReportsPanel({ language = 'zh' }) {
   </div>;
 }
 
+function AuditActor({ event, language }) {
+  const actor = auditActorLabel(event, language);
+  return <><strong>{actor.name}</strong>{actor.detail ? <small>{actor.detail}</small> : null}</>;
+}
+
 export function AuditEventsPanel({ language = 'zh', profile }) {
   const zh = language === 'zh';
   const [events, setEvents] = useState([]);
@@ -438,7 +444,7 @@ export function AuditEventsPanel({ language = 'zh', profile }) {
   }, [scope]);
   return <section className="adminBlock auditEventsPanel">
     <div className="adminSectionHeading auditEventsHeading"><div><h3><ShieldCheck size={18} />{zh ? '审计记录' : 'Audit events'}</h3><p>{zh ? '记录只追加，不能编辑或删除；敏感密钥和完整兑换码不会写入审计正文。' : 'Append-only records. Secrets and full codes are excluded.'}</p></div><label className="auditScopeFilter"><span>{zh ? '分类' : 'Category'}</span><select value={scope} onChange={(event) => setScope(event.target.value)}>{availableScopes.map((item) => <option value={item.value} key={item.value || 'all'}>{zh ? item.zh : item.en}</option>)}</select></label></div>
-    {status === 'loading' ? <div className="adminState"><LoaderCircle className="spinIcon" size={18} />{zh ? '加载中' : 'Loading'}</div> : status === 'error' ? <p className="adminNotice error">{zh ? '审计记录加载失败。' : 'Audit events failed to load.'}</p> : <><div className="auditResultCount">{zh ? `共 ${events.length} 条记录` : `${events.length} events`}</div><div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{zh ? '时间' : 'Time'}</th><th>{zh ? '操作员' : 'Actor'}</th><th>{zh ? '分类' : 'Category'}</th><th>{zh ? '操作' : 'Action'}</th><th>{zh ? '对象/变化' : 'Target/change'}</th><th>{zh ? '原因' : 'Reason'}</th></tr></thead><tbody>{events.length ? events.map((event) => <tr key={event.id}><td>{new Date(event.createdAt).toLocaleString()}</td><td><strong>{event.actorName || event.actorEmail || '-'}</strong><small>{roleLabel(event.actorRole, language)}</small></td><td>{AUDIT_CATEGORY_LABELS[event.category]?.[language] || event.category}</td><td>{event.action}</td><td>{event.creditDelta == null ? `${event.entityType}:${event.entityId}` : `${event.creditDelta > 0 ? '+' : ''}${event.creditDelta} (${event.balanceBefore} → ${event.balanceAfter})`}</td><td>{event.reason || event.details || '-'}</td></tr>) : <tr><td colSpan="6">{zh ? '当前分类暂无记录。' : 'No events in this category.'}</td></tr>}</tbody></table></div></>}
+    {status === 'loading' ? <div className="adminState"><LoaderCircle className="spinIcon" size={18} />{zh ? '加载中' : 'Loading'}</div> : status === 'error' ? <p className="adminNotice error">{zh ? '审计记录加载失败。' : 'Audit events failed to load.'}</p> : <><div className="auditResultCount">{zh ? `共 ${events.length} 条记录` : `${events.length} events`}</div><div className="adminTableWrap"><table className="adminTable"><thead><tr><th>{zh ? '时间' : 'Time'}</th><th>{zh ? '操作员' : 'Actor'}</th><th>{zh ? '分类' : 'Category'}</th><th>{zh ? '操作' : 'Action'}</th><th>{zh ? '对象/变化' : 'Target/change'}</th><th>{zh ? '原因' : 'Reason'}</th></tr></thead><tbody>{events.length ? events.map((event) => <tr key={event.id}><td>{new Date(event.createdAt).toLocaleString()}</td><td><AuditActor event={event} language={language} /></td><td>{AUDIT_CATEGORY_LABELS[event.category]?.[language] || event.category}</td><td>{event.action}</td><td>{event.creditDelta == null ? `${event.entityType}:${event.entityId}` : `${event.creditDelta > 0 ? '+' : ''}${event.creditDelta} (${event.balanceBefore} → ${event.balanceAfter})`}</td><td>{event.reason || event.details || '-'}</td></tr>) : <tr><td colSpan="6">{zh ? '当前分类暂无记录。' : 'No events in this category.'}</td></tr>}</tbody></table></div></>}
   </section>;
 }
 

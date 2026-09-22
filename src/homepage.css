@@ -29,7 +29,7 @@
 .homeNavActions .userTriggerName { color: #30445a; }
 .homeNavActions .avatarBadge { border-color: #c9d9e5; background: #e5f4f7; color: #0d7780; }
 .homeNavActions .homeWorkspaceButton { min-height: 42px; padding-inline: 13px; white-space: nowrap; }
-.homeNavActions .homeGuideButton { min-height: 42px; }
+.homeNavActions .homeGuideButton { width: 42px; min-width: 42px; min-height: 42px; padding: 0; }
 .homeGhostButton, .homePrimaryButton, .homeSecondaryButton { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 13px; padding: 0 17px; font-weight: 820; cursor: pointer; }
 .homeGhostButton { border: 0; color: #3e526e; background: #f1f5f8; }
 .homePrimaryButton { border: 0; color: #092f36; background: linear-gradient(135deg,#a8efd8,#95c7ff); box-shadow: 0 10px 24px rgba(85,190,169,.23); }

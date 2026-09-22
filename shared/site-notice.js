@@ -20,7 +20,7 @@ export function inferSiteNoticeFormat(body, configuredFormat = 'markdown') {
 }
 
 export function normalizeSiteNoticePlacement(value) {
-  return SITE_NOTICE_PLACEMENTS.includes(value) ? value : 'banner';
+  return SITE_NOTICE_PLACEMENTS.includes(value) ? value : 'modal';
 }
 
 export function siteNoticeLocalDateKey(value = new Date()) {

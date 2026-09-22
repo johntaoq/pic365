@@ -14,7 +14,7 @@ import { releaseCreditReservation } from './_lib/local-db.js';
 import { readJsonBody } from './_lib/request.js';
 
 const MAX_TEXT_LENGTH = 6000;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_IMAGES = 3;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = await readJsonBody(req, { maxBytes: 18 * 1024 * 1024 });
+    const body = await readJsonBody(req, { maxBytes: 64 * 1024 * 1024 });
     const text = clean(body.text, MAX_TEXT_LENGTH);
     const clientRequestId = clean(body.clientRequestId, 120);
     if (!text || !clientRequestId) return res.status(400).json({ ok: false, error: 'INVALID_CHAT_MESSAGE' });

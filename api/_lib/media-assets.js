@@ -21,6 +21,7 @@ import {
   ECOMMERCE_PROJECT_ASSET_MAX_BYTES,
   isSupportedEcommerceAssetMimeType
 } from '../../shared/ecommerce-assets.js';
+import { getAssetDateRange, normalizeAssetTags } from '../../shared/asset-search.js';
 
 export const MEDIA_TYPES = new Set(['image', 'video', 'audio']);
 export const ASSET_SOURCE_TYPES = new Set(['upload', 'generated', 'imported']);
@@ -101,7 +102,7 @@ function assetFileUrl(assetId, variant = 'original', download = false) {
   return `/api/assets/file?${params.toString()}`;
 }
 
-function normalizeAsset(row, { tags = [], variants = [], collections = [], isSuperAdmin = false } = {}) {
+function normalizeAsset(row, { tags = [], variants = [], collections = [], isSuperAdmin = false, canEditMetadata = false } = {}) {
   if (!row) return null;
   const metadata = parseJson(row.metadata_json, {});
   const systemPrompt = Boolean(metadata.projectId && row.source_type === 'generated');
@@ -136,6 +137,7 @@ function normalizeAsset(row, { tags = [], variants = [], collections = [], isSup
     tags,
     variants,
     shared: row.owner_user_id !== row.requesting_user_id,
+    canEditMetadata,
     deletedAt: row.deleted_at || '',
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || '',
@@ -267,7 +269,8 @@ export function getAccessibleAsset(userId, assetId, { includeDeleted = true, isS
     tags: tagsByAsset.get(row.id) || [],
     variants: variantsByAsset.get(row.id) || [],
     collections: collectionsByAsset.get(row.id) || [],
-    isSuperAdmin
+    isSuperAdmin,
+    canEditMetadata: canEditAsset(db, userId, row.id)
   });
 }
 
@@ -333,22 +336,22 @@ export async function repairMissingAssetFileMetadata(userId, { limit = 500, conc
 export function listAssets(userId, options = {}) {
   const db = getDb();
   const effectiveFavorite = userFavoriteSql('a', 'user_metadata');
-  const limit = Math.max(1, Math.min(Number(options.limit) || 48, 100));
-  const offset = Math.max(0, Number(options.offset) || 0);
+  const limit = Math.max(1, Math.min(Math.floor(Number(options.limit)) || 48, 100));
+  const offset = Number.isFinite(Number(options.offset)) ? Math.max(0, Math.floor(Number(options.offset))) : 0;
+  const { start, end } = getAssetDateRange(options);
   const params = {
     user_id: userId,
-    limit: limit + 1,
-    offset,
-    query: `%${String(options.query || '').trim().toLowerCase()}%`,
+    query: `%${String(options.query || '').trim().toLowerCase().replace(/[\\%_]/g, '\\$&')}%`,
     media_type: MEDIA_TYPES.has(options.mediaType) ? options.mediaType : '',
     source_type: ASSET_SOURCE_TYPES.has(options.sourceType) ? options.sourceType : '',
     collection_id: String(options.collectionId || ''),
     team_id: String(options.teamId || ''),
     collection_type: String(options.collectionType || '') === 'brand' ? 'brand' : '',
-    tag: cleanTag(options.tag || ''),
     favorite: options.favorite ? 1 : 0,
     shared: options.shared ? 1 : 0,
-    project: options.project ? 1 : 0
+    project: options.project ? 1 : 0,
+    date_start: start,
+    date_end: end
   };
   const where = [accessibleAssetSql('a')];
   if (options.deleted) where.push('a.deleted_at IS NOT NULL');
@@ -382,26 +385,51 @@ export function listAssets(userId, options = {}) {
       AND typed_membership.asset_id = a.id
       AND typed_collection.collection_type = @collection_type
   ))`);
-  where.push('(@tag = \'\' OR EXISTS (SELECT 1 FROM asset_tags filter_tag WHERE filter_tag.asset_id = a.id AND filter_tag.tag = @tag))');
-  where.push(`(@query = '%%' OR LOWER(a.name) LIKE @query OR EXISTS (
+  where.push("(@date_start = '' OR a.created_at >= @date_start)");
+  where.push("(@date_end = '' OR a.created_at < @date_end)");
+  where.push(`(@query = '%%' OR LOWER(a.name) LIKE @query ESCAPE '\\' OR EXISTS (
     SELECT 1
     FROM asset_collection_memberships search_membership
     JOIN asset_collections search_collection ON search_collection.id = search_membership.collection_id
     WHERE search_membership.user_id = @user_id
       AND search_membership.asset_id = a.id
-      AND LOWER(search_collection.name) LIKE @query
+      AND LOWER(search_collection.name) LIKE @query ESCAPE '\\'
+  ) OR EXISTS (
+    SELECT 1 FROM asset_tags search_tag
+    WHERE search_tag.asset_id = a.id AND LOWER(search_tag.tag) LIKE @query ESCAPE '\\'
   ))`);
+  const from = `FROM assets a
+    JOIN users owner ON owner.id = a.owner_user_id
+    LEFT JOIN asset_user_metadata user_metadata
+      ON user_metadata.asset_id = a.id AND user_metadata.user_id = @user_id`;
+  // Facets share the same permission/scope/date predicates, excluding only the
+  // selected tag so that users can switch tags without clearing the search.
+  const tags = options.includeFacets ? db.prepare(`
+    SELECT facet.tag, COUNT(DISTINCT a.id) AS assetCount
+    ${from} JOIN asset_tags facet ON facet.asset_id = a.id
+    WHERE ${where.join(' AND ')}
+    GROUP BY facet.tag COLLATE NOCASE
+    ORDER BY assetCount DESC, facet.tag COLLATE NOCASE ASC
+  `).all(params) : undefined;
+  params.tag = cleanTag(options.tag || '');
+  where.push("(@tag = '' OR EXISTS (SELECT 1 FROM asset_tags filter_tag WHERE filter_tag.asset_id = a.id AND filter_tag.tag = @tag COLLATE NOCASE))");
+  const predicate = where.join(' AND ');
+  const totalCount = Number(db.prepare(`SELECT COUNT(*) AS count ${from} WHERE ${predicate}`).get(params).count);
+  const sortOrders = {
+    recent: 'a.created_at DESC, a.id DESC',
+    oldest: 'a.created_at ASC, a.id ASC',
+    name: 'a.name COLLATE NOCASE ASC, a.created_at DESC, a.id DESC',
+    largest: 'a.file_size DESC, a.created_at DESC, a.id DESC'
+  };
+  const sortSql = Object.hasOwn(sortOrders, options.sort) ? sortOrders[options.sort] : `${effectiveFavorite} DESC, a.created_at DESC, a.id DESC`;
   const rows = db.prepare(`
     SELECT a.*, owner.full_name AS owner_name, ${effectiveFavorite} AS user_favorite,
       @user_id AS requesting_user_id
-    FROM assets a
-    JOIN users owner ON owner.id = a.owner_user_id
-    LEFT JOIN asset_user_metadata user_metadata
-      ON user_metadata.asset_id = a.id AND user_metadata.user_id = @user_id
-    WHERE ${where.join(' AND ')}
-    ORDER BY a.favorite DESC, a.created_at DESC, a.id DESC
+    ${from}
+    WHERE ${predicate}
+    ORDER BY ${sortSql}
     LIMIT @limit OFFSET @offset
-  `).all(params);
+  `).all({ ...params, limit: limit + 1, offset });
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
   const { tagsByAsset, variantsByAsset } = listTagsAndVariants(db, pageRows.map((row) => row.id));
@@ -411,8 +439,11 @@ export function listAssets(userId, options = {}) {
       tags: tagsByAsset.get(row.id) || [],
       variants: variantsByAsset.get(row.id) || [],
       collections: collectionsByAsset.get(row.id) || [],
+      canEditMetadata: row.owner_user_id === userId || canEditAsset(db, userId, row.id),
       isSuperAdmin: Boolean(options.isSuperAdmin)
     })),
+    totalCount,
+    ...(tags ? { facets: { tags } } : {}),
     hasMore,
     nextOffset: offset + pageRows.length
   };
@@ -721,7 +752,7 @@ export async function ensureImageVariants(userId, assetId) {
 export function replaceAssetTags(userId, assetId, tags) {
   const db = getDb();
   if (!canEditAsset(db, userId, assetId)) return false;
-  const normalized = [...new Set((Array.isArray(tags) ? tags : String(tags || '').split(',')).map(cleanTag).filter(Boolean))].slice(0, 20);
+  const normalized = normalizeAssetTags(tags);
   const createdAt = now();
   db.exec('BEGIN IMMEDIATE');
   try {

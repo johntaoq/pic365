@@ -19,6 +19,7 @@ import {
   USER_ROLES
 } from '../../shared/admin-permissions.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
+import { installCreditLedgerAuditTrigger } from './audit-actors.js';
 
 const DEFAULT_DB_PATH = path.resolve(process.cwd(), 'data', 'app.sqlite');
 const PASSWORD_SCHEME = 'scrypt-v1';
@@ -423,6 +424,7 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       pricing_config TEXT NOT NULL DEFAULT '{}',
       enabled INTEGER NOT NULL DEFAULT 1,
       is_default INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -1223,26 +1225,6 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       SELECT RAISE(ABORT, 'GROUP_CREDIT_LEDGER_IMMUTABLE');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS credit_ledger_audit_insert
-    AFTER INSERT ON credit_ledger
-    BEGIN
-      INSERT INTO audit_events
-        (id, category, action, result, actor_type, actor_user_id, actor_role,
-         actor_name_snapshot, actor_email_snapshot, target_user_id, entity_type, entity_id,
-         credit_ledger_id, credit_delta, reason, after_json, created_at)
-      VALUES
-        (lower(hex(randomblob(16))), 'credits', 'credit_ledger_posted', 'success',
-         CASE WHEN json_extract(NEW.metadata, '$.adminUserId') IS NOT NULL THEN 'user' ELSE 'system' END,
-         json_extract(NEW.metadata, '$.adminUserId'),
-         COALESCE((SELECT role FROM users WHERE id = json_extract(NEW.metadata, '$.adminUserId')), ''),
-         COALESCE(json_extract(NEW.metadata, '$.actorName'), ''),
-         COALESCE(json_extract(NEW.metadata, '$.actorEmail'), ''),
-         NEW.user_id, 'credit_ledger', NEW.id, NEW.id, NEW.amount,
-         NEW.source,
-         json_object('type', NEW.type, 'source', NEW.source, 'referenceId', NEW.reference_id),
-         NEW.created_at);
-    END;
-
     CREATE TRIGGER IF NOT EXISTS app_setting_audit_to_event
     AFTER INSERT ON app_setting_audit
     BEGIN
@@ -1422,6 +1404,8 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       WHERE action = 'credit_adjustment' AND result = 'success' AND request_id != '';
   `);
 
+  installCreditLedgerAuditTrigger(db);
+
   const canvasNodeSchema = String(db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'infinite_canvas_nodes'").get()?.sql || '');
   if (canvasNodeSchema && !canvasNodeSchema.includes("'video'")) {
     db.exec(`
@@ -1491,6 +1475,8 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'ecommerce_projects', 'image_quality', "TEXT NOT NULL DEFAULT 'low'");
   ensureColumn(db, 'image_provider_configs', 'pricing_strategy', "TEXT NOT NULL DEFAULT 'pixel-quality-formula'");
   ensureColumn(db, 'image_provider_configs', 'pricing_config', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'image_provider_configs', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE INDEX IF NOT EXISTS image_provider_sort_idx ON image_provider_configs(sort_order, created_at)');
   ensureColumn(db, 'redemption_codes', 'disabled_by', 'TEXT');
   ensureColumn(db, 'redemption_codes', 'disabled_at', 'TEXT');
   db.prepare(`
@@ -1918,7 +1904,7 @@ function normalizeAdminNotificationConfig(value = {}) {
     siteNoticeTitle: String(value.siteNoticeTitle || '').trim().slice(0, 120),
     siteNoticeBody: String(value.siteNoticeBody || '').trim().slice(0, 5000),
     siteNoticeFormat: inferSiteNoticeFormat(value.siteNoticeBody, value.siteNoticeFormat),
-    siteNoticePlacement: ['banner', 'modal'].includes(value.siteNoticePlacement) ? value.siteNoticePlacement : 'banner',
+    siteNoticePlacement: ['banner', 'modal'].includes(value.siteNoticePlacement) ? value.siteNoticePlacement : 'modal',
     audience,
     notifyGenerationFailure: value.notifyGenerationFailure !== false,
     notifyLowCredits: value.notifyLowCredits !== false,
@@ -1964,6 +1950,7 @@ export function updateAdminNotificationConfig(values, adminUserId = null) {
       || previous.siteNoticeTitle !== next.siteNoticeTitle
       || previous.siteNoticeBody !== next.siteNoticeBody
       || previous.siteNoticeFormat !== next.siteNoticeFormat
+      || previous.siteNoticePlacement !== next.siteNoticePlacement
       || previous.audience !== next.audience
     );
     if (publishChanged) {
@@ -3918,7 +3905,7 @@ export function listSystemChannelCatalog() {
     isDefault: Boolean(row.is_default)
   });
   return {
-    image: db.prepare('SELECT id, name, model, enabled, is_default FROM image_provider_configs ORDER BY is_default DESC, created_at ASC').all().map((row) => normalize('image', row)),
+    image: db.prepare('SELECT id, name, model, enabled, is_default FROM image_provider_configs ORDER BY sort_order ASC, created_at ASC, id ASC').all().map((row) => normalize('image', row)),
     video: db.prepare('SELECT id, name, model, enabled, is_default FROM video_provider_configs ORDER BY is_default DESC, created_at ASC').all().map((row) => normalize('video', row)),
     chat: db.prepare('SELECT id, name, model, enabled, is_default FROM chat_provider_configs ORDER BY is_default DESC, created_at ASC').all().map((row) => normalize('chat', row))
   };
@@ -4514,6 +4501,7 @@ function normalizeProviderRow(row, includeSecret = false) {
     pricingConfig: pricing,
     enabled: Boolean(row.enabled),
     isDefault: Boolean(row.is_default),
+    sortOrder: Number(row.sort_order || 0),
     hasApiKey: Boolean(row.api_key_encrypted),
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -4539,15 +4527,15 @@ export function ensureDefaultImageProviderConfig() {
   const pricing = defaultImagePricingConfigForModel(model);
   const providerId = randomUUID();
   db.prepare(`INSERT INTO image_provider_configs
-    (id, name, provider_type, base_url, api_key_encrypted, model, pricing_strategy, pricing_config, enabled, is_default, created_at, updated_at)
-    VALUES (?, ?, 'openai-compatible', ?, ?, ?, ?, ?, 1, 1, ?, ?)`)
+    (id, name, provider_type, base_url, api_key_encrypted, model, pricing_strategy, pricing_config, enabled, is_default, sort_order, created_at, updated_at)
+    VALUES (?, ?, 'openai-compatible', ?, ?, ?, ?, ?, 1, 1, 0, ?, ?)`)
     .run(providerId, process.env.AI_PROVIDER_NAME || 'GPT Image 2', process.env.AI_BASE_URL || process.env.UNIKEYX_BASE_URL || 'https://www.unikeyx.com', encryptProviderSecret(apiKey), model, pricing.strategy, JSON.stringify(pricing), createdAt, createdAt);
   bindDefaultSystemGroupChannel('image', providerId);
 }
 
 export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
   ensureDefaultImageProviderConfig();
-  const rows = getDb().prepare(`SELECT * FROM image_provider_configs ${admin ? '' : 'WHERE enabled = 1'} ORDER BY is_default DESC, created_at ASC`).all();
+  const rows = getDb().prepare(`SELECT * FROM image_provider_configs ${admin ? '' : 'WHERE enabled = 1'} ORDER BY sort_order ASC, created_at ASC, id ASC`).all();
   const providers = rows.map((row) => {
     const normalized = normalizeProviderRow(row);
     return admin ? normalized : ({
@@ -4556,7 +4544,8 @@ export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
       providerType: normalized.providerType,
       model: normalized.model,
       pricingStrategy: normalized.pricingStrategy,
-      isDefault: normalized.isDefault
+      isDefault: normalized.isDefault,
+      sortOrder: normalized.sortOrder
     });
   });
   return admin ? providers : filterProvidersForUser(providers, userId, 'image');
@@ -4567,7 +4556,7 @@ export function getImageProviderConfig(providerId = '', { includeSecret = true, 
   const db = getDb();
   const rows = providerId
     ? [db.prepare('SELECT * FROM image_provider_configs WHERE id = ? AND enabled = 1').get(providerId)].filter(Boolean)
-    : db.prepare('SELECT * FROM image_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC').all();
+    : db.prepare('SELECT * FROM image_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, sort_order ASC, created_at ASC, id ASC').all();
   const row = userId ? rows.find((item) => userCanAccessProvider(userId, 'image', item.id)) : rows[0];
   return normalizeProviderRow(row, includeSecret);
 }
@@ -4582,23 +4571,46 @@ export function saveImageProviderConfig(values) {
     model: values.model,
     strategy: values.pricingStrategy
   });
+  const sortOrder = existing
+    ? Number(existing.sort_order || 0)
+    : Number(db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM image_provider_configs').get()?.next_order || 0);
   const updatedAt = now();
   db.exec('BEGIN IMMEDIATE');
   try {
     if (values.isDefault) db.prepare('UPDATE image_provider_configs SET is_default = 0').run();
     db.prepare(`INSERT INTO image_provider_configs
-      (id, name, provider_type, base_url, api_key_encrypted, model, pricing_strategy, pricing_config, enabled, is_default, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, provider_type, base_url, api_key_encrypted, model, pricing_strategy, pricing_config, enabled, is_default, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name, provider_type=excluded.provider_type,
       base_url=excluded.base_url, api_key_encrypted=excluded.api_key_encrypted, model=excluded.model,
       pricing_strategy=excluded.pricing_strategy, pricing_config=excluded.pricing_config,
       enabled=excluded.enabled, is_default=excluded.is_default, updated_at=excluded.updated_at`)
-      .run(id, values.name, values.providerType || 'openai-compatible', values.baseUrl, apiKeyEncrypted, values.model, pricing.strategy, JSON.stringify(pricing), values.enabled === false ? 0 : 1, values.isDefault ? 1 : 0, existing?.created_at || updatedAt, updatedAt);
+      .run(id, values.name, values.providerType || 'openai-compatible', values.baseUrl, apiKeyEncrypted, values.model, pricing.strategy, JSON.stringify(pricing), values.enabled === false ? 0 : 1, values.isDefault ? 1 : 0, sortOrder, existing?.created_at || updatedAt, updatedAt);
     const defaultRow = db.prepare('SELECT id FROM image_provider_configs WHERE enabled = 1 AND is_default = 1 LIMIT 1').get();
-    if (!defaultRow) db.prepare('UPDATE image_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM image_provider_configs WHERE enabled = 1 ORDER BY created_at ASC LIMIT 1)').run();
+    if (!defaultRow) db.prepare('UPDATE image_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM image_provider_configs WHERE enabled = 1 ORDER BY sort_order ASC, created_at ASC LIMIT 1)').run();
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   return normalizeProviderRow(db.prepare('SELECT * FROM image_provider_configs WHERE id = ?').get(id));
+}
+
+export function reorderImageProviderConfigs(orderedIds = []) {
+  const ids = Array.isArray(orderedIds) ? orderedIds.map((id) => String(id || '').trim()).filter(Boolean) : [];
+  const db = getDb();
+  const existingIds = db.prepare('SELECT id FROM image_provider_configs ORDER BY sort_order ASC, created_at ASC, id ASC').all().map((row) => row.id);
+  if (ids.length !== existingIds.length || new Set(ids).size !== ids.length || existingIds.some((id) => !ids.includes(id))) {
+    throw Object.assign(new Error('INVALID_PROVIDER_ORDER'), { code: 'INVALID_PROVIDER_ORDER' });
+  }
+  const update = db.prepare('UPDATE image_provider_configs SET sort_order = ?, updated_at = ? WHERE id = ?');
+  const updatedAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    ids.forEach((id, index) => update.run(index, updatedAt, id));
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return listImageProviderConfigs({ admin: true });
 }
 
 export function deleteImageProviderConfig(id) {
@@ -4611,7 +4623,7 @@ export function deleteImageProviderConfig(id) {
   if (row.enabled && enabledCount <= 1) throw Object.assign(new Error('LAST_PROVIDER_REQUIRED'), { code: 'LAST_PROVIDER_REQUIRED' });
   db.prepare("DELETE FROM system_user_group_channels WHERE channel_type = 'image' AND channel_id = ?").run(id);
   db.prepare('DELETE FROM image_provider_configs WHERE id = ?').run(id);
-  if (row.is_default) db.prepare('UPDATE image_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM image_provider_configs WHERE enabled = 1 ORDER BY created_at ASC LIMIT 1)').run();
+  if (row.is_default) db.prepare('UPDATE image_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM image_provider_configs WHERE enabled = 1 ORDER BY sort_order ASC, created_at ASC LIMIT 1)').run();
   return normalizeProviderRow(row);
 }
 

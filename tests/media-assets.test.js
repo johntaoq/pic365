@@ -22,6 +22,8 @@ const [db, media, references] = await Promise.all([
   import('../api/_lib/reference-images.js')
 ]);
 
+const { ECOMMERCE_PROJECT_ASSET_MAX_BYTES, ECOMMERCE_PROJECT_ASSET_REQUEST_MAX_BYTES } = await import('../shared/ecommerce-assets.js');
+
 const owner = db.createUser({ email: 'asset-owner@example.com', password: 'testing-1234', fullName: 'Asset Owner' });
 const member = db.createUser({ email: 'asset-member@example.com', password: 'testing-1234', fullName: 'Asset Member' });
 
@@ -56,7 +58,7 @@ test('unified asset library uploads image variants and supports organization lif
   assert.equal(media.listAssets(owner.id, { collectionId: collection.id }).assets.some((item) => item.id === asset.id), true);
   assert.equal(media.listAssets(owner.id, { query: 'launch hero' }).assets.some((item) => item.id === asset.id), true);
   assert.equal(media.listAssets(owner.id, { query: 'launch brand' }).assets.some((item) => item.id === asset.id), true);
-  assert.equal(media.listAssets(owner.id, { query: 'campaign' }).assets.some((item) => item.id === asset.id), false);
+  assert.equal(media.listAssets(owner.id, { query: 'campaign' }).assets.some((item) => item.id === asset.id), true);
 
   const deleted = media.updateAsset(owner.id, asset.id, { deleted: true });
   assert.ok(deleted.deletedAt);
@@ -119,7 +121,8 @@ test('projects reference the same asset file without copying it', async () => {
   assert.equal(db.getDb().prepare('SELECT COUNT(*) count FROM asset_project_links WHERE asset_id = ? AND project_id = ?').get(asset.id, project.id).count >= 1, true);
 });
 
-test('ecommerce projects accept at most nine images and reject assets over 5 MB', async () => {
+test('ecommerce projects accept at most nine images and reject assets over 15 MB', async () => {
+  assert.ok(ECOMMERCE_PROJECT_ASSET_REQUEST_MAX_BYTES > Math.ceil(ECOMMERCE_PROJECT_ASSET_MAX_BYTES * 4 / 3));
   const bytes = await sharp({ create: { width: 48, height: 48, channels: 3, background: '#0ea5e9' } }).png().toBuffer();
   const project = db.createEcommerceProject(owner.id, {
     projectName: 'Nine-image project', platformId: 'taobao', industryId: 'digital', productName: 'Camera', brandName: '',
@@ -148,7 +151,7 @@ test('ecommerce projects accept at most nine images and reject assets over 5 MB'
     coreUser: '', coreScenario: '', sellingPoints: [], specifications: '', prohibitedContent: '', aiBriefOriginals: {}, identitySpec: {},
     templateId: '', visualStyleId: 'clean-commercial', imageProviderId: '', selectedSlots: []
   });
-  db.getDb().prepare('UPDATE assets SET file_size = ? WHERE id = ?').run(5 * 1024 * 1024 + 1, assets[9].id);
+  db.getDb().prepare('UPDATE assets SET file_size = ? WHERE id = ?').run(15 * 1024 * 1024 + 1, assets[9].id);
   assert.throws(
     () => media.linkAssetToProject(owner.id, assets[9].id, oversizedProject.id, { assetType: 'product', role: 'product' }),
     (error) => error?.code === 'ASSET_TOO_LARGE'
