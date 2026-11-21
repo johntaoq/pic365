@@ -3277,13 +3277,15 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
   }
 
   async function removeProvider(provider) {
-    if (!globalThis.confirm?.(language === 'zh' ? `删除生图服务“${provider.name}”？` : `Delete image service "${provider.name}"?`)) return;
+    if (!globalThis.confirm?.(language === 'zh'
+      ? `删除生图服务“${provider.name}”？绑定此服务的电商项目需要重新选择生图服务，项目和历史图片不会删除。`
+      : `Delete image service "${provider.name}"? Linked product projects will need another image service. Projects and past images will not be deleted.`)) return;
     const response = await fetch('/api/admin/image-providers', {
       method: 'DELETE', headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) }, body: JSON.stringify({ id: provider.id })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
-      setProviderMessage(language === 'zh' ? `删除失败：${payload.error || '配置正在使用'}` : `Delete failed: ${payload.error || 'configuration is in use'}`);
+      setProviderMessage(language === 'zh' ? `删除失败：${payload.error || '请重试'}` : `Delete failed: ${payload.error || 'please try again'}`);
       return;
     }
     if (providerDraft.id === provider.id) resetProviderDraft();

@@ -56,7 +56,7 @@ import {
 } from '../shared/ecommerce-assets.js';
 import { resolveEcommerceRefinementSize, resolveEcommerceSlotGenerationSize } from '../shared/image-pricing.js';
 import { getImageModelConstraints, validateImageReferenceInputsForModel } from '../shared/image-generation.js';
-import { orderImageProviders, resolveImageProviderId } from '../shared/image-provider-selection.js';
+import { orderImageProviders, resolveEcommerceProjectImageProviderId, resolveImageProviderId } from '../shared/image-provider-selection.js';
 import {
   readEcommerceProjectListCollapsed,
   writeEcommerceProjectListCollapsed
@@ -243,6 +243,9 @@ const copy = {
     qualityMedium: 'Medium',
     qualityHigh: 'High',
     providerRequired: 'Select an available image service before generating.',
+    projectProviderMissing: 'The image service saved for this project is no longer available. Select another service before generating.',
+    projectProviderMissingOption: 'Original service unavailable',
+    selectProjectProvider: 'Select an image service',
     providerUnavailableChoice: 'Unavailable',
     providerUnavailable: (name, model) => `The image service${name ? ` "${name}"` : ''} has no available ${model || 'image'} channel. The reserved credits were refunded.`,
     providerAuthFailed: 'The image service API key is invalid or unauthorized. The reserved credits were refunded.',
@@ -443,6 +446,9 @@ const copy = {
     qualityMedium: '中',
     qualityHigh: '高',
     providerRequired: '请选择可用的生图服务后再生成。',
+    projectProviderMissing: '此项目绑定的生图服务已删除或不可用，请重新选择后再生成。',
+    projectProviderMissingOption: '原生图服务不可用',
+    selectProjectProvider: '请选择生图服务',
     providerUnavailableChoice: '不可用',
     providerUnavailable: (name, model) => `当前生图服务${name ? `“${name}”` : ''}没有可用的 ${model || '图像'} 渠道，预留积分已退回，请联系管理员检查配置。`,
     providerAuthFailed: '生图服务的 API Key 无效或无权限，预留积分已退回，请联系管理员。',
@@ -1136,7 +1142,8 @@ function EcommerceVersionCenterModal({
 
 function ecommerceGenerationFailureText(payload, t) {
   const code = payload?.error || payload;
-  if (code === 'AI_PROVIDER_NOT_CONFIGURED' || code === 'INVALID_IMAGE_PROVIDER') return t.providerRequired;
+  if (code === 'AI_PROVIDER_NOT_CONFIGURED' || code === 'AI_PROVIDER_NOT_AVAILABLE') return t.projectProviderMissing;
+  if (code === 'INVALID_IMAGE_PROVIDER') return t.providerRequired;
   if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.maiReferenceUnsupported;
   if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maiReferenceLimit;
   if (code === 'REFERENCE_IMAGE_TOO_LARGE') return t.referenceTooLarge;
@@ -1170,6 +1177,7 @@ export default function EcommerceWorkspace({
   const [form, setForm] = useState(() => createEmptyForm());
   const [status, setStatus] = useState('idle');
   const [imageProviders, setImageProviders] = useState([]);
+  const [imageProvidersLoaded, setImageProvidersLoaded] = useState(false);
   const [message, setMessage] = useState('');
   const [assets, setAssets] = useState([]);
   const [assetStatus, setAssetStatus] = useState('idle');
@@ -1221,8 +1229,11 @@ export default function EcommerceWorkspace({
   ), [assets, imageProviders]);
   const selectedProviderCompatibility = providerCompatibilityById.get(form.imageProviderId)
     || { valid: false, error: 'AI_PROVIDER_NOT_CONFIGURED' };
-  const selectedProviderCompatibilityMessage = ecommerceProviderCompatibilityText(selectedProviderCompatibility, t);
   const selectedImageProvider = imageProviders.find((provider) => provider.id === form.imageProviderId) || null;
+  const missingProjectProvider = Boolean(imageProvidersLoaded && form.imageProviderId && !selectedImageProvider);
+  const selectedProviderCompatibilityMessage = missingProjectProvider
+    ? t.projectProviderMissing
+    : ecommerceProviderCompatibilityText(selectedProviderCompatibility, t);
   const selectedProviderSupportsQuality = isGptImageProvider(selectedImageProvider);
   const effectiveGenerationQuality = selectedProviderSupportsQuality
     ? normalizeEcommerceImageQuality(form.imageQuality)
@@ -1242,25 +1253,38 @@ export default function EcommerceWorkspace({
   }
 
   useEffect(() => {
-    fetch('/api/image-providers', { cache: 'no-store' })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (!payload?.ok) return;
-        const nextProviders = orderImageProviders(payload.providers);
-        setImageProviders(nextProviders);
-      })
-      .catch(() => undefined);
-  }, []);
+    let request;
+    function refreshProviders() {
+      request?.abort();
+      const controller = new AbortController();
+      request = controller;
+      fetch('/api/image-providers', { cache: 'no-store', signal: controller.signal })
+        .then((response) => response.json())
+        .then((payload) => {
+          if (!payload?.ok || controller.signal.aborted) return;
+          setImageProviders(orderImageProviders(payload.providers));
+          setImageProvidersLoaded(true);
+        })
+        .catch(() => undefined);
+    }
+    setImageProvidersLoaded(false);
+    refreshProviders();
+    globalThis.addEventListener?.('focus', refreshProviders);
+    return () => {
+      request?.abort();
+      globalThis.removeEventListener?.('focus', refreshProviders);
+    };
+  }, [signedIn, preferenceUserId]);
 
   useEffect(() => {
-    if (!imageProviders.length) return;
+    if (!imageProvidersLoaded || !imageProviders.length) return;
     setForm((current) => {
-      const resolvedProviderId = resolveImageProviderId(imageProviders, current.imageProviderId);
+      const resolvedProviderId = resolveEcommerceProjectImageProviderId(imageProviders, current.imageProviderId);
       return resolvedProviderId && resolvedProviderId !== current.imageProviderId
         ? { ...current, imageProviderId: resolvedProviderId }
         : current;
     });
-  }, [imageProviders, form.id, form.imageProviderId]);
+  }, [imageProviders, imageProvidersLoaded, form.id, form.imageProviderId]);
 
   useEffect(() => () => {
     if (taskStartedNoticeTimerRef.current) globalThis.clearTimeout?.(taskStartedNoticeTimerRef.current);
@@ -1714,7 +1738,7 @@ export default function EcommerceWorkspace({
     const nextForm = projectToForm(project);
     const resolvedForm = {
       ...nextForm,
-      imageProviderId: resolveImageProviderId(imageProviders, nextForm.imageProviderId)
+      imageProviderId: resolveEcommerceProjectImageProviderId(imageProviders, nextForm.imageProviderId)
     };
     const originals = normalizeAiBriefOriginals(project.aiBriefOriginals);
     lastSavedProjectFingerprintRef.current = ecommerceProjectSaveFingerprint(nextForm, originals);
@@ -2688,14 +2712,16 @@ export default function EcommerceWorkspace({
   const productionSlots = platform.slots.filter((item) => form.selectedSlots.includes(item.id));
   const {
     pricingByKey: productionPricingQuotes,
-    loading: productionPricingLoading
+    loading: productionPricingLoading,
+    error: productionPricingError
   } = useServerImagePricingBatch(productionSlots.map((slot) => ({
     key: slot.id,
     size: resolveEcommerceSlotGenerationSize(slot),
     quality: effectiveGenerationQuality,
     providerId: form.imageProviderId,
     referenceCount: countEcommerceReferenceImages({ project: form, slot, assets })
-  })));
+  })), { enabled: Boolean(signedIn && selectedImageProvider) });
+  const showProductionPricing = Boolean(selectedImageProvider) && productionPricingError !== 'AI_PROVIDER_NOT_CONFIGURED';
   const productionPricingBySlot = new Map(productionSlots.map((slot) => [slot.id, productionPricingQuotes[slot.id] || null]));
   const selectableProductionSlots = productionSlots.filter((item) => !outputsBySlot.get(item.id)?.locked);
   const selectedPricingComplete = selectedProductionSlots.every((slotId) => Boolean(productionPricingBySlot.get(slotId)));
@@ -3160,6 +3186,11 @@ export default function EcommerceWorkspace({
                     onChange={(event) => handleImageProviderChange(event.target.value)}
                     disabled={status === 'saving' || activeGenerationCount > 0}
                   >
+                    {!selectedImageProvider && (
+                      <option value={form.imageProviderId} disabled>
+                        {missingProjectProvider ? t.projectProviderMissingOption : t.selectProjectProvider}
+                      </option>
+                    )}
                     {imageProviders.map((provider) => {
                       const compatibility = providerCompatibilityById.get(provider.id);
                       return (
@@ -3192,8 +3223,10 @@ export default function EcommerceWorkspace({
                   </fieldset>
                 ) : null}
               </div>
-              {!selectedProviderCompatibility.valid ? (
-                <p className="ecommerceGenerationMessage ecommerceProviderCompatibilityMessage">{selectedProviderCompatibilityMessage}</p>
+              {(imageProvidersLoaded && !selectedProviderCompatibility.valid) || productionPricingError === 'AI_PROVIDER_NOT_CONFIGURED' ? (
+                <p className="ecommerceGenerationMessage ecommerceProviderCompatibilityMessage" role="status">
+                  {productionPricingError === 'AI_PROVIDER_NOT_CONFIGURED' ? t.projectProviderMissing : selectedProviderCompatibilityMessage}
+                </p>
               ) : null}
               <div className="ecommerceBatchToolbar">
                 <button
@@ -3206,7 +3239,7 @@ export default function EcommerceWorkspace({
                 </button>
                 <div className="ecommerceBatchGenerateGroup">
                   <span className="ecommerceBatchPrice">
-                    {t.batchSelectionLabel(selectedProductionSlots.length)} <ImageCreditPrice pricing={selectedProductionPricing} language={language} compact />
+                    {t.batchSelectionLabel(selectedProductionSlots.length)} {showProductionPricing && <ImageCreditPrice pricing={selectedProductionPricing} language={language} compact />}
                   </span>
                   <button
                     className="primary"
@@ -3313,10 +3346,10 @@ export default function EcommerceWorkspace({
                           {taskActive
                             ? task.status === 'cancelling' ? t.cancelling : t.cancel
                             : retryable
-                              ? <>{t.retryLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>
+                              ? <>{t.retryLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}</>
                               : adopted
-                                ? <>{t.regenerateSlotLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>
-                                : <>{t.generateSlotLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}
+                                ? <>{t.regenerateSlotLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}</>
+                                : <>{t.generateSlotLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}</>}
                         </button>
                         <button className="versions" type="button" onClick={() => setVersionCenterSlotId(item.id)}>
                           <History size={14} /> {t.versions}{versions.length ? ` · ${versions.length}` : ''}

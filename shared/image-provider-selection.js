@@ -16,3 +16,8 @@ export function resolveImageProviderId(providers = [], requestedId = '') {
   if (requested && available.some((provider) => provider.id === requested)) return requested;
   return available.find((provider) => provider.isDefault)?.id || available[0]?.id || '';
 }
+
+export function resolveEcommerceProjectImageProviderId(providers = [], storedId = '') {
+  // A saved choice stays explicit even when the channel is no longer available.
+  return String(storedId || '').trim() || resolveImageProviderId(providers);
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { orderImageProviders, resolveImageProviderId } from '../shared/image-provider-selection.js';
+import { orderImageProviders, resolveEcommerceProjectImageProviderId, resolveImageProviderId } from '../shared/image-provider-selection.js';
 
 const providers = [
   { id: 'default-provider', isDefault: true },
@@ -16,6 +16,13 @@ test('provider selection repairs empty or unavailable legacy project providers',
   assert.equal(resolveImageProviderId(providers, ''), 'default-provider');
   assert.equal(resolveImageProviderId(providers, 'disabled-provider'), 'default-provider');
   assert.equal(resolveImageProviderId([], 'disabled-provider'), '');
+});
+
+test('a saved ecommerce project keeps its channel even when the channel disappears', () => {
+  assert.equal(resolveEcommerceProjectImageProviderId(providers, 'deleted-provider'), 'deleted-provider');
+  assert.equal(resolveEcommerceProjectImageProviderId([], 'second-provider'), 'second-provider');
+  assert.equal(resolveEcommerceProjectImageProviderId(providers, 'second-provider'), 'second-provider');
+  assert.equal(resolveEcommerceProjectImageProviderId(providers, ''), 'default-provider');
 });
 
 test('available providers follow the administrator order without moving the default service', () => {

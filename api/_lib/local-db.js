@@ -4617,10 +4617,10 @@ export function deleteImageProviderConfig(id) {
   const db = getDb();
   const row = db.prepare('SELECT * FROM image_provider_configs WHERE id = ?').get(id);
   if (!row) return null;
-  const referenced = db.prepare('SELECT COUNT(*) AS count FROM ecommerce_projects WHERE image_provider_id = ?').get(id)?.count || 0;
-  if (referenced) throw Object.assign(new Error('PROVIDER_IN_USE'), { code: 'PROVIDER_IN_USE' });
   const enabledCount = db.prepare('SELECT COUNT(*) AS count FROM image_provider_configs WHERE enabled = 1').get()?.count || 0;
   if (row.enabled && enabledCount <= 1) throw Object.assign(new Error('LAST_PROVIDER_REQUIRED'), { code: 'LAST_PROVIDER_REQUIRED' });
+  // Keep project bindings intact. A missing service is reported at generation
+  // time rather than silently switching the project to another service.
   db.prepare("DELETE FROM system_user_group_channels WHERE channel_type = 'image' AND channel_id = ?").run(id);
   db.prepare('DELETE FROM image_provider_configs WHERE id = ?').run(id);
   if (row.is_default) db.prepare('UPDATE image_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM image_provider_configs WHERE enabled = 1 ORDER BY sort_order ASC, created_at ASC LIMIT 1)').run();
