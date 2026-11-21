@@ -29,16 +29,41 @@ function json(res, status, payload) {
   res.status(status).json(payload);
 }
 
-function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig(), userId = '') {
-  // Pricing only needs the provider model and pricing policy. Avoid decrypting
-  // the API key here so a key-rotation/configuration issue cannot block quotes.
-  const provider = getImageProviderConfig(String(input.providerId || '').trim(), { includeSecret: false, userId });
-  if (!provider) {
-    const error = new Error('AI_PROVIDER_NOT_CONFIGURED');
-    error.code = 'AI_PROVIDER_NOT_CONFIGURED';
-    throw error;
-  }
-  validateImageInputPricing(provider.pricingConfig, provider.model);
+function createQuoteContext(userId) {
+  const promotionConfig = getImagePromotionConfig();
+  const providers = new Map();
+  const projects = new Map();
+  let systemPrompt;
+  return {
+    userId, promotionConfig, now: Date.now(),
+    provider(id) {
+      if (!providers.has(id)) {
+        const provider = getImageProviderConfig(id, { includeSecret: false, userId });
+        if (!provider) throw Object.assign(new Error('AI_PROVIDER_NOT_CONFIGURED'), { code: 'AI_PROVIDER_NOT_CONFIGURED' });
+        validateImageInputPricing(provider.pricingConfig, provider.model);
+        providers.set(id, provider);
+      }
+      return providers.get(id);
+    },
+    project(id) {
+      if (!projects.has(id)) {
+        const project = getEcommerceProject(userId, id);
+        if (!project) throw Object.assign(new Error('PROJECT_NOT_FOUND'), { code: 'PROJECT_NOT_FOUND' });
+        projects.set(id, {
+          project, platform: getEcommercePlatform(project.platformId)
+        });
+      }
+      return projects.get(id);
+    },
+    systemPrompt() {
+      return systemPrompt ??= getEcommerceGenerationSystemPromptSettings().prompt;
+    }
+  };
+}
+
+function quoteImagePricing(input, context) {
+  const provider = context.provider(String(input.providerId || '').trim());
+  const chargeTextTokens = Boolean(provider.pricingConfig?.chargeTextTokens);
   const size = String(input.size || '1024x1024').trim().toLowerCase();
   const sizeCheck = validateImageSizeForModel(size, provider.model);
   if (!sizeCheck.valid) {
@@ -56,23 +81,22 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
     error.code = referenceCheck.error;
     throw error;
   }
-  let prompt = String(input.prompt || '').slice(0, 48000);
-  if (input.projectId && input.slotId && provider.pricingConfig?.chargeTextTokens) {
-    const project = getEcommerceProject(userId, String(input.projectId));
-    if (!project) throw Object.assign(new Error('PROJECT_NOT_FOUND'), { code: 'PROJECT_NOT_FOUND' });
-    const platform = getEcommercePlatform(project.platformId);
+  let prompt = chargeTextTokens ? String(input.prompt || '').slice(0, 48000) : '';
+  if (input.projectId && input.slotId && chargeTextTokens) {
+    const entry = context.project(String(input.projectId));
+    const { project, platform } = entry;
     const slot = platform.slots.find((item) => item.id === input.slotId);
     if (!slot || !project.selectedSlots.includes(slot.id)) throw Object.assign(new Error('INVALID_PROJECT_SLOT'), { code: 'INVALID_PROJECT_SLOT' });
     const referenceInputs = (Array.isArray(input.referenceInputs) ? input.referenceInputs : []).slice(0, 4);
-    const allAssets = listEcommerceProjectAssets(userId, project.id);
+    const allAssets = entry.assets ??= listEcommerceProjectAssets(context.userId, project.id);
     const refinementAssets = referenceInputs.map((ref) => allAssets.find((asset) => asset.id === ref.assetId)).filter(Boolean);
     const limit = Math.max(1, 8 - (input.baseGenerationId ? 1 : 0));
     const standard = selectEcommerceAssetsForSlot({ project, platform, slot, assets: allAssets, limit: Math.max(1, limit - refinementAssets.length) });
     const assets = [...standard, ...refinementAssets].filter((asset, index, all) => all.findIndex((item) => item.id === asset.id) === index).slice(0, limit);
-    const output = getEcommerceProjectOutput(userId, project.id, slot.id);
+    const output = input.baseGenerationId ? getEcommerceProjectOutput(context.userId, project.id, slot.id) : null;
     prompt = buildEcommerceSlotPrompt({
       project, platform, slot, assets,
-      systemPrompt: getEcommerceGenerationSystemPromptSettings().prompt,
+      systemPrompt: context.systemPrompt(),
       revisionRequest: String(input.adjustment || '').slice(0, 1200),
       targetArea: input.targetArea || 'auto',
       refinementInputs: referenceInputs,
@@ -83,9 +107,10 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
   const pricing = applyImagePromotion(
     getImageGenerationPricing({
       size, quality, model: provider.model, referenceCount, prompt,
-      estimatedTextTokens: provider.pricingConfig?.chargeTextTokens && prompt ? estimateTextTokens(prompt) : undefined
+      estimatedTextTokens: prompt ? estimateTextTokens(prompt) : undefined
     }, provider.pricingConfig),
-    promotionConfig
+    context.promotionConfig,
+    { now: context.now }
   );
   return {
     ...pricing,
@@ -97,14 +122,14 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
     providerId: provider.id,
     providerName: provider.name,
     model: provider.model,
+    chargeTextTokens,
     source: 'server'
   };
 }
 
-function publicPayload(extra = {}) {
-  const serverNow = new Date().toISOString();
-  const promotionConfig = getImagePromotionConfig();
-  const promotion = resolveImagePromotion(promotionConfig, { now: Date.parse(serverNow) });
+function publicPayload(extra = {}, { promotionConfig = getImagePromotionConfig(), now = Date.now() } = {}) {
+  const serverNow = new Date(now).toISOString();
+  const promotion = resolveImagePromotion(promotionConfig, { now });
   const samplePricing = extra.pricing || extra.quotes?.[0]?.pricing || null;
   return {
     ok: true,
@@ -129,14 +154,15 @@ export default async function handler(req, res) {
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
   if (req.method === 'GET') {
     try {
+      const context = createQuoteContext(auth.user?.id || '');
       const pricing = quoteImagePricing({
         size: req.query?.size,
         quality: req.query?.quality,
         count: req.query?.count,
         referenceCount: req.query?.referenceCount,
         providerId: req.query?.providerId
-      }, getImagePromotionConfig(), auth.user?.id || '');
-      return json(res, 200, publicPayload({ pricing }));
+      }, context);
+      return json(res, 200, publicPayload({ pricing }, context));
     } catch (error) {
       return json(res, 400, { ok: false, error: error?.code || 'INVALID_PRICING_REQUEST', reason: error?.reason || undefined });
     }
@@ -147,12 +173,12 @@ export default async function handler(req, res) {
       const body = await readJsonBody(req);
       const items = Array.isArray(body.items) ? body.items.slice(0, 50) : [body];
       if (!items.length) return json(res, 400, { ok: false, error: 'INVALID_PRICING_REQUEST' });
-      const promotionConfig = getImagePromotionConfig();
+      const context = createQuoteContext(auth.user?.id || '');
       const quotes = items.map((item, index) => ({
         key: String(item?.key || index).slice(0, 120),
-        pricing: quoteImagePricing(item, promotionConfig, auth.user?.id || '')
+        pricing: quoteImagePricing(item, context)
       }));
-      return json(res, 200, publicPayload({ quotes }));
+      return json(res, 200, publicPayload({ quotes }, context));
     } catch (error) {
       return json(res, 400, { ok: false, error: error?.code || 'INVALID_PRICING_REQUEST', reason: error?.reason || undefined });
     }

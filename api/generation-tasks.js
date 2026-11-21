@@ -21,6 +21,7 @@ import { clothingStudioPrompt, normalizeClothingStudioRequest, validateClothingS
 import { validatePrivateTryOnReference } from './_lib/clothing-try-on-models.js';
 import {
   IMAGE_GENERATION_REQUEST_MAX_BYTES,
+  isMaiImage27Model,
   resolveSourceImageSizeForModel,
   validateImageReferenceInputsForModel,
   validateImageSizeForModel
@@ -88,7 +89,16 @@ function serverAuthorizedTask(userId, task = {}) {
   task = normalizeClothingStudioRequest(task);
   const studioWorkflow = validateClothingStudioRequest(task, { model: provider.model });
   if (studioWorkflow) validatePrivateTryOnReference(userId, studioWorkflow, task.references);
-  return serverValidatedBatchRepairTask({ ...task, providerId: provider.id, ...(studioWorkflow ? { studioWorkflow, prompt: clothingStudioPrompt(studioWorkflow) } : {}) }, userId);
+  const authorized = serverValidatedBatchRepairTask({ ...task, providerId: provider.id, ...(studioWorkflow ? { studioWorkflow, prompt: clothingStudioPrompt(studioWorkflow) } : {}) }, userId);
+  if (isMaiImage27Model(provider.model)) {
+    const size = String(authorized.size || '1024x1024').trim().toLowerCase();
+    const sizeCheck = validateImageSizeForModel(size, provider.model);
+    if (!sizeCheck.valid) {
+      throw Object.assign(new Error('INVALID_SIZE'), { code: 'INVALID_SIZE', reason: sizeCheck.error });
+    }
+    authorized.size = size;
+  }
+  return authorized;
 }
 
 async function validateLayoutWatermarks(tasks) {
@@ -182,6 +192,7 @@ export default async function handler(req, res) {
       : error?.code === 'TASK_NOT_FOUND' ? 404
       : error?.code === 'REQUEST_BODY_TOO_LARGE' ? 413
         : 400;
-    return json(res, status, { ok: false, error: error?.code || 'TASK_CREATE_FAILED' });
+    return json(res, status, { ok: false, error: error?.code || 'TASK_CREATE_FAILED',
+      ...(error?.code === 'INVALID_SIZE' && error.reason ? { reason: error.reason } : {}) });
   }
 }

@@ -11,6 +11,7 @@ import {
   getImageModelConstraints,
   IMAGE_RATIO_PRESETS,
   isGeminiImageModel,
+  maxImageDimensionForOtherSide,
   normalizeImageCount,
   resolveReferenceImageSize,
   resolveSourceImageSizeForModel,
@@ -68,6 +69,28 @@ test('MAI-Image-2.6 family supports up to 1536 squared pixels', () => {
     assert.equal(validateImageSizeForModel('1536x1552', model).error, 'MAI_MAX_PIXELS', model);
     assert.equal(validateImageSizeForModel('2048x1168', model).error, 'MAI_MAX_PIXELS', model);
   }
+});
+
+test('both MAI-Image-2.7 variants accept free ratios up to the inclusive 4,128,768 pixel cap', () => {
+  for (const model of ['MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
+    const atLimit = validateImageSizeForModel('1344x3072', model);
+    assert.equal(atLimit.valid, true, model);
+    assert.equal(atLimit.pixels, 4_128_768);
+    assert.equal(validateImageSizeForModel('3072x1344', model).valid, true);
+    assert.equal(validateImageSizeForModel('2016x2016', model).valid, true);
+    assert.equal(validateImageSizeForModel('768x3072', model).valid, true, 'no 3:1 aspect-ratio restriction');
+    assert.equal(validateImageSizeForModel('2032x2032', model).error, 'MAI_MAX_PIXELS', '256 pixels over the cap');
+    assert.equal(validateImageSizeForModel('1344x3088', model).error, 'MAI_MAX_PIXELS');
+    assert.equal(validateImageSizeForModel('auto', model).error, 'AUTO_SIZE_UNSUPPORTED');
+    assert.equal(validateImageSizeForModel('1345x3072', model).error, 'STEP');
+    assert.equal(maxImageDimensionForOtherSide(1344, atLimit.constraints), 3072);
+    assert.equal(maxImageDimensionForOtherSide(3072, atLimit.constraints), 1344);
+    const resized = resolveSourceImageSizeForModel({ width: 2048, height: 2048 }, model);
+    assert.equal(resized.size, '2016x2016');
+    assert.equal(validateImageReferenceInputsForModel({ model, count: 9, mimeTypes: ['image/webp'] }).valid, true);
+  }
+  assert.equal(validateImageSizeForModel('2048x2048', 'gpt-image-2').valid, true);
+  assert.equal(validateImageSizeForModel('768x3072', 'gpt-image-2').error, 'ASPECT');
 });
 
 test('Gemini image models expose their own ratios, references, and formats', () => {

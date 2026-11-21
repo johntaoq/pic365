@@ -139,6 +139,7 @@ test('gpt-image-2 edit requests omit unsupported input_fidelity', async () => {
     });
     assert.equal(requestBody.model, 'gpt-image-2');
     assert.equal(requestBody.quality, 'medium');
+    assert.equal(requestBody.background, 'auto');
     assert.equal('input_fidelity' in requestBody, false);
   } finally {
     globalThis.fetch = previousFetch;
@@ -245,6 +246,68 @@ test('MAI-Image-2.6 multipart editing accepts five images and rejects a sixth', 
     globalThis.fetch = previousFetch;
   }
 });
+
+for (const model of ['MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
+  test(`${model} blocks oversize generation and edits before contacting the provider`, async (t) => {
+    const requests = [];
+    const providerConfig = { baseUrl: 'https://mai-size-test.example', apiKey: 'fixture-only', model };
+    t.mock.method(globalThis, 'fetch', async (_url, { body }) => {
+      requests.push(JSON.parse(body).size);
+      return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }));
+    });
+    const input = { prompt: 'Fixture image', providerConfig, size: '2032x2032' };
+    const images = ['data:image/png;base64,aGVsbG8='];
+    const isSizeError = (error) => error.code === 'INVALID_SIZE' && error.reason === 'MAI_MAX_PIXELS';
+    await assert.rejects(() => generateImage(input), isSizeError);
+    await assert.rejects(() => editImage({ ...input, images }), isSizeError);
+    assert.deepEqual(requests, []);
+    await generateImage({ ...input, size: '1344x3072' });
+    await editImage({ ...input, images, size: '768x3072' });
+    assert.deepEqual(requests, ['1344x3072', '768x3072']);
+  });
+
+  test(`${model} reference edits use a supported background on every transport`, async (t) => {
+    const provider = {
+      baseUrl: 'https://mai-background-test.example',
+      apiKey: 'fixture-only',
+      model
+    };
+    const requests = [];
+    let rejectJson = false;
+    t.mock.method(globalThis, 'fetch', async (url, { body }) => {
+      const multipart = body instanceof FormData;
+      const path = new URL(url).pathname;
+      const fields = multipart ? Object.fromEntries(body) : JSON.parse(body);
+      assert.equal(fields.model, model);
+      requests.push({ path, multipart, background: fields.background });
+      if (path.endsWith('/images/edits') && !['opaque', 'transparent'].includes(fields.background)) {
+        return new Response(JSON.stringify({
+          error: { message: 'Invalid request. Error => Background must be "opaque" or "transparent".' }
+        }), { status: 400 });
+      }
+      if (rejectJson && !multipart) {
+        return new Response(JSON.stringify({ error: { message: 'Expected multipart/form-data.' } }), { status: 415 });
+      }
+      return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 });
+    });
+
+    const input = { prompt: 'Keep the reference subject', images: ['data:image/png;base64,aGVsbG8='] };
+    await editImage({ ...input, providerConfig: { ...provider, providerType: 'openai-compatible-json' } });
+    await editImage({ ...input, providerConfig: { ...provider, providerType: 'openai-compatible-multipart' } });
+    rejectJson = true;
+    await editImage({ ...input, providerConfig: { ...provider, providerType: 'openai-compatible' } });
+    rejectJson = false;
+    await generateImage({ prompt: 'Create a new image', providerConfig: provider });
+
+    assert.deepEqual(requests, [
+      { path: '/v1/images/edits', multipart: false, background: 'opaque' },
+      { path: '/v1/images/edits', multipart: true, background: 'opaque' },
+      { path: '/v1/images/edits', multipart: false, background: 'opaque' },
+      { path: '/v1/images/edits', multipart: true, background: 'opaque' },
+      { path: '/v1/images/generations', multipart: false, background: undefined }
+    ]);
+  });
+}
 
 test('auto-compatible providers retry image edits as multipart when JSON is rejected', async () => {
   const previousFetch = globalThis.fetch;

@@ -288,7 +288,7 @@ export default async function handler(req, res) {
       consistencyIssues
     });
     const size = baseGenerationId
-      ? resolveEcommerceRefinementSize(baseGeneration, slot)
+      ? resolveEcommerceRefinementSize(baseGeneration, slot, providerConfig.model)
       : resolveEcommerceSlotGenerationSize(slot);
     validateImageInputPricing(providerConfig.pricingConfig, providerConfig.model);
     const pricing = applyImagePromotion(

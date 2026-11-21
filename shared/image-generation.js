@@ -24,6 +24,7 @@ export const MAI_IMAGE_MIN_SIDE = 768;
 export const MAI_IMAGE_MAX_PIXELS = 1_048_576;
 export const MAI_IMAGE_2_6_MAX_PIXELS = 1536 * 1536;
 export const MAI_IMAGE_2_6_MAX_REFERENCE_IMAGES = 5;
+export const MAI_IMAGE_2_7_MAX_PIXELS = 4_128_768;
 
 const DEFAULT_IMAGE_MODEL_CONSTRAINTS = Object.freeze({
   modelFamily: 'default',
@@ -67,6 +68,18 @@ const MAI_IMAGE_2_6_CONSTRAINTS = Object.freeze({
   maxSide: Math.floor((MAI_IMAGE_2_6_MAX_PIXELS / MAI_IMAGE_MIN_SIDE) / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP,
   maxPixels: MAI_IMAGE_2_6_MAX_PIXELS,
   maxReferenceImages: MAI_IMAGE_2_6_MAX_REFERENCE_IMAGES
+});
+
+// Keep 2.7's existing side and reference limits. Unlike the default image
+// family it accepts free ratios and must use explicit, bounded dimensions.
+const MAI_IMAGE_2_7_CONSTRAINTS = Object.freeze({
+  ...DEFAULT_IMAGE_MODEL_CONSTRAINTS,
+  modelFamily: 'mai-image-2.7',
+  isMai: true,
+  allowAutoSize: false,
+  maxPixels: MAI_IMAGE_2_7_MAX_PIXELS,
+  minAspect: 0,
+  maxAspect: Number.POSITIVE_INFINITY
 });
 
 export const GEMINI_IMAGE_RATIO_PRESETS = Object.freeze([
@@ -154,6 +167,12 @@ export function alignImageDimension(value, { min = IMAGE_MIN_SIDE, max = IMAGE_M
   return Math.max(min, Math.min(max, aligned));
 }
 
+export function maxImageDimensionForOtherSide(otherSide, constraints) {
+  const maxByPixels = Math.floor(constraints.maxPixels / Math.max(constraints.minSide, otherSide) / IMAGE_DIMENSION_STEP)
+    * IMAGE_DIMENSION_STEP;
+  return Math.max(constraints.minSide, Math.min(constraints.maxSide, maxByPixels));
+}
+
 export function parseImageSize(value) {
   if (value === 'auto') return { auto: true, width: null, height: null };
   const match = String(value || '').trim().toLowerCase().match(/^(\d+)x(\d+)$/);
@@ -172,9 +191,14 @@ export function isGeminiImageModel(value) {
     || /^banana(?:-|$)/.test(normalized);
 }
 
+export function isMaiImage27Model(value) {
+  return /^mai-image-2\.7(?:-|$)/.test(normalizeModelName(value));
+}
+
 export function getImageModelConstraints(model) {
   const normalized = normalizeModelName(model);
   if (isGeminiImageModel(normalized)) return GEMINI_IMAGE_CONSTRAINTS;
+  if (isMaiImage27Model(normalized)) return MAI_IMAGE_2_7_CONSTRAINTS;
   if (normalized === 'mai-image-2.6' || normalized.startsWith('mai-image-2.6-')) {
     return MAI_IMAGE_2_6_CONSTRAINTS;
   }
@@ -206,33 +230,43 @@ export function validateImageReferenceInputsForModel({ model = '', count = 0, mi
   return { valid: true, constraints };
 }
 
-export function validateImageSize(value) {
+function validateGenericImageSize(value, constraints) {
   const parsed = parseImageSize(value);
   if (!parsed) return { valid: false, error: 'FORMAT' };
-  if (parsed.auto) return { valid: true, ...parsed, pixels: null, aspect: null };
+  if (parsed.auto) return constraints.allowAutoSize
+    ? { valid: true, ...parsed, pixels: null, aspect: null }
+    : { valid: false, error: 'AUTO_SIZE_UNSUPPORTED', ...parsed };
 
   const { width, height } = parsed;
   if (!width || !height || width % IMAGE_DIMENSION_STEP || height % IMAGE_DIMENSION_STEP) {
     return { valid: false, error: 'STEP', ...parsed };
   }
-  if (width < IMAGE_MIN_SIDE || height < IMAGE_MIN_SIDE) {
+  if (width < constraints.minSide || height < constraints.minSide) {
     return { valid: false, error: 'MIN_SIDE', ...parsed };
   }
-  if (width > IMAGE_MAX_SIDE || height > IMAGE_MAX_SIDE) {
+  if (width > constraints.maxSide || height > constraints.maxSide) {
     return { valid: false, error: 'MAX_SIDE', ...parsed };
   }
   const pixels = width * height;
-  if (pixels < IMAGE_MIN_PIXELS) return { valid: false, error: 'MIN_PIXELS', ...parsed, pixels };
-  if (pixels > IMAGE_MAX_PIXELS) return { valid: false, error: 'MAX_PIXELS', ...parsed, pixels };
+  if (pixels < constraints.minPixels) return { valid: false, error: 'MIN_PIXELS', ...parsed, pixels };
+  if (pixels > constraints.maxPixels) return { valid: false, error: 'MAX_PIXELS', ...parsed, pixels };
   const aspect = width / height;
-  if (aspect < IMAGE_MIN_ASPECT || aspect > IMAGE_MAX_ASPECT) {
+  if (aspect < constraints.minAspect || aspect > constraints.maxAspect) {
     return { valid: false, error: 'ASPECT', ...parsed, pixels, aspect };
   }
   return { valid: true, ...parsed, pixels, aspect };
 }
 
+export function validateImageSize(value) {
+  return validateGenericImageSize(value, DEFAULT_IMAGE_MODEL_CONSTRAINTS);
+}
+
 export function validateImageSizeForModel(value, model) {
   const constraints = getImageModelConstraints(model);
+  if (constraints === MAI_IMAGE_2_7_CONSTRAINTS) {
+    const result = validateGenericImageSize(value, constraints);
+    return { ...result, ...(result.error === 'MAX_PIXELS' ? { error: 'MAI_MAX_PIXELS' } : {}), constraints };
+  }
   if (constraints.isGeminiImage) {
     const parsed = parseImageSize(value);
     if (!parsed) return { valid: false, error: 'FORMAT' };

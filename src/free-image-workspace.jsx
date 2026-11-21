@@ -45,9 +45,12 @@ import {
   dimensionsFromLockedValue,
   getImageModelConstraints,
   imageReferenceByteLength,
+  IMAGE_MAX_PIXELS,
+  IMAGE_MIN_PIXELS,
   IMAGE_REFERENCE_MAX_BYTES,
   IMAGE_RATIO_PRESETS,
   isImageReferenceTooLarge,
+  maxImageDimensionForOtherSide,
   parseImageSize,
   resolveReferenceImageSize,
   resolveSourceImageSizeForModel,
@@ -87,7 +90,7 @@ import ImageStudioFeedback from './image-studio-feedback.jsx';
 import { imageStudioFeedbackState } from './image-studio-feedback.js';
 import './free-image-studio.css';
 import { fetchImageGeneration, isImageGenerationTimeout } from './image-generation-client.js';
-import { ImageCreditPrice, requestImagePricing, useServerImagePricing, useServerImagePricingBatch } from './image-pricing-client.jsx';
+import { ImageCreditPrice, useImagePricingAccess, useServerImagePricing, useServerImagePricingBatch } from './image-pricing-client.jsx';
 import { clampImagePanOffset, imagePanBounds } from './image-pan-zoom.js';
 import { imageQualityLabel } from './image-quality-labels.js';
 import {
@@ -267,10 +270,14 @@ async function writeClipboardText(value) {
   textarea.remove();
 }
 
+function hasLegacyMaiReferenceRules(constraints) {
+  return Boolean(constraints?.isMai && constraints.modelFamily !== 'mai-image-2.7');
+}
+
 function referenceAllowedForModel(item, constraints) {
   if (!constraints?.maxReferenceImages) return false;
   const mimeType = imageItemMimeType(item);
-  if (!mimeType) return !constraints.isMai && !constraints.isGeminiImage;
+  if (!mimeType) return !hasLegacyMaiReferenceRules(constraints) && !constraints.isGeminiImage;
   return constraints.referenceMimeTypes.includes(mimeType);
 }
 
@@ -323,7 +330,7 @@ async function prepareReferenceFile(file, constraints, options = {}) {
   if (!allowedTypes.has(sourceType) || file.size <= 0 || file.size > MAX_REFERENCE_SOURCE_BYTES) {
     throw new Error('INVALID_REFERENCE_FILE');
   }
-  const outputType = options.preserveSourceType || constraints?.isMai ? sourceType : 'image/webp';
+  const outputType = options.preserveSourceType || hasLegacyMaiReferenceRules(constraints) ? sourceType : 'image/webp';
   const image = await loadReferenceFile(file);
   const sourceWidth = image.naturalWidth;
   const sourceHeight = image.naturalHeight;
@@ -497,7 +504,7 @@ const copy = {
     invalidSize: '当前尺寸不符合生图要求。',
     sizeStep: '宽高必须为 16 的倍数。',
     sizeSide: '宽高均需在 480～3840 之间。',
-    sizePixels: '总像素必须在 655,360～8,294,400 之间。',
+    sizePixels: (min = IMAGE_MIN_PIXELS, max = IMAGE_MAX_PIXELS) => `总像素必须在 ${min.toLocaleString('zh-CN')}～${max.toLocaleString('zh-CN')} 之间。`,
     sizeAspect: '宽高比需在 1:3～3:1 之间。',
     maiAutoSize: 'MAI 模型不支持 Auto 尺寸，请选择具体宽高。',
     maiSizeSide: 'MAI 图片宽高均需至少 768 像素。',
@@ -657,7 +664,7 @@ const copy = {
     invalidSize: 'The current dimensions are not valid.',
     sizeStep: 'Width and height must be divisible by 16.',
     sizeSide: 'Width and height must each be between 480 and 3840.',
-    sizePixels: 'Total pixels must stay between 655,360 and 8,294,400.',
+    sizePixels: (min = IMAGE_MIN_PIXELS, max = IMAGE_MAX_PIXELS) => `Total pixels must stay between ${min.toLocaleString('en-US')} and ${max.toLocaleString('en-US')}.`,
     sizeAspect: 'Aspect ratio must stay between 1:3 and 3:1.',
     maiAutoSize: 'MAI models require explicit dimensions; Auto is not supported.',
     maiSizeSide: 'MAI image width and height must each be at least 768 pixels.',
@@ -876,7 +883,7 @@ function sizeErrorText(result, t) {
   if (result.error === 'GEMINI_MAX_PIXELS') return t.geminiSizePixels;
   if (result.error === 'GEMINI_ASPECT_RATIO') return t.geminiAspect;
   if (result.error === 'MIN_SIDE' || result.error === 'MAX_SIDE') return t.sizeSide;
-  if (result.error === 'MIN_PIXELS' || result.error === 'MAX_PIXELS') return t.sizePixels;
+  if (result.error === 'MIN_PIXELS' || result.error === 'MAX_PIXELS') return t.sizePixels(result.constraints?.minPixels, result.constraints?.maxPixels);
   if (result.error === 'ASPECT') return t.sizeAspect;
   return t.invalidSize;
 }
@@ -1331,11 +1338,12 @@ export default function FreeImageWorkspace({
     };
   }, []);
   const referenceAccept = modelConstraints.referenceMimeTypes.join(',');
+  const legacyMaiReferences = hasLegacyMaiReferenceRules(modelConstraints);
   const referenceHintText = maxReferenceImages === 0
     ? t.referenceUnsupported
     : modelConstraints.isGeminiImage
       ? t.geminiReferenceHint
-    : modelConstraints.isMai
+    : legacyMaiReferences
       ? t.maiReferenceHint(maxReferenceImages)
       : t.referenceHint;
   const referenceLimitMessage = maxReferenceImages === 0
@@ -1350,9 +1358,11 @@ export default function FreeImageWorkspace({
     () => validateImageSizeForModel(size, selectedProvider?.model),
     [selectedProvider?.model, size]
   );
+  const { skipImagePricing, showImagePricing, requestImagePricing } = useImagePricingAccess();
+  const quoteOptions = { size, quality, providerId, prompt, referenceCount: references.length, chargeTextTokens: selectedProvider?.chargeTextTokens };
   const { pricing, loading: pricingLoading, error: pricingError } = useServerImagePricing(
-    { size, quality, providerId, prompt, referenceCount: creationMode === 'single' ? references.length : 0 },
-    { enabled: hasFullWorkspace && sizeCheck.valid && Boolean(providerId) }
+    quoteOptions,
+    { enabled: workspaceTab === 'control' && creationMode === 'single' && hasFullWorkspace && sizeCheck.valid && Boolean(providerId) }
   );
   const batchRepairItems = useMemo(() => batchRepairImages.map((item) => {
     const referenceTooLarge = isImageReferenceTooLarge(item);
@@ -1385,14 +1395,14 @@ export default function FreeImageWorkspace({
     })), [batchPromptItems, batchPromptMode, batchRepairItems, size, sizeCheck]);
   const batchPricingRequests = useMemo(() => batchRepairJobs
     .filter((job) => job.sizing.valid)
-    .map((job) => ({ key: job.key, size: job.sizing.size, quality, prompt: job.prompt, count: 1, referenceCount: job.image ? 1 : 0, providerId })),
-  [batchRepairJobs, providerId, quality]);
+    .map((job) => ({ key: job.key, size: job.sizing.size, quality, prompt: job.prompt, count: 1, referenceCount: job.image ? 1 : 0, providerId, chargeTextTokens: selectedProvider?.chargeTextTokens })),
+  [batchRepairJobs, providerId, quality, selectedProvider?.chargeTextTokens]);
   const {
     pricingByKey: batchPricingByKey,
     loading: batchPricingLoading,
     error: batchPricingError
   } = useServerImagePricingBatch(batchPricingRequests, {
-    enabled: creationMode === 'batch-repair' && hasFullWorkspace && Boolean(providerId) && batchPricingRequests.length > 0
+    enabled: workspaceTab === 'control' && creationMode === 'batch-repair' && hasFullWorkspace && Boolean(providerId) && batchPricingRequests.length > 0
   });
   const batchRepairTotalCredits = batchRepairJobs.reduce(
     (total, job) => total + Number(batchPricingByKey[job.key]?.credits || 0),
@@ -1410,6 +1420,8 @@ export default function FreeImageWorkspace({
     && batchRepairJobs.length === batchPromptState.activeCount
     && batchRepairJobs.every((job) => Boolean(job.prompt));
   const batchNewActiveCount = batchRepairJobs.filter((job) => job.sizing.valid).length;
+  const batchQuoteBlocked = !skipImagePricing && (batchPricingLoading || Boolean(batchPricingError)
+    || batchRepairJobs.some((job) => job.sizing.valid && !batchPricingByKey[job.key]));
   const batchHasPromptContent = batchPromptItems.some((item) => String(item.text || '').trim());
   const batchQueueAtLimit = activeQueueTaskCount + batchNewActiveCount > MAX_ACTIVE_IMAGE_TASKS;
   const displayedQueueTasks = useMemo(() => [...queueTasks].sort((left, right) => {
@@ -1954,7 +1966,7 @@ export default function FreeImageWorkspace({
       selectedProvider?.model,
       preset.width,
       preset.height,
-      modelConstraints.isMai ? 1024 : 1536
+      legacyMaiReferences ? 1024 : modelSizeTemplate.targetLongSide
     );
     if (!next) return;
     applyDimensions(next);
@@ -1987,12 +1999,9 @@ export default function FreeImageWorkspace({
     setSizeMode('custom');
     if (!activeRatio) {
       const otherValue = changed === 'width' ? height : width;
-      const maxByPixels = Math.floor(
-        modelConstraints.maxPixels / Math.max(modelConstraints.minSide, otherValue) / 16
-      ) * 16;
       const nextValue = alignImageDimension(rawValue, {
         min: modelConstraints.minSide,
-        max: Math.max(modelConstraints.minSide, Math.min(modelConstraints.maxSide, maxByPixels))
+        max: maxImageDimensionForOtherSide(otherValue, modelConstraints)
       });
       applyDimensions({
         width: changed === 'width' ? nextValue : width,
@@ -2456,7 +2465,7 @@ export default function FreeImageWorkspace({
         message: oversized
           ? t.referenceTooLarge
           : failed
-          ? modelConstraints.isMai ? t.maiReferenceUploadFailed : t.referenceUploadFailed
+          ? legacyMaiReferences ? t.maiReferenceUploadFailed : t.referenceUploadFailed
           : exceeded ? referenceLimitMessage : ''
       }));
     } finally {
@@ -2856,13 +2865,11 @@ export default function FreeImageWorkspace({
       setState((current) => ({ ...current, message: t.queueFull }));
       return;
     }
-    const supportedJobs = batchRepairJobs.filter((job) => job.sizing.valid);
-    if (supportedJobs.length && (batchPricingLoading || batchPricingError
-      || supportedJobs.some((job) => !batchPricingByKey[job.key]))) {
+    if (batchNewActiveCount && batchQuoteBlocked) {
       setState((current) => ({ ...current, message: t.failed }));
       return;
     }
-    if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < batchRepairTotalCredits) {
+    if (!skipImagePricing && !profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < batchRepairTotalCredits) {
       if (!profile?.groupAccount) onBilling?.();
       setState((current) => ({ ...current, message: billingMessage(profile, t) }));
       return;
@@ -2930,8 +2937,8 @@ export default function FreeImageWorkspace({
       setBatchPromptItems([createBatchPromptItem()]);
       setState((current) => ({
         ...current,
-        message: batchRepairJobs.length > supportedJobs.length
-          ? t.batchQueued(supportedJobs.length, batchRepairJobs.length - supportedJobs.length)
+        message: batchRepairJobs.length > batchNewActiveCount
+          ? t.batchQueued(batchNewActiveCount, batchRepairJobs.length - batchNewActiveCount)
           : '',
         feedbackTone: 'warning'
       }));
@@ -2994,7 +3001,7 @@ export default function FreeImageWorkspace({
       return;
     }
     if (!referencesValid) {
-      setState((current) => ({ ...current, message: oversizedReferences.length ? t.referenceTooLarge : modelConstraints.isMai ? t.maiReferenceUploadFailed : referenceLimitMessage }));
+      setState((current) => ({ ...current, message: oversizedReferences.length ? t.referenceTooLarge : legacyMaiReferences ? t.maiReferenceUploadFailed : referenceLimitMessage }));
       return;
     }
     if (activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS) {
@@ -3415,14 +3422,14 @@ export default function FreeImageWorkspace({
       return;
     }
     if (hasFullWorkspace && !referencesValid) {
-      setState((current) => ({ ...current, message: oversizedReferences.length ? t.referenceTooLarge : modelConstraints.isMai ? t.maiReferenceUploadFailed : referenceLimitMessage }));
+      setState((current) => ({ ...current, message: oversizedReferences.length ? t.referenceTooLarge : legacyMaiReferences ? t.maiReferenceUploadFailed : referenceLimitMessage }));
       return;
     }
     const requestedCount = hasFullWorkspace ? count : 1;
-    if (hasFullWorkspace) {
+    if (hasFullWorkspace && !skipImagePricing) {
       let confirmedPricing;
       try {
-        confirmedPricing = await requestImagePricing({ size, quality, providerId, prompt, referenceCount: references.length });
+        confirmedPricing = await requestImagePricing(quoteOptions);
       } catch {
         setState((current) => ({ ...current, message: t.failed }));
         return;
@@ -3883,7 +3890,7 @@ export default function FreeImageWorkspace({
               </div>
             </div>
             <div className="freeImageSupportingReferenceColumn" onDrop={handleReferenceDrop}>
-              <div className="freeImageReferenceHeading"><div><strong>{t.supportingReferences}</strong>{modelConstraints.isMai || !maxReferenceImages ? <small>{referenceHintText}</small> : null}</div><span>{supportingReferences.length}/{maxSupportingReferences}</span></div>
+              <div className="freeImageReferenceHeading"><div><strong>{t.supportingReferences}</strong>{legacyMaiReferences || !maxReferenceImages ? <small>{referenceHintText}</small> : null}</div><span>{supportingReferences.length}/{maxSupportingReferences}</span></div>
               <div className="freeImageReferenceList">
                 {supportingReferences.map((reference, index) => (
                   <article
@@ -4099,12 +4106,12 @@ export default function FreeImageWorkspace({
           {creationMode === 'single' && pricingError ? <ImageStudioFeedback>{t.quoteFailed}</ImageStudioFeedback> : null}
           {creationMode === 'single' ? (
           <div className="freeImageGenerateActions">
-          <button className="freeImageGenerateButton" type="submit" disabled={queueSubmitting || singleSubmitLocked || isGenerating || uploadingReferences || (hasFullWorkspace && (!sizeCheck.valid || !referencesValid || pricingLoading || !pricing))} aria-busy={singleSubmitLocked || isGenerating}>
+          <button className="freeImageGenerateButton" type="submit" disabled={queueSubmitting || singleSubmitLocked || isGenerating || uploadingReferences || (hasFullWorkspace && (!sizeCheck.valid || !referencesValid || (!skipImagePricing && (pricingLoading || !pricing))))} aria-busy={singleSubmitLocked || isGenerating}>
             {singleSubmitLocked || isGenerating ? <LoaderCircle size={19} className="spin" /> : <ImagePlus size={19} />}
             {singleSubmitLocked || isGenerating ? (
-              <><span className="freeImageGenerateLabel">{t.generating}</span>{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact totalOnly /> : null}</>
+              <><span className="freeImageGenerateLabel">{t.generating}</span>{hasFullWorkspace && showImagePricing ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact totalOnly /> : null}</>
             ) : hasFullWorkspace ? (
-              <><span className="freeImageGenerateLabel">{t.generate}</span><ImageCreditPrice pricing={pricing} quantity={count} language={language} compact totalOnly /></>
+              <><span className="freeImageGenerateLabel">{t.generate}</span>{showImagePricing ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact totalOnly /> : null}</>
             ) : guestUsed ? t.signIn : t.generateFree(guestRemaining)}
           </button>
           <button
@@ -4125,8 +4132,7 @@ export default function FreeImageWorkspace({
               className={`freeImageGenerateButton freeImageBatchQueueButton ${batchRepairSubmitting ? 'submitting' : ''}`}
               type="submit"
               disabled={batchRepairSubmitting || batchRepairUploading || !hasFullWorkspace || (batchHasImages && !batchProviderSupported) || batchHasOversizedReferences || !batchPromptsValid
-                || batchQueueAtLimit || batchPricingLoading || (!batchKeepsReferenceSize && !sizeCheck.valid)
-                || Boolean(batchPricingError) || batchRepairJobs.some((job) => job.sizing.valid && !batchPricingByKey[job.key])}
+                || batchQueueAtLimit || batchQuoteBlocked || (!batchKeepsReferenceSize && !sizeCheck.valid)}
               aria-busy={batchRepairSubmitting}
             >
               {batchRepairSubmitting || batchRepairUploading || batchPricingLoading ? <LoaderCircle size={19} className="spin" /> : <WandSparkles size={19} />}
@@ -4138,8 +4144,7 @@ export default function FreeImageWorkspace({
               type="button"
               onClick={(event) => queueBatchRepair(event, { stayOnPage: true })}
               disabled={batchRepairSubmitting || batchRepairUploading || !hasFullWorkspace || (batchHasImages && !batchProviderSupported) || batchHasOversizedReferences || !batchPromptsValid
-                || batchQueueAtLimit || batchPricingLoading || (!batchKeepsReferenceSize && !sizeCheck.valid)
-                || Boolean(batchPricingError) || batchRepairJobs.some((job) => job.sizing.valid && !batchPricingByKey[job.key])}
+                || batchQueueAtLimit || batchQuoteBlocked || (!batchKeepsReferenceSize && !sizeCheck.valid)}
               title={batchQueueAtLimit ? t.queueFull : t.addBatchQueue}
             ><ListTodo size={18} />{batchQueueAtLimit ? t.queueFullButton : t.addBatchQueue}</button>
           </div>

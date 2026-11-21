@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link2, SlidersHorizontal, Unlink2 } from 'lucide-react';
+import { maxImageDimensionForOtherSide } from '../shared/image-generation.js';
 import { IMAGE_QUALITY_VALUES, imageQualityLabel } from './image-quality-labels.js';
 import { studioSizeChoices } from './free-image-settings-ui.js';
 
@@ -15,6 +16,7 @@ export default function FreeImageSettings({
   const sizeDisabled = batch ? batchRepairUploading || batchKeepsReferenceSize : !hasFullWorkspace || isGenerating;
   const detailDisabled = batch ? batchRepairUploading : !hasFullWorkspace || isGenerating;
   const visibleRatio = !batch && !hasFullWorkspace ? '1:1' : ratioLock;
+  const isMai27 = modelConstraints.modelFamily === 'mai-image-2.7';
   const choices = studioSizeChoices(model, visibleRatio, commonSizeOptions, ratioOptions);
   const selectedSize = !batch && !hasFullWorkspace ? '1024x1024'
     : sizeMode === 'auto' ? 'auto'
@@ -54,24 +56,30 @@ export default function FreeImageSettings({
       </label>
     </div>
     {sizeMode === 'custom' && (!batch || !batchKeepsReferenceSize) ? <div className="freeImageDimensionRail">
-      {[{ key: 'width', label: t.width, value: !batch && !hasFullWorkspace ? 1024 : width }, { key: 'height', label: t.height, value: !batch && !hasFullWorkspace ? 1024 : height }].map(dimension => <label key={dimension.key}>
-        <span>{dimension.label}<small>px</small></span>
-        <input type="range" aria-label={`${dimension.label} ${zh ? '滑块' : 'slider'}`} min={modelConstraints.minSide} max={modelConstraints.maxSide} step="16" value={dimension.value} onChange={event => updateDimension(dimension.key, event.target.value)} disabled={detailDisabled} />
-        <input type="number" aria-label={`${dimension.label} px`} inputMode="numeric" step="1" min={modelConstraints.minSide} max={modelConstraints.maxSide} value={!batch && !hasFullWorkspace ? '1024' : dimensionDrafts[dimension.key]} onChange={event => updateDimensionDraft(dimension.key, event.target.value)} onBlur={() => commitDimensionDraft(dimension.key)} onKeyDown={event => {
-          if (event.key === 'Enter') { event.preventDefault(); commitDimensionDraft(dimension.key); event.currentTarget.blur(); }
-          else if (!batch && event.key === 'Escape') {
-            event.preventDefault();
-            setDimensionDrafts(current => ({ ...current, [dimension.key]: String(dimension.key === 'width' ? width : height) }));
-            event.currentTarget.blur();
-          }
-        }} disabled={detailDisabled} />
-      </label>)}
+      {[{ key: 'width', label: t.width, value: !batch && !hasFullWorkspace ? 1024 : width }, { key: 'height', label: t.height, value: !batch && !hasFullWorkspace ? 1024 : height }].map(dimension => {
+        const max = isMai27 && visibleRatio === 'free'
+          ? maxImageDimensionForOtherSide(dimension.key === 'width' ? height : width, modelConstraints)
+          : modelConstraints.maxSide;
+        return <label key={dimension.key}>
+          <span>{dimension.label}<small>px</small></span>
+          <input type="range" aria-label={`${dimension.label} ${zh ? '滑块' : 'slider'}`} min={modelConstraints.minSide} max={max} step="16" value={dimension.value} onChange={event => updateDimension(dimension.key, event.target.value)} disabled={detailDisabled} />
+          <input type="number" aria-label={`${dimension.label} px`} inputMode="numeric" step="1" min={modelConstraints.minSide} max={max} value={!batch && !hasFullWorkspace ? '1024' : dimensionDrafts[dimension.key]} onChange={event => updateDimensionDraft(dimension.key, event.target.value)} onBlur={() => commitDimensionDraft(dimension.key)} onKeyDown={event => {
+            if (event.key === 'Enter') { event.preventDefault(); commitDimensionDraft(dimension.key); event.currentTarget.blur(); }
+            else if (!batch && event.key === 'Escape') {
+              event.preventDefault();
+              setDimensionDrafts(current => ({ ...current, [dimension.key]: String(dimension.key === 'width' ? width : height) }));
+              event.currentTarget.blur();
+            }
+          }} disabled={detailDisabled} />
+        </label>;
+      })}
     </div> : null}
     <div className="studioDimensionSummary">
       {batchKeepsReferenceSize && batch ? <span>{t.preserveOriginalSize}</span> : sizeMode === 'auto' ? <span>{t.auto}</span> : <>
         {ratioLock === 'free' ? <Unlink2 size={15} /> : <Link2 size={15} />}
         <span><strong>{!batch && !hasFullWorkspace ? '1024 × 1024' : `${width} × ${height}`} px</strong><small>{!batch && !hasFullWorkspace ? '1:1' : `${canvasRatio.width}:${canvasRatio.height}`} · {ratioLock === 'free' ? (zh ? '自由宽高' : 'Independent dimensions') : (zh ? '等比联动' : 'Linked dimensions')}</small></span>
       </>}
+      {isMai27 && <small>{zh ? '总像素上限' : 'Pixel limit'}: {modelConstraints.maxPixels.toLocaleString(zh ? 'zh-CN' : 'en-US')}</small>}
     </div>
     <div className="freeImageControlRail studioQualityRail">
       <label>

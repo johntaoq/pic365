@@ -5,6 +5,7 @@ import {
   GEMINI_IMAGE_RATIO_PRESETS,
   getImageModelConstraints,
   IMAGE_RATIO_PRESETS,
+  isMaiImage27Model,
   parseImageSize,
   validateImageSizeForModel
 } from './image-generation.js';
@@ -49,6 +50,13 @@ export const IMAGE_SIZE_TEMPLATE_CATALOG = Object.freeze({
   })
 });
 
+const MAI_27_SIZE_TEMPLATE = Object.freeze({
+  ...IMAGE_SIZE_TEMPLATE_CATALOG.gpt,
+  id: 'mai',
+  model: 'MAI-Image-2.7',
+  sizes: Object.freeze([...COMMON_IMAGE_SIZES, '2016x2016', '1344x3072', '3072x1344'])
+});
+
 export function imageSizeTemplateFamily(model) {
   const constraints = getImageModelConstraints(model);
   if (constraints.isGeminiImage) return 'gemini';
@@ -58,7 +66,7 @@ export function imageSizeTemplateFamily(model) {
 
 export function imageSizeTemplateForModel(model) {
   const family = imageSizeTemplateFamily(model);
-  const configured = IMAGE_SIZE_TEMPLATE_CATALOG[family];
+  const configured = isMaiImage27Model(model) ? MAI_27_SIZE_TEMPLATE : IMAGE_SIZE_TEMPLATE_CATALOG[family];
   const constraints = getImageModelConstraints(model || configured.model);
   const isMai26 = constraints.modelFamily === 'mai-image-2.6';
   const targetLongSide = isMai26 ? 1536 : configured.targetLongSide;

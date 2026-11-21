@@ -68,8 +68,7 @@ import EcommerceAssetLibraryPicker from './ecommerce-asset-library-picker.jsx';
 import { clampImagePanOffset } from './image-pan-zoom.js';
 import {
   ImageCreditPrice,
-  requestImagePricing,
-  requestImagePricingBatch,
+  useImagePricingAccess,
   useServerImagePricing,
   useServerImagePricingBatch
 } from './image-pricing-client.jsx';
@@ -78,7 +77,7 @@ import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-sel
 function ecommerceProviderCompatibility(provider, assets = []) {
   if (!provider) return { valid: false, error: 'AI_PROVIDER_NOT_CONFIGURED' };
   const constraints = getImageModelConstraints(provider.model);
-  if (!constraints.isMai) return { valid: true, constraints };
+  if (!constraints.isMai || constraints.modelFamily === 'mai-image-2.7') return { valid: true, constraints };
   const availableAssets = assets.filter((asset) => asset.available !== false);
   return validateImageReferenceInputsForModel({
     model: provider.model,
@@ -996,6 +995,8 @@ function EcommerceVersionCenterModal({
   project,
   assets,
   providerId,
+  providerModel,
+  chargeTextTokens,
   quality,
   actionState,
   onClose,
@@ -1016,11 +1017,12 @@ function EcommerceVersionCenterModal({
   }, [slot?.id, output?.selectedGenerationId]);
 
   const baseGeneration = versions.find((item) => item.id === baseGenerationId) || null;
-  const revisionSize = slot ? resolveEcommerceRefinementSize(baseGeneration, slot) : '1024x1024';
+  const revisionSize = slot ? resolveEcommerceRefinementSize(baseGeneration, slot, providerModel) : '1024x1024';
   const referenceCount = countEcommerceReferenceImages({ project, slot, assets, baseGenerationId });
+  const { skipImagePricing, showImagePricing } = useImagePricingAccess();
   const { pricing: revisionPricing, loading: revisionPricingLoading } = useServerImagePricing(
-    { size: revisionSize, quality, providerId, referenceCount, projectId: project.id, slotId: slot?.id, baseGenerationId, adjustment },
-    { enabled: Boolean(slot) }
+    { size: revisionSize, quality, providerId, referenceCount, projectId: project.id, slotId: slot?.id, baseGenerationId, adjustment, chargeTextTokens },
+    { enabled: Boolean(slot && providerId) }
   );
 
   if (!slot) return null;
@@ -1131,11 +1133,11 @@ function EcommerceVersionCenterModal({
           <textarea value={adjustment} onChange={(event) => setAdjustment(event.target.value)} placeholder={t.localRevisionPlaceholder} disabled={output?.locked} />
           <button
             type="button"
-            disabled={output?.locked || revisionPricingLoading || !revisionPricing || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
+            disabled={output?.locked || (!skipImagePricing && (revisionPricingLoading || !revisionPricing)) || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
             onClick={() => onRevise({ baseGenerationId, adjustment: adjustment.trim() })}
           >
             {actionState === 'revise' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-            {t.createRevisionLabel} · <ImageCreditPrice pricing={revisionPricing} language={language} compact totalOnly />
+            {t.createRevisionLabel}{showImagePricing && <> · <ImageCreditPrice pricing={revisionPricing} language={language} compact totalOnly /></>}
           </button>
           {output?.locked ? <p>{t.slotLocked}</p> : null}
         </div>
@@ -1181,6 +1183,7 @@ export default function EcommerceWorkspace({
 }) {
   const t = copy[language] || copy.en;
   const signedIn = hasSession(session);
+  const { skipImagePricing, showImagePricing, requestImagePricing, requestImagePricingBatch } = useImagePricingAccess();
   const hasAccess = signedIn && Boolean(profile?.isSuperAdmin || profile?.externalWallet || Number(profile?.creditBalance || 0) > 0);
   const [projects, setProjects] = useState([]);
   const [form, setForm] = useState(() => createEmptyForm());
@@ -2389,44 +2392,50 @@ export default function EcommerceWorkspace({
       setGenerationMessage(t.slotLocked);
       return false;
     }
-    const catalogSlot = platform.slots.find((item) => item.id === slotId);
-    const referenceCount = countEcommerceReferenceImages({
-      project,
-      slot: catalogSlot,
-      assets,
-      baseGenerationId: request.baseGenerationId || '',
-      referenceInputs: request.referenceInputs || []
-    });
-    const baseGeneration = request.baseGenerationId
-      ? generations.find((generation) => generation.id === request.baseGenerationId)
-      : null;
-    const pricingSize = catalogSlot
-      ? request.baseGenerationId
-        ? resolveEcommerceRefinementSize(baseGeneration, catalogSlot)
-        : resolveEcommerceSlotGenerationSize(catalogSlot)
-      : '1024x1024';
-    let confirmedPricing;
-    try {
-      confirmedPricing = await requestImagePricing({
-        projectId: project.id, slotId, ...request,
-        size: pricingSize,
-        quality: effectiveGenerationQuality,
-        providerId: project.imageProviderId,
-        referenceCount
+    if (!skipImagePricing) {
+      const catalogSlot = platform.slots.find((item) => item.id === slotId);
+      const referenceCount = countEcommerceReferenceImages({
+        project,
+        slot: catalogSlot,
+        assets,
+        baseGenerationId: request.baseGenerationId || '',
+        referenceInputs: request.referenceInputs || []
       });
-    } catch (error) {
-      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
-      return false;
-    }
-    const requiredCredits = Number(confirmedPricing.credits || 0);
-    if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
-      setGenerationMessage(profile?.groupAccount?.role === 'member'
-        ? t.groupBudgetRequired
-        : profile?.groupAccount?.role === 'admin'
-          ? t.groupBalanceRequired
-          : t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
-      if (!profile?.groupAccount) onBilling?.();
-      return false;
+      const baseGeneration = request.baseGenerationId
+        ? generations.find((generation) => generation.id === request.baseGenerationId)
+        : null;
+      const provider = imageProviders.find((item) => item.id === project.imageProviderId);
+      const pricingSize = catalogSlot
+        ? request.baseGenerationId
+          ? resolveEcommerceRefinementSize(baseGeneration, catalogSlot, provider?.model)
+          : resolveEcommerceSlotGenerationSize(catalogSlot)
+        : '1024x1024';
+      let confirmedPricing;
+      try {
+        confirmedPricing = await requestImagePricing(!request.baseGenerationId && !request.adjustment && !request.referenceInputs?.length && catalogSlot
+          ? productionQuoteItem(project, catalogSlot)
+          : {
+            projectId: project.id, slotId, ...request,
+            size: pricingSize,
+            quality: effectiveGenerationQuality,
+            providerId: project.imageProviderId,
+            chargeTextTokens: provider?.chargeTextTokens,
+            referenceCount
+          });
+      } catch (error) {
+        setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+        return false;
+      }
+      const requiredCredits = Number(confirmedPricing.credits || 0);
+      if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
+        setGenerationMessage(profile?.groupAccount?.role === 'member'
+          ? t.groupBudgetRequired
+          : profile?.groupAccount?.role === 'admin'
+            ? t.groupBalanceRequired
+            : t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
+        if (!profile?.groupAccount) onBilling?.();
+        return false;
+      }
     }
 
     let serverTask = taskId ? generationTasksRef.current.get(slotId) : null;
@@ -2553,29 +2562,25 @@ export default function EcommerceWorkspace({
       setGenerationMessage(selectedProviderCompatibilityMessage);
       return;
     }
-    let pricingQuotes;
-    try {
-      pricingQuotes = await requestImagePricingBatch(slotIds.map((slotId) => {
-        const slot = platform.slots.find((item) => item.id === slotId);
-        const referenceCount = countEcommerceReferenceImages({ project, slot, assets });
-        return slot
-          ? { key: slotId, size: resolveEcommerceSlotGenerationSize(slot), quality: effectiveGenerationQuality, providerId: project.imageProviderId, referenceCount, projectId: project.id, slotId }
-          : { key: slotId, size: '1024x1024', quality: effectiveGenerationQuality, providerId: project.imageProviderId, referenceCount };
-      }));
-    } catch (error) {
-      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
-      return;
-    }
-    const requiredCredits = pricingQuotes.reduce((total, quote) => total + Number(quote?.pricing?.credits || 0), 0);
-    const availableCredits = profile?.isSuperAdmin ? Number.POSITIVE_INFINITY : Number(profile?.creditBalance || 0);
-    if (requiredCredits > availableCredits) {
-      setGenerationMessage(profile?.groupAccount?.role === 'member'
-        ? t.groupBudgetRequired
-        : profile?.groupAccount?.role === 'admin'
-          ? t.groupBalanceRequired
-          : t.insufficientBatchCredits(requiredCredits, availableCredits));
-      if (!profile?.groupAccount) onBilling?.();
-      return;
+    if (!skipImagePricing) {
+      let pricingQuotes;
+      try {
+        pricingQuotes = await requestImagePricingBatch(slotIds.map((slotId) => productionQuoteItem(project, platform.slots.find((item) => item.id === slotId), slotId)));
+      } catch (error) {
+        setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+        return;
+      }
+      const requiredCredits = pricingQuotes.reduce((total, quote) => total + Number(quote?.pricing?.credits || 0), 0);
+      const availableCredits = profile?.isSuperAdmin ? Number.POSITIVE_INFINITY : Number(profile?.creditBalance || 0);
+      if (requiredCredits > availableCredits) {
+        setGenerationMessage(profile?.groupAccount?.role === 'member'
+          ? t.groupBudgetRequired
+          : profile?.groupAccount?.role === 'admin'
+            ? t.groupBalanceRequired
+            : t.insufficientBatchCredits(requiredCredits, availableCredits));
+        if (!profile?.groupAccount) onBilling?.();
+        return;
+      }
     }
     try {
       await createServerTasks(slotIds.map((slotId) => ({
@@ -2740,18 +2745,27 @@ export default function EcommerceWorkspace({
     return latest;
   }, [generationsBySlot]);
   const productionSlots = platform.slots.filter((item) => form.selectedSlots.includes(item.id));
+  const pricingAssetRevision = useMemo(() => JSON.stringify(assets.map((asset) => [asset.id, asset.createdAt, asset.available])), [assets]);
+  function productionQuoteItem(project, slot, slotId = slot?.id) {
+    const provider = imageProviders.find((item) => item.id === project.imageProviderId);
+    return {
+      key: slotId,
+      projectId: slot ? project.id : '',
+      slotId: slot ? slotId : '',
+      projectRevision: project.updatedAt ? `${project.updatedAt}:${pricingAssetRevision}` : '',
+      size: slot ? resolveEcommerceSlotGenerationSize(slot) : '1024x1024',
+      quality: effectiveGenerationQuality,
+      providerId: project.imageProviderId,
+      chargeTextTokens: provider?.chargeTextTokens,
+      referenceCount: countEcommerceReferenceImages({ project, slot, assets })
+    };
+  }
   const {
     pricingByKey: productionPricingQuotes,
     loading: productionPricingLoading
-  } = useServerImagePricingBatch(productionSlots.map((slot) => ({
-    key: slot.id,
-    projectId: form.id,
-    slotId: slot.id,
-    size: resolveEcommerceSlotGenerationSize(slot),
-    quality: effectiveGenerationQuality,
-    providerId: form.imageProviderId,
-    referenceCount: countEcommerceReferenceImages({ project: form, slot, assets })
-  })));
+  } = useServerImagePricingBatch(productionSlots.map((slot) => productionQuoteItem(form, slot)), {
+    enabled: Boolean(signedIn && form.imageProviderId)
+  });
   const productionPricingBySlot = new Map(productionSlots.map((slot) => [slot.id, productionPricingQuotes[slot.id] || null]));
   const selectableProductionSlots = productionSlots.filter((item) => !outputsBySlot.get(item.id)?.locked);
   const selectedPricingComplete = selectedProductionSlots.every((slotId) => Boolean(productionPricingBySlot.get(slotId)));
@@ -3269,7 +3283,7 @@ export default function EcommerceWorkspace({
                 </button>
                 <div className="ecommerceBatchGenerateGroup">
                   <span className="ecommerceBatchPrice">
-                    {t.batchSelectionLabel(selectedProductionSlots.length)} <ImageCreditPrice pricing={selectedProductionPricing} language={language} compact />
+                    {t.batchSelectionLabel(selectedProductionSlots.length)} {showImagePricing && <ImageCreditPrice pricing={selectedProductionPricing} language={language} compact />}
                   </span>
                   <button
                     className="primary"
@@ -3376,7 +3390,7 @@ export default function EcommerceWorkspace({
                             : retryable
                               ? handleRetryTask(item.id)
                               : runSlotGeneration(item.id)}
-                          disabled={output?.locked || retrySubmitting || task?.status === 'cancelling' || (!taskActive && (batchRunning || productionPricingLoading || !slotPricing || !form.masterAssetId || status === 'saving' || !selectedProviderCompatibility.valid || oversizedProjectAssets.length > 0))}
+                          disabled={output?.locked || retrySubmitting || task?.status === 'cancelling' || (!taskActive && (batchRunning || (!skipImagePricing && (productionPricingLoading || !slotPricing)) || !form.masterAssetId || status === 'saving' || !selectedProviderCompatibility.valid || oversizedProjectAssets.length > 0))}
                         >
                           {retrySubmitting
                             ? <><LoaderCircle size={15} className="spin" /> {t.retrySubmitting}</>
@@ -3385,11 +3399,7 @@ export default function EcommerceWorkspace({
                             : retryable ? <RotateCcw size={15} /> : adopted ? <RefreshCw size={15} /> : <Sparkles size={15} />}
                           {retrySubmitting ? null : taskActive
                             ? task.status === 'cancelling' ? t.cancelling : t.cancel
-                            : retryable
-                              ? <>{t.retryLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact totalOnly /></>
-                              : adopted
-                                ? <>{t.regenerateSlotLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact totalOnly /></>
-                                : <>{t.generateSlotLabel} · <ImageCreditPrice pricing={slotPricing} language={language} compact totalOnly /></>}
+                            : <>{retryable ? t.retryLabel : adopted ? t.regenerateSlotLabel : t.generateSlotLabel}{showImagePricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact totalOnly /></>}</>}
                         </button>
                         <button className="versions" type="button" onClick={() => setVersionCenterSlotId(item.id)}>
                           <History size={14} /> {t.versions}{versions.length ? ` · ${versions.length}` : ''}
@@ -3433,6 +3443,8 @@ export default function EcommerceWorkspace({
                   language={language}
                   userId={session?.user?.id || profile?.id || ''}
                   project={form}
+                  providerModel={selectedImageProvider?.model}
+                  chargeTextTokens={selectedImageProvider?.chargeTextTokens}
                   platform={platform}
                   slots={productionSlots}
                   outputs={outputs}
@@ -3478,6 +3490,8 @@ export default function EcommerceWorkspace({
         project={form}
         assets={assets}
         providerId={form.imageProviderId}
+        providerModel={selectedImageProvider?.model}
+        chargeTextTokens={selectedImageProvider?.chargeTextTokens}
         quality={effectiveGenerationQuality}
         actionState={versionActionState}
         onClose={() => setVersionCenterSlotId('')}

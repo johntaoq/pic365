@@ -32,7 +32,7 @@ import {
 } from '../shared/ecommerce-layout-studio.js';
 import { getImageModelConstraints } from '../shared/image-generation.js';
 import { activeEcommerceWatermarkSettings } from '../shared/ecommerce-layout-watermark.js';
-import { requestImagePricingBatch, useServerImagePricingBatch } from './image-pricing-client.jsx';
+import { useImagePricingAccess, useServerImagePricingBatch } from './image-pricing-client.jsx';
 import { MAX_ACTIVE_IMAGE_TASKS } from './image-task-list.js';
 import FreeImageSettings from './free-image-settings.jsx';
 import EcommerceLayoutResults from './ecommerce-layout-results.jsx';
@@ -328,6 +328,7 @@ export default function EcommerceLayoutStudio({
     ? availableLayouts.filter((item) => item.group === galleryGroup) : availableLayouts;
   const enteredPoints = sellingPoints.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
   const isSignedIn = Boolean(session?.user || session?.access_token);
+  const { skipImagePricing, showImagePricing, requestImagePricingBatch } = useImagePricingAccess();
   const canQuote = isSignedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
   const quoteItems = useMemo(() => slots.map((slot) => ({
     key: slot.key,
@@ -335,9 +336,10 @@ export default function EcommerceLayoutStudio({
     size,
     quality,
     count: 1,
+    chargeTextTokens: provider?.chargeTextTokens,
     referenceCount: layoutReferenceCount(sources.length || 1, slot.layoutId),
     prompt: buildEcommerceLayoutPrompt({ slot, productName, sellingPoints, scene, copyLanguage: language, productReferenceCount: sources.length || 1 })
-  })), [slots, providerId, size, quality, productName, sellingPoints, scene, language, sources.length]);
+  })), [slots, providerId, size, quality, productName, sellingPoints, scene, language, sources.length, provider?.chargeTextTokens]);
   const { pricingByKey, loading: pricingLoading, error: pricingError } = useServerImagePricingBatch(quoteItems, {
     enabled: visible && canQuote && sizeCheck.valid && Boolean(sources.length && provider && slots.length),
     debounceMs: 220
@@ -473,7 +475,7 @@ export default function EcommerceLayoutStudio({
     if (!sources.length) { setMessage(t.missingSource); uploadButtonRef.current?.focus(); return; }
     if (enteredPoints.length > 3) { setMessage(t.tooManyPoints); return; }
     if (!isSignedIn) { onSignIn?.(); return; }
-    if (!canQuote) { onBilling?.(); setMessage(t.insufficient); return; }
+    if (!skipImagePricing && !canQuote) { onBilling?.(); setMessage(t.insufficient); return; }
     if (!provider || !size || !sizeCheck.valid) { setMessage(t.invalidProvider); return; }
     if (sources.some((source) => !allowedMimeTypes.includes(source.mimeType))) { setMessage(t.unsupportedFile); return; }
     if (activeQueueTaskCount + slots.length > MAX_ACTIVE_IMAGE_TASKS) { setMessage(t.queueFull); return; }
@@ -501,12 +503,14 @@ export default function EcommerceLayoutStudio({
     setSubmitting(true);
     setMessage('');
     try {
-      const quotes = await requestImagePricingBatch(quoteItems);
-      const requiredCredits = formatCredits(quotes.reduce((sum, item) => sum + Number(item.pricing?.credits || 0), 0));
-      if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
-        onBilling?.();
-        setMessage(t.insufficient);
-        return;
+      if (!skipImagePricing) {
+        const quotes = await requestImagePricingBatch(quoteItems);
+        const requiredCredits = formatCredits(quotes.reduce((sum, item) => sum + Number(item.pricing?.credits || 0), 0));
+        if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
+          onBilling?.();
+          setMessage(t.insufficient);
+          return;
+        }
       }
       const productReferences = sources.map((source) => source.source === 'asset'
         ? { assetId: source.assetId, annotations: [] }
@@ -626,10 +630,10 @@ export default function EcommerceLayoutStudio({
         </section>
         </div>
         <div className="layoutStudioSubmit">
-          <div className="layoutStudioEstimate">
+          {showImagePricing && <div className="layoutStudioEstimate">
             <span>{t.bill} · {slots.length} {t.total}</span>
             <strong className={pricingError || !provider || !sizeCheck.valid ? 'error' : ''}>{!slots.length ? t.billNeedSelection : !sources.length ? t.billNeedSource : !canQuote ? '—' : !provider || !sizeCheck.valid ? t.invalidProvider : pricingError ? t.billError : pricingLoading || !hasQuotes ? t.billPending : `${estimatedCredits} ${language === 'zh' ? '积分' : 'credits'}`}</strong>
-          </div>
+          </div>}
           <button className="layoutStudioGenerate" type="button" onClick={() => void submitLayouts()} disabled={submitting || sourceReading || watermarkReading || !provider || !slots.length || !sizeCheck.valid} aria-busy={submitting}>
             {submitting ? <LoaderCircle className="spin" size={18} /> : <ShoppingBag size={18} />}
             <span>{submitting ? t.generating : isSignedIn ? t.generate(slots.length) : t.signIn}</span>

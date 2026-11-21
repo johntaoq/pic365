@@ -4718,6 +4718,7 @@ export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
       providerType: normalized.providerType,
       model: normalized.model,
       pricingStrategy: normalized.pricingStrategy,
+      chargeTextTokens: Boolean(normalized.pricingConfig.chargeTextTokens),
       isDefault: normalized.isDefault,
       sortOrder: normalized.sortOrder
     });

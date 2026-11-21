@@ -3,7 +3,7 @@ import { Check, Download, ImagePlus, ListTodo, LoaderCircle, LockKeyhole, Maximi
 import { MODEL_BACKGROUNDS, SYSTEM_TRY_ON_MODELS, TRY_ON_REFERENCE_ORDER, buildClothingTryOnPrompt, buildModelPhotoPrompt, isModelPhotoProvider } from '../shared/clothing-try-on.js';
 import { getImageModelConstraints, validateImageReferenceInputsForModel, validateImageSizeForModel } from '../shared/image-generation.js';
 import FreeImageSettings from './free-image-settings.jsx';
-import { ImageCreditPrice, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
+import { ImageCreditPrice, useImagePricingAccess, useServerImagePricing } from './image-pricing-client.jsx';
 import { fetchImageGeneration, isImageGenerationTimeout } from './image-generation-client.js';
 import { MAX_ACTIVE_IMAGE_TASKS } from './image-task-list.js';
 import ImageStudioFeedback from './image-studio-feedback.jsx';
@@ -141,12 +141,13 @@ export default function ClothingTryOnStudio({ language = 'zh', visible, session,
     mimeTypes: [garment?.mimeType, selectedModel?.mimeType].filter(Boolean) });
   const sizeCheck = validateImageSizeForModel(imageSettings.size, provider?.model);
   const inputsReady = Boolean(selectedModel?.imageUrl && garment);
-  const quoteOptions = { providerId: provider?.id || '', size: imageSettings.size, quality: imageSettings.quality, prompt, referenceCount: 2 };
+  const { skipImagePricing, showImagePricing, requestImagePricing } = useImagePricingAccess();
+  const quoteOptions = { providerId: provider?.id || '', size: imageSettings.size, quality: imageSettings.quality, prompt, referenceCount: 2, chargeTextTokens: provider?.chargeTextTokens };
   const quote = useServerImagePricing(quoteOptions, { enabled: Boolean(visible && signedIn && provider && referenceCheck.valid && sizeCheck.valid) });
   let modelPrompt = '';
   try { modelPrompt = buildModelPhotoPrompt(definition); } catch { /* Invalid form is checked before submitting. */ }
   const modelSizeCheck = validateImageSizeForModel(imageSettings.size, modelProvider?.model);
-  const modelQuoteOptions = { providerId: modelProvider?.id || '', size: imageSettings.size, quality: 'low', prompt: modelPrompt, referenceCount: 0 };
+  const modelQuoteOptions = { providerId: modelProvider?.id || '', size: imageSettings.size, quality: 'low', prompt: modelPrompt, referenceCount: 0, chargeTextTokens: modelProvider?.chargeTextTokens };
   const modelQuote = useServerImagePricing(modelQuoteOptions, { enabled: Boolean(modal === 'model' && definitionMode === 'generate' && signedIn && modelProvider && modelPrompt && modelSizeCheck.valid) });
   const tryOnTasks = tasks.filter(task => task.studioWorkflow?.kind === 'clothing-try-on');
   const failedTryOnTasks = tryOnTasks.filter(task => task.status === 'failed');
@@ -206,6 +207,7 @@ export default function ClothingTryOnStudio({ language = 'zh', visible, session,
   }
 
   async function confirmedQuote(options, count) {
+    if (skipImagePricing) return;
     const pricing = await requestImagePricing(options);
     if (pricing.source !== 'server' || !Number.isFinite(Number(pricing.credits))) throw new Error('PRICING_LOAD_FAILED');
     if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < Number(pricing.credits) * count) {
@@ -331,7 +333,8 @@ export default function ClothingTryOnStudio({ language = 'zh', visible, session,
   }
 
   const closeModal = () => { if (!busy) setModal(''); };
-  const submitDisabled = disabled || (signedIn && (!inputsReady || !provider || !referenceCheck.valid || !sizeCheck.valid || quote.loading || !quote.pricing));
+  const modelQuoteBlocked = !skipImagePricing && (modelQuote.loading || !modelQuote.pricing);
+  const submitDisabled = disabled || (signedIn && (!inputsReady || !provider || !referenceCheck.valid || !sizeCheck.valid || (!skipImagePricing && (quote.loading || !quote.pricing))));
 
   return <section className="tryOnStudio" aria-label={say('衣服换装工作台', 'Clothing try-on studio')}>
     <div className="freeImageMainGrid tryOnMainGrid" inert={modal ? true : undefined}>
@@ -366,7 +369,7 @@ export default function ClothingTryOnStudio({ language = 'zh', visible, session,
             <button className="freeImageGenerateButton" type="submit" disabled={submitDisabled} aria-busy={busy === 'immediate'}>
               {busy === 'immediate' ? <LoaderCircle size={19} className="spin" /> : <ImagePlus size={19} />}
               <span className="freeImageGenerateLabel">{say(busy === 'immediate' ? '生成中' : signedIn ? '立即生图' : '登录后生图', busy === 'immediate' ? 'Generating' : signedIn ? 'Generate now' : 'Sign in to generate')}</span>
-              {signedIn && (quote.loading || quote.pricing
+              {signedIn && showImagePricing && (quote.loading || quote.pricing
                 ? <ImageCreditPrice pricing={quote.loading ? null : quote.pricing} quantity={imageSettings.count} language={language} compact totalOnly />
                 : <span className="imageCreditPrice pending compact">{say('报价暂不可用', 'Quote unavailable')}</span>)}
             </button>
@@ -424,14 +427,14 @@ export default function ClothingTryOnStudio({ language = 'zh', visible, session,
       <footer className="tryOnModalFooter">
         {(pendingModelSave || definitionMode === 'upload') && <div className="tryOnPriceRow"><span>{say('预计费用', 'Estimated cost')}</span><strong>{say('保存不收费', 'Saving is free')}</strong></div>}
         <div className="freeImageGenerateActions">
-          <button type="button" className="freeImageGenerateButton" onClick={() => void submitModel('immediate')} disabled={disabled || !adultConfirmed || (definitionMode === 'generate' && !pendingModelSave && (!modelQuote.pricing || modelQuote.loading || !modelSizeCheck.valid || !modelPrompt))} aria-busy={busy === 'model-immediate'}>
+          <button type="button" className="freeImageGenerateButton" onClick={() => void submitModel('immediate')} disabled={disabled || !adultConfirmed || (definitionMode === 'generate' && !pendingModelSave && (modelQuoteBlocked || !modelSizeCheck.valid || !modelPrompt))} aria-busy={busy === 'model-immediate'}>
             {busy ? <LoaderCircle size={19} className="spin" /> : definitionMode === 'generate' && !pendingModelSave ? <ImagePlus size={19} /> : <UserRound size={19} />}
             <span className="freeImageGenerateLabel">{pendingModelSave ? say('重试保存（不重新生图）', 'Retry save (no regeneration)') : definitionMode === 'upload' ? say('保存我的模特', 'Save my model') : say(busy === 'model-immediate' ? '生成中' : '立即生图', busy === 'model-immediate' ? 'Generating' : 'Generate now')}</span>
-            {definitionMode === 'generate' && !pendingModelSave && (modelQuote.loading || modelQuote.pricing
+            {showImagePricing && definitionMode === 'generate' && !pendingModelSave && (modelQuote.loading || modelQuote.pricing
               ? <ImageCreditPrice pricing={modelQuote.loading ? null : modelQuote.pricing} language={language} compact totalOnly />
               : <span className="imageCreditPrice pending compact">{say('报价暂不可用', 'Quote unavailable')}</span>)}
           </button>
-          {definitionMode === 'generate' && !pendingModelSave && <button type="button" className="freeImageQueueButton" onClick={() => void submitModel('queue')} disabled={disabled || !adultConfirmed || !modelQuote.pricing || modelQuote.loading || !modelSizeCheck.valid || activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS}><ListTodo size={18} />{say('加入队列', 'Add to queue')}</button>}
+          {definitionMode === 'generate' && !pendingModelSave && <button type="button" className="freeImageQueueButton" onClick={() => void submitModel('queue')} disabled={disabled || !adultConfirmed || modelQuoteBlocked || !modelSizeCheck.valid || activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS}><ListTodo size={18} />{say('加入队列', 'Add to queue')}</button>}
         </div>
       </footer>
     </StudioModal>}

@@ -3,8 +3,11 @@ import {
   IMAGE_MIN_PIXELS,
   getImageModelConstraints,
   isGeminiImageModel,
+  isMaiImage27Model,
   parseImageSize,
-  validateImageSize
+  resolveSourceImageSizeForModel,
+  validateImageSize,
+  validateImageSizeForModel
 } from './image-generation.js';
 import { imageInputFees } from './image-input-billing.js';
 
@@ -476,7 +479,14 @@ export function resolveEcommerceSlotGenerationSize(slot) {
   return '1024x1536';
 }
 
-export function resolveEcommerceRefinementSize(generation, slot) {
+export function resolveEcommerceRefinementSize(generation, slot, model) {
   const sourceSize = String(generation?.size || '').trim().toLowerCase();
+  if (isMaiImage27Model(model) && sourceSize) {
+    if (validateImageSizeForModel(sourceSize, model).valid) return sourceSize;
+    // Historical results may predate the cap. Fit the output canvas without
+    // changing the requested orientation; the reference file stays unchanged.
+    const fitted = resolveSourceImageSizeForModel({ size: sourceSize }, model);
+    return fitted.valid ? fitted.size : resolveEcommerceSlotGenerationSize(slot);
+  }
   return validateImageSize(sourceSize).valid ? sourceSize : resolveEcommerceSlotGenerationSize(slot);
 }

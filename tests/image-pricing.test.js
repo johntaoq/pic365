@@ -107,6 +107,16 @@ test('ecommerce refinement preserves the adopted source generation size', () => 
   assert.equal(resolveEcommerceRefinementSize({ size: 'invalid' }, slot), '1024x1024');
 });
 
+test('MAI 2.7 ecommerce revisions fit historical images to the model cap', () => {
+  const slot = { recommendedSize: '1024x1024', aspectRatio: '1:1' };
+  for (const model of ['MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
+    assert.equal(resolveEcommerceRefinementSize({ size: '2048x2048' }, slot, model), '2016x2016');
+    assert.equal(resolveEcommerceRefinementSize({ size: '1344x3072' }, slot, model), '1344x3072');
+    assert.equal(resolveEcommerceRefinementSize({ size: '768x3072' }, slot, model), '768x3072');
+    assert.equal(resolveEcommerceRefinementSize({ size: 'invalid' }, slot, model), '1024x1024');
+  }
+});
+
 test('active promotions multiply the list price and round to the nearest single credit', () => {
   const base = getImageGenerationPricing({ size: '1024x1024', quality: 'medium' });
   const pricing = applyImagePromotion(base, {

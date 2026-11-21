@@ -50,7 +50,7 @@ import {
 import { ECOMMERCE_PLATFORMS } from '../shared/ecommerce-catalog.js';
 import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-selection.js';
 import { resolveEcommerceRefinementSize } from '../shared/image-pricing.js';
-import { ImageCreditPrice, useServerImagePricing } from './image-pricing-client.jsx';
+import { ImageCreditPrice, useImagePricingAccess, useServerImagePricing } from './image-pricing-client.jsx';
 import { clampImagePanOffset } from './image-pan-zoom.js';
 import EcommerceWatermarkSettings, { useEcommerceWatermarkSettings, watermarkReady } from './ecommerce-watermark-settings.jsx';
 
@@ -595,6 +595,8 @@ function DeliveryArtboardLightbox({
   language,
   t,
   project,
+  providerModel,
+  chargeTextTokens,
   assets,
   selectedObject,
   selectedObjectOpacity,
@@ -634,7 +636,7 @@ function DeliveryArtboardLightbox({
   const selectedReferenceAssets = referenceInputs
     .map((input) => ({ ...input, asset: availableAssets.find((asset) => asset.id === input.assetId) }))
     .filter((input) => input.asset);
-  const refinementSize = slot ? resolveEcommerceRefinementSize(generation, slot) : '1024x1024';
+  const refinementSize = slot ? resolveEcommerceRefinementSize(generation, slot, providerModel) : '1024x1024';
   const refinementReferenceCount = countEcommerceReferenceImages({
     project,
     slot,
@@ -642,6 +644,7 @@ function DeliveryArtboardLightbox({
     baseGenerationId: generation?.id || '',
     referenceInputs
   });
+  const { skipImagePricing, showImagePricing } = useImagePricingAccess();
   const {
     pricing: refinementPricing,
     loading: refinementPricingLoading
@@ -651,8 +654,9 @@ function DeliveryArtboardLightbox({
     providerId: project.imageProviderId,
     projectId: project.id, slotId: slot?.id, baseGenerationId: generation?.id,
     adjustment: refinementPrompt, targetArea, referenceInputs,
-    referenceCount: refinementReferenceCount
-  }, { enabled: Boolean(slot && generation?.id) });
+    referenceCount: refinementReferenceCount,
+    chargeTextTokens
+  }, { enabled: Boolean(slot && generation?.id && project.imageProviderId) });
   const selectedLayerVisible = selectedObject === 'mask' ? maskVisible : textVisible;
 
   useEffect(() => {
@@ -876,9 +880,9 @@ function DeliveryArtboardLightbox({
             </details>
             <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={uploadReferenceAssets} />
             <button className="deliveryUploadRefinementAsset" type="button" onClick={() => fileInputRef.current?.click()} disabled={busy || referenceInputs.length >= 4 || !onUploadAssets}><Upload size={14} />{refinementState === 'uploading' ? t.uploadingRefinementAsset : t.uploadRefinementAsset}</button>
-            <button className="deliveryCreateRefinement" type="button" onClick={createRefinement} disabled={busy || refinementPricingLoading || !refinementPricing || !onRefine || !generation?.id || !refinementPrompt.trim()}>
+            <button className="deliveryCreateRefinement" type="button" onClick={createRefinement} disabled={busy || (!skipImagePricing && (refinementPricingLoading || !refinementPricing)) || !onRefine || !generation?.id || !refinementPrompt.trim()}>
               {refinementState === 'generating' ? <LoaderCircle className="spin" size={15} /> : <WandSparkles size={15} />}
-              {refinementState === 'generating' ? t.refiningImage : <>{t.createRefinementLabel} · <ImageCreditPrice pricing={refinementPricing} language={language} compact totalOnly /></>}
+              {refinementState === 'generating' ? t.refiningImage : <>{t.createRefinementLabel}{showImagePricing && <> · <ImageCreditPrice pricing={refinementPricing} language={language} compact totalOnly /></>}</>}
             </button>
             {refinementMessage ? <p className={refinementMessage === t.refinementSuccess ? 'success' : 'error'}>{refinementMessage}</p> : null}
           </aside>
@@ -908,6 +912,8 @@ export default function EcommerceDeliveryCenter({
   language,
   userId,
   project,
+  providerModel,
+  chargeTextTokens,
   platform,
   slots,
   outputs,
@@ -1787,6 +1793,8 @@ export default function EcommerceDeliveryCenter({
           language={language}
           t={t}
           project={project}
+          providerModel={providerModel}
+          chargeTextTokens={chargeTextTokens}
           assets={assets}
           selectedObject={selectedCanvasObject}
           selectedObjectOpacity={selectedObjectOpacity}

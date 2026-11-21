@@ -67,6 +67,27 @@ test('POST pricing returns a server quote for every requested image configuratio
   assert.ok(result.payload.quotes[1].pricing.credits > result.payload.quotes[0].pricing.credits);
 });
 
+test('a 50-item batch reads a provider and promotion once and still prices each item', async (t) => {
+  const provider = localDb.listImageProviderConfigs()[0];
+  assert.equal(provider.chargeTextTokens, false);
+  const db = localDb.getDb();
+  const prepare = db.prepare;
+  const reads = { provider: 0, promotion: 0 };
+  t.mock.method(db, 'prepare', function (sql) {
+    if (sql.includes('SELECT * FROM image_provider_configs WHERE id = ?')) reads.provider++;
+    if (sql.includes('SELECT value_json, updated_at FROM app_settings WHERE setting_key = ?')) reads.promotion++;
+    return prepare.call(this, sql);
+  });
+  const result = await invoke({ method: 'POST', body: { items: Array.from({ length: 50 }, (_, index) => ({
+    key: String(index), providerId: provider.id, size: '1024x1024', quality: index % 2 ? 'high' : 'low'
+  })) } });
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.quotes.length, 50);
+  assert.ok(result.payload.quotes[1].pricing.credits > result.payload.quotes[0].pricing.credits);
+  assert.equal(result.payload.quotes[0].pricing.chargeTextTokens, false);
+  assert.deepEqual(reads, { provider: 1, promotion: 1 });
+});
+
 test('auto size and quality are billed as 2048x2048 medium', async () => {
   const result = await invoke({ method: 'GET', query: { size: 'auto', quality: 'auto' } });
   assert.equal(result.statusCode, 200);

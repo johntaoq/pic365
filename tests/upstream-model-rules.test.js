@@ -75,6 +75,30 @@ test('upstream parser preserves both context tiers, cache rates, and ratio-based
   }), 5600);
 });
 
+test('MAI 2.7 generation, queue, and pricing reject oversized canvases consistently', async (t) => {
+  const { default: queueHandler } = await import('../api/generation-tasks.js');
+  const { stopFreeGenerationWorker } = await import('../server/free-generation-worker.js');
+  t.after(stopFreeGenerationWorker);
+  const fetch = t.mock.method(globalThis, 'fetch', () => { throw new Error('Unexpected upstream request'); });
+  const user = account('mai-27-canvas');
+  const balance = db.getUserProfile(user.id).creditBalance;
+  for (const model of ['MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
+    const provider = imageProvider({ name: model, model });
+    const input = { prompt: 'Test fixture', providerId: provider.id };
+    for (const handler of [generationHandler, queueHandler, pricingHandler]) {
+      const rejected = await invoke(handler, user, { ...input, size: '2032x2032' });
+      assert.equal(rejected.status, 400, model);
+      assert.equal(rejected.payload.error, 'INVALID_SIZE');
+      assert.equal(rejected.payload.reason, 'MAI_MAX_PIXELS');
+    }
+    const accepted = await invoke(pricingHandler, user, { ...input, size: '1344x3072' });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.payload.quotes[0].pricing.requestedPixels, 4_128_768);
+  }
+  assert.equal(fetch.mock.callCount(), 0);
+  assert.equal(db.getUserProfile(user.id).creditBalance, balance);
+});
+
 test('unsupported price formats cannot silently become zero or execute expressions', () => {
   for (const row of [{}, { quota_type: 1 }, { quota_type: 0, model_ratio: -1, completion_ratio: 6 },
     { billing_expr: 'process.exit(1)' }, { billing_expr: 'p * 1 + p * 3 + c * 2' }, { quota_type: 3, model_ratio: 1, completion_ratio: 1 }]) {

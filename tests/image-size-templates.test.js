@@ -27,12 +27,23 @@ test('every configured size and ratio passes its provider runtime rules', () => 
   const validation = validateImageSizeTemplateCatalog();
   assert.deepEqual(validation, { valid: true, errors: [] });
 
-  for (const model of ['gpt-image-1', 'gemini-2.5-flash-image', 'MAI-Image-2.5', 'MAI-Image-2.6-Flash']) {
+  for (const model of ['gpt-image-1', 'gemini-2.5-flash-image', 'MAI-Image-2.5', 'MAI-Image-2.6-Flash', 'MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
     const template = imageSizeTemplateForModel(model);
     assert.ok(template.sizes.length >= 4);
     assert.ok(template.ratios.length >= 5);
     assert.ok(template.sizes.every((size) => validateImageSizeForModel(size, model).valid));
     assert.ok(template.ratios.every((ratio) => dimensionsForImageSizeTemplateRatio(model, ratio.id)));
+  }
+});
+
+test('MAI 2.7 templates keep free dimensions and discard stale oversize defaults', () => {
+  for (const model of ['MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
+    const template = imageSizeTemplateForModel(model);
+    assert.equal(template.allowFreeRatio, true);
+    assert.ok(template.sizes.includes('1344x3072'));
+    assert.ok(!template.sizes.includes('2048x2048'));
+    assert.equal(preferredStudioImageSize({ mai: '2048x2048' }, { mai: 'auto' }, 'mai', model), '1024x1024');
+    assert.equal(preferredStudioImageSize({ mai: '768x3072' }, {}, 'mai', model), '768x3072');
   }
 });
 

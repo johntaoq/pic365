@@ -77,9 +77,12 @@ import {
   viewportForCanvasNodes
 } from '../shared/infinite-canvas.js';
 import {
+  alignImageDimension,
   getImageModelConstraints,
   imageReferenceByteLength,
   isImageReferenceTooLarge,
+  isMaiImage27Model,
+  maxImageDimensionForOtherSide,
   validateImageReferenceInputsForModel,
   validateImageSizeForModel
 } from '../shared/image-generation.js';
@@ -92,7 +95,7 @@ import {
   saveImageSizePreferences
 } from '../shared/image-size-templates.js';
 import FreeImageReferenceEditor from './free-image-reference-editor.jsx';
-import { ImageCreditPrice, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
+import { ImageCreditPrice, useImagePricingAccess, useServerImagePricing } from './image-pricing-client.jsx';
 import { videoSizeForSource } from '../shared/video-generation.js';
 import { orderImageProviders, resolveImageProviderId } from '../shared/image-provider-selection.js';
 import { clampFloatingPosition, normalizeFloatingPosition } from '../shared/floating-position.js';
@@ -476,6 +479,7 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const [videoOutputMode, setVideoOutputMode] = useState('std');
   const [videoDirection, setVideoDirection] = useState('auto');
   const [size, setSize] = useState('1024x1024');
+  const [canvasFreeRatio, setCanvasFreeRatio] = useState(false);
   const [sizePreferences, setSizePreferences] = useState(loadImageSizePreferences);
   const [quality, setQuality] = useState('low');
   const [count, setCount] = useState(1);
@@ -550,6 +554,8 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   const sizeOptions = useMemo(() => [...new Set([savedSizeTemplate, ...sizeTemplate.sizes, size].filter(Boolean))]
     .filter((item) => validateImageSizeForModel(item, selectedProvider?.model).valid), [savedSizeTemplate, selectedProvider?.model, size, sizeTemplate.sizes]);
   const selectedRatio = ratioIdForImageSize(size, sizeTemplate.ratios);
+  const allowsMaiFreeRatio = isMaiImage27Model(selectedProvider?.model);
+  const showCanvasFreeSize = allowsMaiFreeRatio && (canvasFreeRatio || selectedRatio === 'free');
   const parsedSize = String(size).match(/^(\d+)x(\d+)$/i);
   const ratioGraphic = parsedSize ? { width: Number(parsedSize[1]), height: Number(parsedSize[2]) } : { width: 1, height: 1 };
   const referenceSelected = selectedNode?.type === 'image';
@@ -584,9 +590,10 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     count: activeReferenceNodes.length,
     mimeTypes: activeReferenceNodes.map((node) => node.mimeType)
   });
+  const { skipImagePricing, showImagePricing, requestImagePricing } = useImagePricingAccess();
   const { pricing, loading: pricingLoading } = useServerImagePricing(
-    { size, quality, count, providerId, prompt, referenceCount: activeReferenceNodes.length },
-    { enabled: hasFullWorkspace && Boolean(providerId) }
+    { size, quality, count, providerId, prompt, referenceCount: activeReferenceNodes.length, chargeTextTokens: selectedProvider?.chargeTextTokens },
+    { enabled: creationMode !== 'video' && hasFullWorkspace && Boolean(providerId) && sizeCheck.valid }
   );
   const { pricing: videoPricing, loading: videoPricingLoading } = useVideoPricing(
     { providerId: videoProviderId, seconds: videoSeconds, mode: videoOutputMode },
@@ -2195,8 +2202,22 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
   }
 
   function selectCanvasRatio(ratioId) {
+    setCanvasFreeRatio(ratioId === 'free');
+    if (ratioId === 'free') return;
     const dimensions = dimensionsForImageSizeTemplateRatio(selectedProvider?.model, ratioId);
     if (dimensions) setSize(`${dimensions.width}x${dimensions.height}`);
+  }
+
+  function commitCanvasFreeDimension(axis, input) {
+    const { width, height } = ratioGraphic;
+    const next = input.value.trim()
+      ? alignImageDimension(input.value, {
+          min: modelConstraints.minSide,
+          max: maxImageDimensionForOtherSide(axis === 'width' ? height : width, modelConstraints)
+        })
+      : ratioGraphic[axis];
+    input.value = String(next);
+    setSize(axis === 'width' ? `${next}x${height}` : `${width}x${next}`);
   }
 
   function saveCurrentSizeTemplate() {
@@ -2390,11 +2411,13 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
     if (referenceSources.some((node) => isImageReferenceTooLarge(node))) return setMessage(t.uploadedTooLarge);
     if (!requestReferenceCheck.valid) return setMessage(t.referenceUnsupported);
     const imageCount = Math.max(1, Math.min(4, Math.round(Number(requestCount) || 1)));
-    let confirmedPricing;
-    try { confirmedPricing = await requestImagePricing({ size: requestSize, quality: requestQuality, count: imageCount, providerId: requestProviderId, prompt: trimmedPrompt, referenceCount: referenceSources.length }); } catch { return setMessage(t.failed); }
-    if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < Number(confirmedPricing.totalCredits || confirmedPricing.credits || 0)) {
-      if (!profile?.groupAccount) onBilling?.();
-      return setMessage(t.creditsRequired);
+    if (!skipImagePricing) {
+      let confirmedPricing;
+      try { confirmedPricing = await requestImagePricing({ size: requestSize, quality: requestQuality, count: imageCount, providerId: requestProviderId, prompt: trimmedPrompt, referenceCount: referenceSources.length, chargeTextTokens: requestProvider.chargeTextTokens }); } catch { return setMessage(t.failed); }
+      if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < Number(confirmedPricing.totalCredits || confirmedPricing.credits || 0)) {
+        if (!profile?.groupAccount) onBilling?.();
+        return setMessage(t.creditsRequired);
+      }
     }
     if (projectName.trim() === t.unnamedProject) setProjectName(compactText(trimmedPrompt, 40));
 
@@ -2956,12 +2979,21 @@ export default function InfiniteImageCanvas({ language, theme = 'dark', session,
             </div>
             {creationMode === 'image' ? <div className="infiniteCanvasComposerFooter">
               <label><span>{t.provider}</span><select value={providerId} onChange={(event) => setProviderId(event.target.value)}>{providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}</select></label>
-              <label><span>{t.ratio}</span><select value={selectedRatio} onChange={(event) => selectCanvasRatio(event.target.value)}>{sizeTemplate.ratios.map((preset) => <option value={preset.id} key={preset.id}>{preset.id}</option>)}</select></label>
+              <label><span>{t.ratio}</span><select value={showCanvasFreeSize ? 'free' : selectedRatio} onChange={(event) => selectCanvasRatio(event.target.value)}>{sizeTemplate.ratios.map((preset) => <option value={preset.id} key={preset.id}>{preset.id}</option>)}{allowsMaiFreeRatio && <option value="free">{language === 'zh' ? '自由比例' : 'Free ratio'}</option>}</select></label>
               <div className="infiniteCanvasSizeField"><span>{t.size}</span><div className="infiniteCanvasSizePicker"><span className="infiniteCanvasRatioPreview" title={`${selectedRatio} · ${size.replace('x', '×')}`}><CanvasRatioGraphic ratioWidth={ratioGraphic.width} ratioHeight={ratioGraphic.height} /></span><select aria-label={t.size} className={!sizeCheck.valid ? 'invalid' : ''} value={size} onChange={(event) => setSize(event.target.value)}>{sizeOptions.map((item) => <option value={item} key={item}>{savedSizeTemplate === item ? '★ ' : ''}{ratioIdForImageSize(item, sizeTemplate.ratios)} · {item.replace('x', '×')}</option>)}</select><button className={savedSizeTemplate === size ? 'active' : ''} type="button" onClick={saveCurrentSizeTemplate} title={t.saveSizeTemplate} aria-label={t.saveSizeTemplate}><LockKeyhole size={14} /></button></div></div>
               <label><span>{t.quality}</span><select value={quality} onChange={(event) => setQuality(event.target.value)}><option value="low">{t.low}</option><option value="medium">{t.medium}</option><option value="high">{t.high}</option></select></label>
               <label><span>{t.count}</span><select value={count} onChange={(event) => setCount(Number(event.target.value))}>{[1, 2, 3, 4].map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-              <div className="infiniteCanvasPrice">{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact /> : null}</div>
+              <div className="infiniteCanvasPrice">{hasFullWorkspace && showImagePricing ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact /> : null}</div>
               <button className="infiniteCanvasGenerate" type="button" onClick={() => void generateBranch()} disabled={projectReadOnly || submitting || pricingLoading || !providerId || !sizeCheck.valid || !referenceCheck.valid || oversizedReferenceNodes.length > 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}{submitting ? t.submitting : t.generate}</button>
+              {showCanvasFreeSize && <div className="infiniteCanvasFreeSize">
+                {['width', 'height'].map((axis) => <label key={`${axis}-${ratioGraphic[axis]}`}>
+                  <span>{axis === 'width' ? (language === 'zh' ? '宽 px' : 'Width px') : (language === 'zh' ? '高 px' : 'Height px')}</span>
+                  <input type="number" inputMode="numeric" min={modelConstraints.minSide} max={maxImageDimensionForOtherSide(axis === 'width' ? ratioGraphic.height : ratioGraphic.width, modelConstraints)} step="16" defaultValue={ratioGraphic[axis]} onBlur={(event) => commitCanvasFreeDimension(axis, event.currentTarget)} onKeyDown={(event) => {
+                    if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+                  }} />
+                </label>)}
+                <small>{language === 'zh' ? '总像素上限' : 'Pixel limit'}: {modelConstraints.maxPixels.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</small>
+              </div>}
             </div> : <div className="infiniteCanvasComposerFooter videoMode">
               {videoProviders.length > 1 ? <label><span>{t.videoProvider}</span><select value={videoProviderId} onChange={(event) => setVideoProviderId(event.target.value)}>{videoProviders.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}</select></label> : <label><span>{t.videoProvider}</span><strong className="infiniteCanvasReadOnlyValue">{selectedVideoProvider?.name || 'Sora 2'}</strong></label>}
               {videoModeOptions.length ? <label><span>{t.quality}</span><select value={videoOutputMode} onChange={(event) => setVideoOutputMode(event.target.value)}>{videoModeOptions.map((value) => <option value={value} key={value}>{value === 'std' ? '720P' : value === 'pro' ? '1080P' : '4K'}</option>)}</select></label> : null}

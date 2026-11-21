@@ -17,7 +17,7 @@ import {
   quoteCustomRecharge
 } from '../shared/recharge-config.js';
 import { formatStoragePriceYuan, normalizeStorageBillingConfig } from '../shared/storage-billing.js';
-import { getClientImagePricing, ImageCreditPrice, refreshImagePromotion } from './image-pricing-client.jsx';
+import { getClientImagePricing, ImageCreditPrice, ImagePricingProvider, refreshImagePromotion } from './image-pricing-client.jsx';
 import {
   ArrowUpRight,
   AudioLines,
@@ -5335,6 +5335,7 @@ function App() {
   />;
 
   return (
+    <ImagePricingProvider profile={profile}>
     <main className={cx('siteApp', isPublicPage && 'sitePublicPage', activePage === 'home' && 'siteHomepageActive', activePage === 'canvas' && 'siteWorkspaceCanvas', siteTheme === 'light' && 'siteThemeLight', siteTheme === 'dark' && 'siteThemeDark', siteTheme === 'black' && 'siteThemeBlack')} data-theme={siteTheme}>
       {isPublicPage && activePage !== 'home' ? publicNavigation : null}
       {!isPublicPage ? <header className={cx('topbar', 'workspaceTopbar', `topbarPage-${activePage}`)}>
@@ -5695,6 +5696,7 @@ function App() {
         onProfileChange={handleProfileChange}
       />
     </main>
+    </ImagePricingProvider>
   );
 }
 
