@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import test, { after } from 'node:test';
 import sharp from 'sharp';
 
@@ -17,6 +17,9 @@ Object.assign(process.env, {
 const db = await import('../api/_lib/local-db.js');
 const external = await import('../api/_lib/newapi-account.js');
 const { default: callback } = await import('../api/auth/newapi16/callback.js');
+const { default: callback40 } = await import('../api/auth/newapi40/callback.js');
+const { default: start16 } = await import('../api/auth/newapi16/start.js');
+const { default: start40 } = await import('../api/auth/newapi40/start.js');
 const { default: images } = await import('../api/generate-image.js');
 const { default: quotes } = await import('../api/image-pricing.js');
 const { default: menuSettings } = await import('../api/menu-settings.js');
@@ -236,7 +239,7 @@ test('linked accounts hide and lock Templates, Examples and API even after a for
 
 test('login state is browser-bound, expires and can be redeemed only once', async () => {
   let redirect, cookie;
-  external.startNewAPILogin({}, { setHeader(key, value) { if (key === 'Set-Cookie') cookie = value.split(';')[0]; }, redirect(code, url) { redirect = url; } });
+  external.startNewAPILogin({ query: { entry: 'https://example.invalid/' } }, { setHeader(key, value) { if (key === 'Set-Cookie') cookie = value.split(';')[0]; }, redirect(code, url) { redirect = url; } });
   const search = new URL(redirect).searchParams;
   const state = search.get('state');
   const flow = db.getDb().prepare('SELECT expires_at FROM newapi_login_flows WHERE consumed_at IS NULL ORDER BY expires_at DESC LIMIT 1').get();
@@ -253,7 +256,7 @@ test('login state is browser-bound, expires and can be redeemed only once', asyn
     assert.ok(request.code_verifier);
     return new Response(JSON.stringify({ success: true, data: source }));
   };
-  const query = { state, code: 'c'.repeat(43) };
+  const query = { state, code: 'c'.repeat(43), entry: 'create' };
   const rejected = await invoke(callback, {}, 'GET', 'pic365_newapi_login=wrong-browser', query);
   assert.equal(rejected.location, '/?newapi_login=failed');
   assert.equal(calls, 0);
@@ -271,6 +274,61 @@ test('login state is browser-bound, expires and can be redeemed only once', asyn
   const expired = await invoke(callback, {}, 'GET', cookie, { state: new URL(expiredRedirect).searchParams.get('state'), code: 'c'.repeat(43) });
   assert.equal(expired.location, '/?newapi_login=failed');
   globalThis.fetch = originalFetch;
+});
+
+test('gateway launch opens Create only after SSO authenticates and rotates the Pic365 session', async (t) => {
+  for (const [sourceId, startHandler, callbackHandler] of [
+    ['newapi16', start16, callback],
+    ['newapi40', start40, callback40]
+  ]) {
+    await t.test(sourceId, async (t) => {
+      const config = external.getNewAPIConfig(sourceId);
+      const owner = credential({ issuer: config.origin });
+      const start = await invoke(startHandler, {}, 'GET', '', { entry: 'create' });
+      assert.equal(start.status, 302);
+      const gateway = new URL(start.location);
+      assert.equal(gateway.origin, config.origin);
+      assert.equal(gateway.pathname, '/pic365');
+      const flowCookie = start.headers.get('set-cookie').split(';')[0];
+      const oldSession = db.createSession(userId);
+      const query = { state: gateway.searchParams.get('state'), code: 'c'.repeat(43), entry: 'https://example.invalid/' };
+      let exchangeAllowed = false;
+      const exchange = t.mock.method(globalThis, 'fetch', async (url, init) => {
+        assert.equal(url, `${config.origin}/api/pic365/token`);
+        const request = JSON.parse(init.body);
+        assert.equal(request.redirect_uri, config.callback);
+        assert.equal(gateway.searchParams.get('code_challenge'),
+          createHash('sha256').update(request.code_verifier).digest('base64url'));
+        return new Response(JSON.stringify(exchangeAllowed ? { success: true, data: owner } : { success: false }),
+          { status: exchangeAllowed ? 200 : 400 });
+      });
+      const startedCookie = `${flowCookie}; member_session=${oldSession.token}`;
+      const rejected = await invoke(callbackHandler, {}, 'GET', startedCookie, query);
+      assert.equal(rejected.location, '/?newapi_login=failed');
+      assert.ok(!rejected.headers.get('set-cookie').some((cookie) => cookie.startsWith('member_session=')));
+      assert.ok(db.getUserBySessionToken(oldSession.token), 'a rejected exchange does not change the current session');
+
+      exchangeAllowed = true;
+      const retry = await invoke(startHandler, {}, 'GET', '', { entry: 'create' });
+      const retryGateway = new URL(retry.location);
+      gateway.search = retryGateway.search;
+      const retryCookie = retry.headers.get('set-cookie').split(';')[0];
+      const retryQuery = { ...query, state: retryGateway.searchParams.get('state') };
+      const result = await invoke(callbackHandler, {}, 'GET', `${retryCookie}; member_session=${oldSession.token}`, retryQuery);
+      assert.equal(result.status, 303);
+      assert.equal(result.location, '/#create');
+      const cookies = result.headers.get('set-cookie');
+      const issued = cookies.find((cookie) => cookie.startsWith('member_session='));
+      assert.match(issued, /HttpOnly; SameSite=Lax; Secure/);
+      const token = decodeURIComponent(issued.split(';')[0].slice('member_session='.length));
+      const authenticated = db.getUserBySessionToken(token);
+      assert.equal(external.getNewAPIAccountProfile(authenticated.id).source, config.source);
+      assert.ok(!db.getUserBySessionToken(oldSession.token));
+      const replay = await invoke(callbackHandler, {}, 'GET', retryCookie, retryQuery);
+      assert.equal(replay.location, '/?newapi_login=failed');
+      assert.equal(exchange.mock.callCount(), 2, 'the replay is rejected before contacting the gateway');
+    });
+  }
 });
 
 test('external image generation sends the owner key to 16 and never creates a Pic365 debit or refund', async () => {

@@ -234,11 +234,12 @@ export function startNewAPILogin(req, res, sourceId = 'newapi16') {
   const state = randomBytes(32).toString('base64url');
   const browser = randomBytes(32).toString('base64url');
   const verifier = randomBytes(32).toString('base64url');
+  const entry = req.query?.entry === 'create' ? 'create' : undefined;
   const current = Math.floor(Date.now() / 1000);
   const db = getDb();
   db.prepare('DELETE FROM newapi_login_flows WHERE expires_at <= ?').run(current);
   db.prepare('INSERT INTO newapi_login_flows (state_hash, browser_hash, verifier, expires_at) VALUES (?, ?, ?, ?)')
-    .run(hash(state), hash(browser), JSON.stringify({ verifier, sourceId }), current + LOGIN_FLOW_SECONDS);
+    .run(hash(state), hash(browser), JSON.stringify({ verifier, sourceId, entry }), current + LOGIN_FLOW_SECONDS);
   const secure = config.appOrigin.startsWith('https:') ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${FLOW_COOKIE}=${browser}; Path=/api/auth/${sourceId}; Max-Age=${LOGIN_FLOW_SECONDS}; HttpOnly; SameSite=Lax${secure}`);
   res.setHeader('Cache-Control', 'no-store');
@@ -282,7 +283,8 @@ export async function finishNewAPILogin(req, sourceId = 'newapi16') {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.success) throw Object.assign(new Error('NEWAPI_LOGIN_FAILED'), { code: 'NEWAPI_LOGIN_FAILED' });
-  return saveNewAPIAccount(payload.data, config);
+  const userId = saveNewAPIAccount(payload.data, config);
+  return { userId, landingPath: proof.entry === 'create' ? '/#create' : '/' };
 }
 
 export function saveNewAPIAccount(data, config = getNewAPIConfig()) {
