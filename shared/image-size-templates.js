@@ -5,11 +5,13 @@ import {
   GEMINI_IMAGE_RATIO_PRESETS,
   getImageModelConstraints,
   IMAGE_RATIO_PRESETS,
+  isMaiImage27Model,
   parseImageSize,
   validateImageSizeForModel
 } from './image-generation.js';
 
 export const IMAGE_SIZE_TEMPLATE_STORAGE_KEY = 'pic365.image-size-preferences.v1';
+export const IMAGE_STUDIO_SIZE_SELECTION_STORAGE_KEY = 'pic365.image-studio.size-selection.v1';
 const LEGACY_STORAGE_KEY = 'pic365.free-image.size-templates.v1';
 
 const MAI_RATIOS = IMAGE_RATIO_PRESETS.filter((preset) => (
@@ -48,6 +50,13 @@ export const IMAGE_SIZE_TEMPLATE_CATALOG = Object.freeze({
   })
 });
 
+const MAI_27_SIZE_TEMPLATE = Object.freeze({
+  ...IMAGE_SIZE_TEMPLATE_CATALOG.gpt,
+  id: 'mai',
+  model: 'MAI-Image-2.7',
+  sizes: Object.freeze([...COMMON_IMAGE_SIZES, '2016x2016', '1344x3072', '3072x1344'])
+});
+
 export function imageSizeTemplateFamily(model) {
   const constraints = getImageModelConstraints(model);
   if (constraints.isGeminiImage) return 'gemini';
@@ -57,7 +66,7 @@ export function imageSizeTemplateFamily(model) {
 
 export function imageSizeTemplateForModel(model) {
   const family = imageSizeTemplateFamily(model);
-  const configured = IMAGE_SIZE_TEMPLATE_CATALOG[family];
+  const configured = isMaiImage27Model(model) ? MAI_27_SIZE_TEMPLATE : IMAGE_SIZE_TEMPLATE_CATALOG[family];
   const constraints = getImageModelConstraints(model || configured.model);
   const isMai26 = constraints.modelFamily === 'mai-image-2.6';
   const targetLongSide = isMai26 ? 1536 : configured.targetLongSide;
@@ -114,6 +123,33 @@ export function preferredImageSize(preferences, providerId, model) {
   const preferred = String(preferences?.[providerId] || '').toLowerCase();
   if (preferred && validateImageSizeForModel(preferred, model).valid) return preferred;
   return imageSizeTemplateForModel(model).defaultSize;
+}
+
+export function loadImageStudioSizeSelections(storage = globalThis.localStorage) {
+  try {
+    const parsed = JSON.parse(storage?.getItem(IMAGE_STUDIO_SIZE_SELECTION_STORAGE_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed)
+      .filter(([providerId, size]) => providerId && typeof size === 'string' && parseImageSize(size))
+      .map(([providerId, size]) => [providerId, size.toLowerCase()]));
+  } catch {
+    return {};
+  }
+}
+
+export function saveImageStudioSizeSelections(selections, storage = globalThis.localStorage) {
+  try {
+    storage?.setItem(IMAGE_STUDIO_SIZE_SELECTION_STORAGE_KEY, JSON.stringify(selections || {}));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function preferredStudioImageSize(selections, templates, providerId, model) {
+  const selected = selections?.[providerId];
+  if (selected && validateImageSizeForModel(selected, model).valid) return selected;
+  return preferredImageSize(templates, providerId, model);
 }
 
 export function validateImageSizeTemplateCatalog(catalog = IMAGE_SIZE_TEMPLATE_CATALOG) {

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
   claimGuestGenerationUsage,
-  completeCreditReservation,
   createGeneration,
   getGuestGenerationUsageCount,
   getImageProviderConfig,
@@ -15,6 +14,7 @@ import {
   updateGeneration
 } from './_lib/local-db.js';
 import { authenticateRequest } from './_lib/local-auth.js';
+import { newAPIImageErrorCode, requireNewAPIImageBalance } from './_lib/newapi-account.js';
 import { registerFreeGenerationTask, unregisterFreeGenerationTask } from './_lib/free-generation-tasks.js';
 import { readJsonBody } from './_lib/request.js';
 import {
@@ -30,6 +30,7 @@ import {
 } from './_lib/reference-images.js';
 import { deleteStoredFile, persistImage } from './_lib/storage.js';
 import { ensureFreeImageWatermark } from './_lib/free-image-watermark.js';
+import { applyEcommerceLayoutWatermark, prepareEcommerceLayoutWatermark } from './_lib/ecommerce-layout-watermark.js';
 import {
   IMAGE_GENERATION_REQUEST_MAX_BYTES,
   normalizeImageCount,
@@ -40,6 +41,12 @@ import {
 import { applyImagePromotion, getImageGenerationPricing } from '../shared/image-pricing.js';
 import { buildStyledImagePrompt, normalizeImageStylePresetId } from '../shared/image-style-presets.js';
 import { GUEST_FREE_GENERATION_LIMIT, guestGenerationRemaining } from '../shared/guest-generation.js';
+import { settleImageGenerationBilling, validateImageInputPricing } from './_lib/image-input-billing.js';
+import { estimateTextTokens } from './_lib/text-token-estimate.js';
+import { validateEcommerceLayoutReferences } from '../shared/ecommerce-layout-studio.js';
+import { normalizeEcommerceLayoutWatermark } from '../shared/ecommerce-layout-watermark.js';
+import { clothingStudioPrompt, normalizeClothingStudioRequest, validateClothingStudioRequest } from '../shared/clothing-try-on.js';
+import { saveGeneratedTryOnModel, validatePrivateTryOnReference } from './_lib/clothing-try-on-models.js';
 
 const MAX_PROMPT_LENGTH = 6000;
 const GUEST_GENERATION_COOKIE = 'gpt_image_guest_generation';
@@ -106,16 +113,18 @@ function guestUsagePayload(used) {
 }
 
 function hasFullWorkspaceAccess(profile) {
-  return Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
+  return Boolean(profile?.isSuperAdmin || profile?.externalWallet || Number(profile?.creditBalance || 0) > 0);
 }
 
-function generationErrorCode(error) {
-  return classifyImageProviderError(error);
+function generationErrorCode(error, provider) {
+  return newAPIImageErrorCode(error, provider) || classifyImageProviderError(error);
 }
 
 function generationErrorStatus(errorCode) {
   if (errorCode === 'GENERATION_CANCELLED') return 409;
   if (errorCode === 'CONTENT_MODERATION_BLOCKED') return 422;
+  if (errorCode === 'NEWAPI_BALANCE_REQUIRED') return 402;
+  if (errorCode === 'NEWAPI_REAUTH_REQUIRED') return 401;
   if (['UPSTREAM_BUSY', 'IMAGE_PROVIDER_UNAVAILABLE', 'IMAGE_PROVIDER_TIMEOUT'].includes(errorCode)) return 503;
   if (errorCode === 'IMAGE_PROVIDER_AUTH_FAILED') return 502;
   if (errorCode === 'IMAGE_PROVIDER_BALANCE_ERROR') return 402;
@@ -149,6 +158,8 @@ async function runGenerationJob({
   size,
   quality,
   providerConfig,
+  pricing,
+  layoutWatermark,
   signal
 }) {
   try {
@@ -164,7 +175,11 @@ async function runGenerationJob({
         })
       : await generateProviderImage({ prompt: providerPrompt, size, quality, providerConfig, signal });
     throwIfGenerationCancelled(signal);
-    const storedImage = await persistImage({ userId, generationId: job.generationId, image: providerResult.image });
+    const finalImage = layoutWatermark
+      ? await applyEcommerceLayoutWatermark(providerResult.image, layoutWatermark)
+      : providerResult.image;
+    throwIfGenerationCancelled(signal);
+    const storedImage = await persistImage({ userId, generationId: job.generationId, image: finalImage });
     if (signal?.aborted) {
       await deleteStoredFile(storedImage.storagePath).catch(() => undefined);
       throwIfGenerationCancelled(signal);
@@ -178,7 +193,7 @@ async function runGenerationJob({
       mime_type: storedImage.contentType,
       completed_at: new Date().toISOString()
     });
-    completeCreditReservation(job.reservationId);
+    const settledPricing = settleImageGenerationBilling(job.reservationId, pricing, providerResult.inputUsage);
     return {
       ok: true,
       generationId: job.generationId,
@@ -190,13 +205,14 @@ async function runGenerationJob({
       cloudSaved: storedImage.backend === 'azure-blob',
       storageBackend: storedImage.backend,
       downloadAllowed: true,
-      creditsCharged: job.creditAmount,
+      creditsCharged: settledPricing.chargedCredits,
+      inputTokenSettlement: settledPricing,
       prompt
     };
   } catch (error) {
     const errorCode = signal?.aborted || error?.code === 'GENERATION_CANCELLED'
       ? 'GENERATION_CANCELLED'
-      : generationErrorCode(error);
+      : generationErrorCode(error, providerConfig);
     console.warn('Image generation job failed', {
       generationId: job.generationId,
       status: error?.status || null,
@@ -263,12 +279,13 @@ export default async function handler(req, res) {
     return json(res, error?.status || 400, { ok: false, error: error?.code || 'INVALID_PROMPT' });
   }
 
-  const prompt = String(body.prompt || '').trim();
+  let prompt = String(body.prompt || '').trim();
   if (!prompt || prompt.length > MAX_PROMPT_LENGTH) return json(res, 400, { ok: false, error: 'INVALID_PROMPT' });
   const stylePresetId = normalizeImageStylePresetId(body.stylePresetId);
   const styledPrompt = buildStyledImagePrompt(prompt, stylePresetId);
 
   if (!auth.user || !auth.profile) {
+    if (body.studioWorkflow != null) return json(res, 401, { ok: false, error: 'SIGN_IN_REQUIRED' });
     const guestProviderConfig = getImageProviderConfig();
     if (!guestProviderConfig || !isProviderConfigured(guestProviderConfig)) {
       return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
@@ -341,10 +358,30 @@ export default async function handler(req, res) {
 
   if (!hasFullWorkspaceAccess(auth.profile)) return json(res, 402, { ok: false, error: 'CREDITS_REQUIRED' });
 
-  const providerConfig = getImageProviderConfig(String(body.providerId || '').trim(), { userId: auth.user.id });
+  try { await requireNewAPIImageBalance(auth.user.id); }
+  catch (error) {
+    const status = ['NEWAPI_BALANCE_REQUIRED','PIC365_STORAGE_PAYMENT_REQUIRED'].includes(error?.code) ? 402 : error?.code === 'NEWAPI_REAUTH_REQUIRED' ? 401 : 503;
+    return json(res, status, { ok: false, error: error?.code || 'NEWAPI_BALANCE_UNAVAILABLE' });
+  }
+  let providerConfig;
+  try { providerConfig = getImageProviderConfig(String(body.providerId || '').trim(), { userId: auth.user.id }); }
+  catch (error) { return json(res, 403, { ok: false, error: error?.code || 'NEWAPI_MODEL_NOT_ALLOWED' }); }
   if (!providerConfig || !isProviderConfigured(providerConfig)) {
     return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
   }
+  let studioWorkflow;
+  try {
+    body = normalizeClothingStudioRequest(body);
+    studioWorkflow = validateClothingStudioRequest(body, { model: providerConfig.model });
+    if (studioWorkflow) {
+      validatePrivateTryOnReference(auth.user.id, studioWorkflow, body.references);
+      prompt = clothingStudioPrompt(studioWorkflow);
+    }
+  } catch (error) {
+    return json(res, 400, { ok: false, error: error?.code || 'INVALID_CLOTHING_WORKFLOW' });
+  }
+  try { validateImageInputPricing(providerConfig.pricingConfig, providerConfig.model); }
+  catch (error) { return json(res, 400, { ok: false, error: error.code }); }
   const size = String(body.size || '1024x1024').toLowerCase();
   const sizeCheck = validateImageSizeForModel(size, providerConfig.model);
   if (!sizeCheck.valid) return json(res, 400, { ok: false, error: 'INVALID_SIZE', reason: sizeCheck.error });
@@ -361,8 +398,15 @@ export default async function handler(req, res) {
     res.once?.('close', unregisterTask);
   }
   let references;
+  let layoutWatermark = null;
   try {
     references = normalizeReferenceRequests(body.references);
+    if (studioWorkflow) validateClothingStudioRequest({ ...body, references }, { model: providerConfig.model });
+    const productCount = validateEcommerceLayoutReferences({ ...body, references });
+    const watermarkOptions = normalizeEcommerceLayoutWatermark(body.layoutWatermark, {
+      isLayout: productCount !== undefined
+    });
+    if (watermarkOptions) layoutWatermark = await prepareEcommerceLayoutWatermark(watermarkOptions);
   } catch (error) {
     return json(res, 400, { ok: false, error: error?.code || 'INVALID_REFERENCE_IMAGES' });
   }
@@ -381,15 +425,19 @@ export default async function handler(req, res) {
       size,
       quality: requestedQuality,
       model: providerConfig.model,
+      prompt,
+      estimatedTextTokens: providerConfig.pricingConfig?.chargeTextTokens && prompt ? estimateTextTokens(prompt) : undefined,
       referenceCount: references.length
     }, providerConfig.pricingConfig),
     getImagePromotionConfig()
   );
   const taskMode = body.taskMode === 'batch-repair' ? 'batch-repair' : 'single';
   const providerPrompt = buildReferencePrompt(
-    taskMode === 'batch-repair' ? batchRepairProviderPrompt(prompt) : styledPrompt,
+    studioWorkflow ? prompt : taskMode === 'batch-repair' ? batchRepairProviderPrompt(prompt) : styledPrompt,
     references,
-    { includeNumberedMap: taskMode !== 'batch-repair' && !String(body.canvasProjectId || '').trim() }
+    // Try-on already defines its numbered roles; the generic first-image
+    // editing target would otherwise conflict with the garment in reference 1.
+    { includeNumberedMap: studioWorkflow?.kind !== 'clothing-try-on' && taskMode !== 'batch-repair' && !String(body.canvasProjectId || '').trim() }
   );
   const parsedCaseId = Number(body.caseId);
   const caseId = Number.isFinite(parsedCaseId) ? parsedCaseId : null;
@@ -423,10 +471,18 @@ export default async function handler(req, res) {
           referenceCredits: pricing.referenceCredits,
           originalCredits: pricing.originalCredits,
           chargedCredits: pricing.credits,
+          imageTextCredits: pricing.imageTextCredits,
+          imageTextTokens: pricing.imageTextTokens,
+          imageTextInputRmb: pricing.imageTextInputRmb,
+          referenceTokens: pricing.referenceTokens,
+          referenceTokenCredits: pricing.referenceTokenCredits,
+          referenceTokenInputRmb: pricing.referenceTokenInputRmb,
+          inputTokenBillingMode: pricing.inputTokenBillingMode,
           promotionName: pricing.promotion?.active ? pricing.promotion.name : '',
           promotionPayPercent: pricing.promotion?.active ? pricing.promotion.payPercent : 100,
           promotionUpdatedAt: pricing.promotion?.active ? pricing.promotion.updatedAt : null,
-          stylePresetId: taskMode === 'single' ? stylePresetId : ''
+          stylePresetId: taskMode === 'single' ? stylePresetId : '',
+          ...(studioWorkflow ? { studioWorkflow } : {})
         }
       }));
     }
@@ -510,6 +566,8 @@ export default async function handler(req, res) {
     size,
     quality,
     providerConfig,
+    pricing,
+    layoutWatermark,
     signal: requestController.signal
   })));
   const images = results.filter((result) => result.ok).map(({ cause, ok, ...result }) => result);
@@ -529,11 +587,21 @@ export default async function handler(req, res) {
   }
 
   const first = images[0];
+  let createdModel = null;
+  if (studioWorkflow?.kind === 'model-creation') {
+    // Saving is separate from billing success; a save failure must not charge a
+    // second generation or make an already-created photograph disappear.
+    try { createdModel = saveGeneratedTryOnModel(auth.user.id, first.generationId, studioWorkflow.definition); }
+    catch { /* The client can retry the idempotent save without regenerating. */ }
+  }
+  const settledPricing = first.inputTokenSettlement || pricing;
   const creditsCharged = images.reduce((total, image) => total + Number(image.creditsCharged || 0), 0);
   return json(res, 200, {
     ok: true,
     ...first,
     images,
+    ...(studioWorkflow ? { studioWorkflow } : {}),
+    ...(createdModel ? { createdModel } : {}),
     requestedCount: count,
     completedCount: images.length,
     failedCount: failures.length,
@@ -541,7 +609,7 @@ export default async function handler(req, res) {
     errors: [...new Set(failures.map((failure) => failure.error))],
     referencesUsed: references.length,
     stylePresetId: taskMode === 'single' ? stylePresetId : '',
-    unitCredits: pricing.credits,
+    unitCredits: settledPricing.credits,
     creditsCharged,
     pricing: {
       bandId: pricing.bandId,
@@ -558,12 +626,18 @@ export default async function handler(req, res) {
       referenceImagePriceRmb: pricing.referenceImagePriceRmb,
       referenceUnitCredits: pricing.referenceUnitCredits,
       referenceCredits: pricing.referenceCredits,
+      imageCredits: pricing.imageCredits,
+      imageTextEnabled: pricing.imageTextEnabled,
+      imageTextCredits: pricing.imageTextCredits,
+      imageTextTokens: pricing.imageTextTokens,
+      imageTextInputRmb: pricing.imageTextInputRmb,
       estimatedActualCostRmb: pricing.estimatedActualCostRmb,
       estimatedListCostRmb: pricing.estimatedListCostRmb,
       originalCredits: pricing.originalCredits,
       credits: pricing.credits,
       discountApplied: pricing.discountApplied,
-      promotion: pricing.promotion
+      promotion: pricing.promotion,
+      ...settledPricing
     },
     user
   });

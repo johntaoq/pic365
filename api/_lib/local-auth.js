@@ -37,6 +37,23 @@ function secureCookie(req) {
   return process.env.NODE_ENV === 'production' || forwardedProto === 'https';
 }
 
+function authenticatedContext(user, token, internal = false) {
+  let loaded = false;
+  let profile;
+  return {
+    user,
+    token,
+    ...(internal ? { internal: true } : {}),
+    get profile() {
+      if (!loaded) {
+        profile = getUserProfile(user.id);
+        loaded = true;
+      }
+      return profile;
+    }
+  };
+}
+
 export function setSessionCookie(req, res, token) {
   const secure = secureCookie(req) ? '; Secure' : '';
   res.setHeader(
@@ -54,8 +71,8 @@ export function authenticateRequest(req, { allowAnonymous = false } = {}) {
   const internalUserId = String(req?.[INTERNAL_AUTH_CONTEXT]?.userId || '').trim();
   if (internalUserId) {
     const user = getUserById(internalUserId);
-    if (!user) return { error: 'AUTH_REQUIRED', status: 401 };
-    return { user, profile: getUserProfile(user.id), token: null, internal: true };
+    if (!user || user.status !== 'active') return { error: 'AUTH_REQUIRED', status: 401 };
+    return authenticatedContext(user, null, true);
   }
   const token = getSessionToken(req);
   const user = getUserBySessionToken(token);
@@ -63,7 +80,7 @@ export function authenticateRequest(req, { allowAnonymous = false } = {}) {
     if (allowAnonymous) return { user: null, profile: null, token: null };
     return { error: 'AUTH_REQUIRED', status: 401 };
   }
-  return { user, profile: getUserProfile(user.id), token };
+  return authenticatedContext(user, token);
 }
 
 export function createLoginSession(req, res, userId) {

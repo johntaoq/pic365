@@ -3,6 +3,9 @@ import { deleteImageProviderConfig, listImageProviderConfigs, reorderImageProvid
 import { readJsonBody } from '../_lib/request.js';
 import { recordAdminAuditEvent, requestAuditMetadata, requirePermission } from '../_lib/governance.js';
 import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
+import { validateImageInputPricing } from '../_lib/image-input-billing.js';
+import { getModelRule } from '../_lib/upstream-model-rules.js';
+import { getDb } from '../_lib/local-db.js';
 
 function clean(value, length = 240) { return String(value || '').trim().slice(0, length); }
 
@@ -55,6 +58,11 @@ export default async function handler(req, res) {
       isDefault: Boolean(body.isDefault)
     };
     if (!input.name || !input.baseUrl || !input.model) return res.status(400).json({ ok: false, error: 'INVALID_PROVIDER_CONFIG' });
+    validateImageInputPricing({
+      ...existing?.pricingConfig,
+      ...input.pricingConfig,
+      upstreamCost: getModelRule(getDb(), 'image', input.model)
+    }, input.model);
     const provider = saveImageProviderConfig(input);
     recordAdminAuditEvent({
       actorUserId: auth.user.id, permission: ADMIN_PERMISSIONS.MANAGE_CHANNELS,

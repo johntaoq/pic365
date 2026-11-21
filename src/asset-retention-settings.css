@@ -1,0 +1,13 @@
+.accountRetentionSettings { --retention-text: #eef4f4; --retention-muted: #9fadc3; --retention-line: rgba(149, 167, 220, .22); --retention-field: rgba(149, 167, 220, .08); --retention-accent: #8df4cc; margin-top: 16px; padding: 16px 14px; border-top: 1px solid var(--retention-line); font-size: 13px; }
+.accountRetentionSettings h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; color: var(--retention-text); font-size: 16px; font-weight: 700; }
+.accountRetentionField { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--retention-text); }
+.accountRetentionField > div { display: flex; align-items: center; gap: 8px; }
+.accountRetentionField input { box-sizing: border-box; width: 112px; min-height: 40px; padding: 8px 10px; border: 1px solid var(--retention-line); border-radius: 4px; background: var(--retention-field); color: var(--retention-text); font: inherit; }
+.accountRetentionField input:focus-visible { outline: 2px solid var(--retention-accent); outline-offset: 2px; }
+.accountRetentionSettings > p { margin: 12px 0 4px; color: var(--retention-muted); font-size: 12px; line-height: 1.6; }
+.accountRetentionStatus { display: flex; align-items: center; gap: 6px; min-height: 22px; color: var(--retention-muted); font-size: 12px; }
+.accountRetentionStatus.error { color: #ee8b97; }
+.siteThemeLight .accountRetentionSettings { --retention-text: #30445a; --retention-muted: #60758d; --retention-line: #d4dee8; --retention-field: #fff; --retention-accent: #116657; }
+.siteThemeBlack .accountRetentionSettings { --retention-text: #e8eee8; --retention-muted: #96a396; --retention-line: rgba(255,255,255,.14); --retention-field: #080808; --retention-accent: #48ff9b; }
+.siteThemeLight .accountRetentionStatus.error { color: #b4233c; }
+@media (max-width: 560px) { .accountRetentionField input { min-height: 44px; } }

@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   defaultImagePricingConfigForModel,
   normalizeImagePricingConfig,
+  imageTokenBillingFlagsMatch,
   normalizeImagePromotionConfig
 } from '../../shared/image-pricing.js';
 import { normalizeRechargeConfig } from '../../shared/recharge-config.js';
@@ -20,6 +21,10 @@ import {
 } from '../../shared/admin-permissions.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
 import { installCreditLedgerAuditTrigger } from './audit-actors.js';
+import { getModelRule } from './upstream-model-rules.js';
+import { migrateLegacyUpstreamModelRules } from './legacy-upstream-migration.js';
+import { normalizeAssetRetentionDays } from '../../shared/asset-retention.js';
+import { getNewAPIAccountProfile, listNewAPIProviders, getNewAPIProvider, reserveNewAPIImage } from './newapi-account.js';
 
 const DEFAULT_DB_PATH = path.resolve(process.cwd(), 'data', 'app.sqlite');
 const PASSWORD_SCHEME = 'scrypt-v1';
@@ -284,6 +289,10 @@ export function reconcileInterruptedGenerationState(db, errorCode = 'SERVER_REST
     `).run(errorCode, completedAt);
     interruptedVideoTasks = Number(videoTaskResult.changes || 0);
 
+    db.prepare(`UPDATE asset_processing_jobs SET status = 'failed', error_code = ?, updated_at = ?, completed_at = ?
+      WHERE status = 'running' AND job_type IN ('generated-thumbnail', 'image-variants')`)
+      .run(errorCode, completedAt, completedAt);
+
     const reservations = db.prepare(`
       SELECT r.id, r.user_id, r.amount, r.amount_centi, r.billing_scope, r.group_id, r.charged_user_id, u.role
       FROM credit_reservations r
@@ -427,6 +436,14 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS upstream_model_rules (
+      kind TEXT NOT NULL,
+      model TEXT NOT NULL,
+      config_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (kind, model)
     );
 
     CREATE TABLE IF NOT EXISTS chat_provider_configs (
@@ -601,6 +618,59 @@ function migrate(db, { recoverInterrupted = true } = {}) {
       metadata TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS newapi_accounts (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      issuer TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      source_user_id INTEGER NOT NULL,
+      source_token_id INTEGER NOT NULL,
+      token_encrypted TEXT NOT NULL,
+      models_json TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      UNIQUE (issuer, subject)
+    );
+
+    CREATE TABLE IF NOT EXISTS newapi_login_flows (
+      state_hash TEXT PRIMARY KEY,
+      browser_hash TEXT NOT NULL,
+      verifier TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      consumed_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS newapi_storage_authorizations (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      issuer TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      mandate_id TEXT NOT NULL,
+      credential_encrypted TEXT NOT NULL,
+      unit_price_cents INTEGER NOT NULL,
+      monthly_limit_cents INTEGER NOT NULL,
+      starts_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      blocked_since TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS newapi_storage_invoices (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      issuer TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      mandate_id TEXT NOT NULL,
+      credential_encrypted TEXT NOT NULL,
+      billing_month TEXT NOT NULL,
+      request_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      receipt_json TEXT,
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      paid_at TEXT,
+      last_attempt_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS newapi_storage_invoices_user_idx
+      ON newapi_storage_invoices(user_id, status, created_at);
 
     CREATE TABLE IF NOT EXISTS credit_reservations (
       id TEXT PRIMARY KEY,
@@ -1124,6 +1194,38 @@ function migrate(db, { recoverInterrupted = true } = {}) {
         updated_at TEXT NOT NULL
       );
 
+    CREATE TABLE IF NOT EXISTS user_ecommerce_watermark_settings (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      settings_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_asset_retention_settings (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      retention_days INTEGER NOT NULL DEFAULT 30 CHECK (retention_days BETWEEN 1 AND 36500),
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_retention_batches (
+      run_date TEXT PRIMARY KEY,
+      lease_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      result_json TEXT NOT NULL DEFAULT '{}',
+      started_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_retention_deletions (
+      asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+      owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      manifest_json TEXT NOT NULL,
+      deleted_paths_json TEXT NOT NULL DEFAULT '[]',
+      error_code TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS redemption_code_batches (
       id TEXT PRIMARY KEY,
       batch_number TEXT NOT NULL UNIQUE,
@@ -1456,6 +1558,7 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'credit_reservations', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'guest_generation_usage', 'usage_count', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'user_ui_preferences', 'hide_ecommerce', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'user_ui_preferences', 'chat_provider_id', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'users', 'admin_note', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'users', 'last_login_at', 'TEXT');
   ensureColumn(db, 'users', 'system_group_id', 'TEXT');
@@ -1476,6 +1579,9 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'image_provider_configs', 'pricing_strategy', "TEXT NOT NULL DEFAULT 'pixel-quality-formula'");
   ensureColumn(db, 'image_provider_configs', 'pricing_config', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'image_provider_configs', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'chat_provider_configs', 'magic_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'chat_provider_configs', 'assistant_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  migrateLegacyUpstreamModelRules(db);
   db.exec('CREATE INDEX IF NOT EXISTS image_provider_sort_idx ON image_provider_configs(sort_order, created_at)');
   ensureColumn(db, 'redemption_codes', 'disabled_by', 'TEXT');
   ensureColumn(db, 'redemption_codes', 'disabled_at', 'TEXT');
@@ -1563,13 +1669,31 @@ function migrate(db, { recoverInterrupted = true } = {}) {
   ensureColumn(db, 'free_generation_tasks', 'source_width', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'free_generation_tasks', 'source_height', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'free_generation_tasks', 'source_thumbnail', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'free_generation_tasks', 'summary_json', "TEXT NOT NULL DEFAULT ''");
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS free_task_summary_invalidate AFTER UPDATE OF request_json ON free_generation_tasks
+      WHEN NEW.request_json IS NOT OLD.request_json
+      BEGIN UPDATE free_generation_tasks SET summary_json = '' WHERE id = NEW.id; END;
+    CREATE INDEX IF NOT EXISTS ledger_user_order_idx ON credit_ledger(user_id, created_at DESC, id DESC, amount);
+    CREATE INDEX IF NOT EXISTS ledger_created_order_idx ON credit_ledger(created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS ledger_refund_reference_idx ON credit_ledger(user_id, type, reference_id);
+    CREATE INDEX IF NOT EXISTS reservations_user_external_reference_idx
+      ON credit_reservations(user_id, json_extract(CASE WHEN json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.externalReferenceId'), created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS generations_reservation_idx ON generations(reservation_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS ecommerce_tasks_generation_idx ON ecommerce_generation_tasks(generation_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS storage_charges_ledger_idx ON storage_billing_charges(ledger_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS audit_ledger_balance_idx ON audit_events(credit_ledger_id, created_at DESC, id DESC) WHERE balance_after IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS asset_jobs_status_created_idx ON asset_processing_jobs(status, created_at);
+  `);
   db.exec('CREATE INDEX IF NOT EXISTS generations_project_slot_idx ON generations(project_id, slot_id, created_at DESC)');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ecommerce_outputs_project_slot_unique_idx ON ecommerce_project_outputs(project_id, slot_id)');
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_reservations_scope_request_unique_idx ON credit_reservations(billing_scope, COALESCE(group_id, ''), request_key) WHERE request_key != ''");
   db.prepare('UPDATE credit_reservations SET amount_centi = amount * 100 WHERE amount_centi = 0 AND amount > 0').run();
   db.prepare('UPDATE credit_reservations SET charged_user_id = user_id WHERE charged_user_id IS NULL').run();
 
-  migrateUnifiedMediaAssets(db);
+  if (String(process.env.UNIFIED_MEDIA_BACKFILL_ENABLED || '').toLowerCase() !== 'false') {
+    migrateUnifiedMediaAssets(db);
+  }
 
   if (recoverInterrupted) {
     reconcileInterruptedGenerationState(db);
@@ -2860,6 +2984,7 @@ export function respondGroupAdminTransfer(userId, transferId, accept) {
 export function getUserProfile(userId) {
   const user = getUserById(userId);
   if (!user) return null;
+  const retention = getDb().prepare('SELECT retention_days FROM user_asset_retention_settings WHERE user_id = ?').get(userId);
   const recentTransactions = listCreditLedger(userId, 30).map((row) => {
     const metadata = parseJsonObject(row.metadata);
     return {
@@ -2877,6 +3002,8 @@ export function getUserProfile(userId) {
   const groupAccount = groupState.membership;
   return {
     ...user,
+    assetRetentionDays: normalizeAssetRetentionDays(retention?.retention_days),
+    externalWallet: getNewAPIAccountProfile(userId, getDb()),
     personalCreditBalance: Number(user.creditBalance || 0),
     creditBalance: groupAccount ? Number(groupAccount.available || 0) : Number(user.creditBalance || 0),
     billingMode: groupAccount ? 'group' : 'personal',
@@ -3090,9 +3217,14 @@ export function reserveCreditCenti(userId, {
 }
 
 export function reserveCredit(userId, { caseId = null, prompt = '', generationId = null, amount = 1, metadata = {}, requestKey = '' } = {}) {
-  const creditAmount = Math.max(1, Math.min(100000, Math.round(Number(amount) || 1)));
+  if (getNewAPIAccountProfile(userId, getDb()) && metadata?.providerId) {
+    const external = reserveNewAPIImage(userId, { caseId, prompt, generationId, metadata, requestKey }, getDb());
+    if (external.duplicate) throw Object.assign(new Error('BILLING_REQUEST_DUPLICATE'), { code: 'BILLING_REQUEST_DUPLICATE' });
+    return external;
+  }
+  const creditAmount = Math.max(0.01, Math.min(100000, Math.round((Number(amount) || 1) * 100) / 100));
   const reservation = reserveCreditCenti(userId, {
-    amountCenti: creditAmount * 100,
+    amountCenti: Math.round(creditAmount * 100),
     caseId,
     prompt,
     generationId,
@@ -3118,6 +3250,11 @@ export function settleCreditReservationInTransaction(db, reservationId, actualCe
   const completedAt = now();
   const refundCenti = reservedCenti - settledCenti;
   const metadata = parseJsonObject(reservation.metadata_json);
+  if (reservation.billing_scope === 'external_newapi') {
+    db.prepare("UPDATE credit_reservations SET status = 'succeeded', settled_centi = 0, completed_at = ? WHERE id = ? AND status = 'reserved'")
+      .run(now(), reservation.id);
+    return db.prepare('SELECT * FROM credit_reservations WHERE id = ?').get(reservation.id);
+  }
   const ledgerReferenceId = String(metadata.externalReferenceId || reservation.id).slice(0, 180);
   if (reservation.billing_scope === 'group') {
     const debit = db.prepare(`
@@ -3250,6 +3387,10 @@ export function listGenerations(userId, limit = 30, offset = 0) {
     SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status, storage_path, output_url, file_size, mime_type, error_code, archived_at, history_hidden_at, created_at, completed_at
     FROM generations
     WHERE user_id = ? AND archived_at IS NULL AND history_hidden_at IS NULL AND status = 'succeeded' AND storage_path IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions deletion JOIN assets asset ON asset.id = deletion.asset_id
+        WHERE asset.owner_user_id = generations.user_id
+          AND ((asset.source_table = 'generations' AND asset.source_id = generations.id)
+            OR asset.original_storage_path = generations.storage_path))
     ORDER BY created_at DESC, id DESC
     LIMIT ? OFFSET ?
   `).all(userId, limit, offset);
@@ -3280,6 +3421,10 @@ export function getGeneration(userId, generationId) {
     SELECT id, project_id, slot_id, version_number, prompt, model, size, quality, status,
       storage_path, output_url, file_size, mime_type, error_code, archived_at, created_at, completed_at
     FROM generations WHERE id = ? AND user_id = ?
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions deletion JOIN assets asset ON asset.id = deletion.asset_id
+        WHERE asset.owner_user_id = generations.user_id
+          AND ((asset.source_table = 'generations' AND asset.source_id = generations.id)
+            OR asset.original_storage_path = generations.storage_path))
   `).get(generationId, userId);
 }
 
@@ -3289,6 +3434,10 @@ export function listEcommerceProjectGenerations(userId, projectId, limit = 200) 
       storage_path, output_url, file_size, mime_type, error_code, archived_at, created_at, completed_at
     FROM generations
     WHERE user_id = ? AND project_id = ? AND archived_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions deletion JOIN assets asset ON asset.id = deletion.asset_id
+        WHERE asset.owner_user_id = generations.user_id
+          AND ((asset.source_table = 'generations' AND asset.source_id = generations.id)
+            OR asset.original_storage_path = generations.storage_path))
     ORDER BY created_at DESC
     LIMIT ?
   `).all(userId, projectId, Math.max(1, Math.min(Number(limit) || 200, 500)));
@@ -3636,17 +3785,21 @@ export function listCreditLedgerPage({
   `).get(...params);
   const rows = db.prepare(`
     WITH ledger_window AS (
-      SELECT l.*,
+      SELECT l.id,
         SUM(l.amount) OVER (
           PARTITION BY l.user_id ORDER BY l.created_at DESC, l.id DESC
           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
         ) AS newer_amount
       FROM credit_ledger l
+      ${includeAllUsers ? '' : 'WHERE l.user_id = ?'}
     ),
-    ledger_base AS (
+    ledger_base AS MATERIALIZED (
       SELECT l.*, u.email AS user_email, u.full_name AS user_name, u.admin_note AS user_admin_note,
-        u.credit_balance AS current_balance
-      FROM ledger_window l JOIN users u ON u.id = l.user_id ${whereSql}
+        u.credit_balance AS current_balance, ledger_window.newer_amount
+      FROM credit_ledger l JOIN ledger_window ON ledger_window.id = l.id
+      JOIN users u ON u.id = l.user_id ${whereSql}
+      ORDER BY l.created_at DESC, l.id DESC
+      LIMIT ? OFFSET ?
     )
     SELECT base.*,
       base.current_balance - COALESCE(base.newer_amount, 0) AS derived_balance_after,
@@ -3674,24 +3827,38 @@ export function listCreditLedgerPage({
       requester.email AS requester_email
     FROM ledger_base base
     LEFT JOIN credit_reservations reservation
-      ON reservation.id = base.reference_id
-      OR json_extract(reservation.metadata_json, '$.externalReferenceId') = base.reference_id
+      ON reservation.id = COALESCE(
+        (SELECT id FROM credit_reservations WHERE id = base.reference_id AND user_id = base.user_id),
+        (SELECT id FROM credit_reservations
+          WHERE json_extract(CASE WHEN json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.externalReferenceId') = base.reference_id
+            AND user_id = base.user_id ORDER BY created_at DESC, id DESC LIMIT 1)
+      )
     LEFT JOIN generations generation
-      ON generation.reservation_id = reservation.id OR generation.id = base.reference_id
+      ON generation.id = COALESCE(
+        (SELECT id FROM generations WHERE id = base.reference_id AND user_id = base.user_id),
+        (SELECT id FROM generations WHERE reservation_id = reservation.id ORDER BY created_at DESC, id DESC LIMIT 1)
+      )
     LEFT JOIN free_generation_tasks free_task ON free_task.id = base.reference_id
     LEFT JOIN video_generation_tasks video_task ON video_task.id = base.reference_id
     LEFT JOIN ecommerce_generation_tasks ecommerce_task
-      ON ecommerce_task.generation_id = generation.id OR ecommerce_task.id = base.reference_id
+      ON ecommerce_task.id = COALESCE(
+        (SELECT id FROM ecommerce_generation_tasks WHERE id = base.reference_id AND user_id = base.user_id),
+        (SELECT id FROM ecommerce_generation_tasks WHERE generation_id = generation.id ORDER BY created_at DESC, id DESC LIMIT 1)
+      )
     LEFT JOIN payment_orders payment ON payment.id = base.reference_id
-    LEFT JOIN storage_billing_charges storage ON storage.ledger_id = base.id
-    LEFT JOIN audit_events audit ON audit.credit_ledger_id = base.id AND audit.balance_after IS NOT NULL
+    LEFT JOIN storage_billing_charges storage ON storage.id = (
+      SELECT id FROM storage_billing_charges WHERE ledger_id = base.id ORDER BY created_at DESC, id DESC LIMIT 1
+    )
+    LEFT JOIN audit_events audit ON audit.id = (
+      SELECT id FROM audit_events WHERE credit_ledger_id = base.id AND balance_after IS NOT NULL
+        ORDER BY created_at DESC, id DESC LIMIT 1
+    )
     LEFT JOIN groups group_account
       ON group_account.id = COALESCE(reservation.group_id, json_extract(base.metadata, '$.groupId'))
     LEFT JOIN users requester
       ON requester.id = COALESCE(json_extract(base.metadata, '$.actorUserId'), json_extract(base.metadata, '$.adminUserId'))
     ORDER BY base.created_at DESC, base.id DESC
-    LIMIT ? OFFSET ?
-  `).all(...params, normalizedPageSize, (normalizedPage - 1) * normalizedPageSize);
+  `).all(...(includeAllUsers ? [] : [userId]), ...params, normalizedPageSize, (normalizedPage - 1) * normalizedPageSize);
   const allowPrompt = Boolean(includePrompt && getPromptLoggingConfig().enabled);
   return {
     items: rows.map((row) => normalizedLedgerDetails(row, {
@@ -3715,7 +3882,7 @@ export function listCreditLedgerPage({
               (SELECT COALESCE(SUM(credit_balance), 0) FROM users WHERE status = 'active')
               + (SELECT COALESCE(SUM(balance_centi), 0) / 100.0 FROM groups) AS value
           `).get()?.value || 0)
-        : Number(getUserProfile(userId)?.creditBalance || 0)
+        : Number(db.prepare('SELECT credit_balance FROM users WHERE id = ?').get(userId)?.credit_balance || 0)
     },
     promptVisible: allowPrompt
   };
@@ -4486,6 +4653,12 @@ function normalizeProviderRow(row, includeSecret = false) {
   if (!row) return null;
   let storedPricing = {};
   try { storedPricing = JSON.parse(row.pricing_config || '{}'); } catch { storedPricing = {}; }
+  const upstreamCost = getModelRule(getDb(), 'image', row.model);
+  if (!Object.hasOwn(storedPricing, 'chargeTextTokens') && upstreamCost?.includeImageText) {
+    storedPricing.chargeTextTokens = true;
+    storedPricing.chargeReferenceTokens = false;
+    getDb().prepare('UPDATE image_provider_configs SET pricing_config = ? WHERE id = ?').run(JSON.stringify(storedPricing), row.id);
+  }
   const hasStoredPricing = storedPricing && typeof storedPricing === 'object' && Object.keys(storedPricing).length > 0;
   const pricing = normalizeImagePricingConfig(storedPricing, {
     model: row.model,
@@ -4498,7 +4671,7 @@ function normalizeProviderRow(row, includeSecret = false) {
     baseUrl: row.base_url,
     model: row.model,
     pricingStrategy: pricing.strategy,
-    pricingConfig: pricing,
+    pricingConfig: { ...pricing, upstreamCost },
     enabled: Boolean(row.enabled),
     isDefault: Boolean(row.is_default),
     sortOrder: Number(row.sort_order || 0),
@@ -4534,6 +4707,7 @@ export function ensureDefaultImageProviderConfig() {
 }
 
 export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
+  if (!admin && getNewAPIAccountProfile(userId, getDb())) return listNewAPIProviders(userId, getDb());
   ensureDefaultImageProviderConfig();
   const rows = getDb().prepare(`SELECT * FROM image_provider_configs ${admin ? '' : 'WHERE enabled = 1'} ORDER BY sort_order ASC, created_at ASC, id ASC`).all();
   const providers = rows.map((row) => {
@@ -4544,6 +4718,7 @@ export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
       providerType: normalized.providerType,
       model: normalized.model,
       pricingStrategy: normalized.pricingStrategy,
+      chargeTextTokens: Boolean(normalized.pricingConfig.chargeTextTokens),
       isDefault: normalized.isDefault,
       sortOrder: normalized.sortOrder
     });
@@ -4552,6 +4727,7 @@ export function listImageProviderConfigs({ admin = false, userId = '' } = {}) {
 }
 
 export function getImageProviderConfig(providerId = '', { includeSecret = true, userId = '' } = {}) {
+  if (getNewAPIAccountProfile(userId, getDb())) return getNewAPIProvider(userId, providerId, includeSecret, getDb());
   ensureDefaultImageProviderConfig();
   const db = getDb();
   const rows = providerId
@@ -4567,10 +4743,16 @@ export function saveImageProviderConfig(values) {
   const existing = db.prepare('SELECT * FROM image_provider_configs WHERE id = ?').get(id);
   const apiKeyEncrypted = values.apiKey ? encryptProviderSecret(values.apiKey) : existing?.api_key_encrypted || '';
   if (!apiKeyEncrypted) throw Object.assign(new Error('API_KEY_REQUIRED'), { code: 'API_KEY_REQUIRED' });
-  const pricing = normalizeImagePricingConfig(values.pricingConfig, {
+  const storedPricing = existing ? parseJsonObject(existing.pricing_config) : {};
+  const requestedPricing = values.pricingConfig && typeof values.pricingConfig === 'object' && !Array.isArray(values.pricingConfig)
+    ? values.pricingConfig : {};
+  const pricing = normalizeImagePricingConfig({ ...storedPricing, ...requestedPricing }, {
     model: values.model,
     strategy: values.pricingStrategy
   });
+  if (!imageTokenBillingFlagsMatch(requestedPricing, pricing)) {
+    throw Object.assign(new Error('PRICING_SAVE_MISMATCH'), { code: 'PRICING_SAVE_MISMATCH' });
+  }
   const sortOrder = existing
     ? Number(existing.sort_order || 0)
     : Number(db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM image_provider_configs').get()?.next_order || 0);
@@ -4634,6 +4816,7 @@ function canAccessUnifiedMediaAsset(db, userId, mediaAssetId) {
     FROM assets asset
     WHERE asset.id = ?
       AND asset.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = asset.id)
       AND (
         asset.owner_user_id = ?
         OR EXISTS (

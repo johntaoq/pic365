@@ -11,13 +11,13 @@ import {
   updateEcommerceOutputConsistency
 } from '../_lib/ecommerce-p1-db.js';
 import { selectEcommerceAssetsForSlot } from '../_lib/ecommerce-prompt.js';
-import { generateText, isProviderConfigured } from '../_lib/provider.js';
+import { getChatProviderConfig, requestChatCompletion } from '../_lib/chat-engine.js';
+import { newAPITextErrorResponse, ensureNewAPIAuthorization } from '../_lib/newapi-account.js';
 import { applyRateLimitHeaders, checkRateLimit } from '../_lib/rate-limit.js';
 import { readJsonBody } from '../_lib/request.js';
 import { readStoredImage } from '../_lib/storage.js';
 import { getEcommercePlatform, getEcommerceVisualStyle } from '../../shared/ecommerce-catalog.js';
 
-const CONSISTENCY_MODEL = process.env.AI_CONSISTENCY_MODEL || process.env.AI_LLM_MODEL || 'gpt-5.6-luna';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -66,8 +66,6 @@ export default async function handler(req, res) {
   }
   const auth = authenticateRequest(req);
   if (auth.error) return json(res, auth.status || 401, { ok: false, error: auth.error });
-  if (!isProviderConfigured()) return json(res, 500, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
-
   const rateLimit = checkRateLimit(req, { key: `consistency:${auth.user.id}`, limit: 20, windowMs: 60 * 60 * 1000 });
   applyRateLimitHeaders(res, rateLimit);
   if (!rateLimit.allowed) return json(res, 429, { ok: false, error: 'RATE_LIMITED' });
@@ -91,6 +89,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    await ensureNewAPIAuthorization(auth.user.id);
+    const provider = getChatProviderConfig('', { userId: auth.user.id, purpose: 'magic' });
+    if (!provider?.apiKey) return json(res, 503, { ok: false, error: 'SERVER_NOT_CONFIGURED' });
     const platform = getEcommercePlatform(project.platformId);
     const slot = platform.slots.find((item) => item.id === slotId);
     if (!slot) return json(res, 400, { ok: false, error: 'INVALID_PROJECT_SLOT' });
@@ -153,9 +154,8 @@ export default async function handler(req, res) {
       ...supportImages.map(({ stored }) => ({ type: 'image_url', image_url: { url: dataUrl(stored), detail: 'high' } }))
     ];
     if (anchorImage) imageContent.push({ type: 'image_url', image_url: { url: dataUrl(anchorImage), detail: 'high' } });
-    const result = await generateText({
-      model: CONSISTENCY_MODEL,
-      temperature: 0,
+    const result = await requestChatCompletion({
+      provider,
       messages: [{
         role: 'user',
         content: [
@@ -174,6 +174,7 @@ export default async function handler(req, res) {
       code: error?.code || null,
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-    return json(res, 502, { ok: false, error: 'CONSISTENCY_CHECK_FAILED' });
+    const external = newAPITextErrorResponse(error);
+    return json(res, external?.status || 502, { ok: false, error: external?.error || 'CONSISTENCY_CHECK_FAILED' });
   }
 }

@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import { authenticateRequest } from '../_lib/local-auth.js';
 import {
-  chargeAiToolCredit,
   getEcommerceProject,
   listEcommerceProjectAssets,
   markEcommerceProjectAutomaticAnalysis,
   saveEcommerceProjectAutomaticAnalysis
 } from '../_lib/local-db.js';
-import { generateText, isProviderConfigured } from '../_lib/provider.js';
+import { getChatProviderConfig, requestChatCompletion } from '../_lib/chat-engine.js';
+import { reserveMagicCredit, completeMagicCredit, cancelMagicCredit } from '../_lib/magic-billing.js';
+import { newAPITextErrorResponse, ensureNewAPIAuthorization } from '../_lib/newapi-account.js';
 import { readJsonBody } from '../_lib/request.js';
 import { readStoredImage } from '../_lib/storage.js';
 import { ECOMMERCE_INDUSTRIES, getEcommerceSubcategory } from '../../shared/ecommerce-catalog.js';
@@ -22,7 +23,6 @@ import {
   ECOMMERCE_BRIEF_SYSTEM_PROMPT
 } from '../../shared/ecommerce-brief-prompt.js';
 
-const BRIEF_MODEL = process.env.AI_BRIEF_MODEL || process.env.AI_SANITIZE_MODEL || 'gpt-5.6-luna';
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
 const MAX_ATTEMPTS = 2;
@@ -88,7 +88,7 @@ function selectEvidenceAssets(project, assets) {
     .slice(0, 4);
 }
 
-function automaticAnalysisFingerprint(project, assets) {
+function automaticAnalysisFingerprint(project, assets, provider) {
   const evidence = selectEvidenceAssets(project, assets).map((asset) => ({
     id: asset.id,
     type: asset.assetType,
@@ -102,6 +102,12 @@ function automaticAnalysisFingerprint(project, assets) {
     industryId: project.industryId,
     subcategoryId: project.subcategoryId || '',
     masterAssetId: project.masterAssetId || '',
+    chatProvider: provider ? {
+      id: provider.id,
+      model: provider.model,
+      baseUrl: provider.baseUrl,
+      maxOutputTokens: provider.maxOutputTokens
+    } : null,
     evidence
   })).digest('hex');
 }
@@ -166,16 +172,16 @@ async function loadEvidence(project, assets) {
   return evidence;
 }
 
-async function generateBrief(input) {
+async function generateBrief(input, provider) {
   const fallbackBrief = buildFallbackEcommerceBrief(input);
   let lastError;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+  const attempts = provider.billingSource ? 1 : MAX_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const evidenceManifest = input.evidence.map((item, index) => `Image ${index + 1}: ${item.label}`).join('\n');
       const requestText = buildEcommerceBriefRequestText({ ...input, evidenceManifest });
-      const result = await generateText({
-        model: BRIEF_MODEL,
-        temperature: 0.25,
+      const result = await requestChatCompletion({
+        provider,
         messages: [
           { role: 'system', content: ECOMMERCE_BRIEF_SYSTEM_PROMPT },
           {
@@ -197,6 +203,7 @@ async function generateBrief(input) {
             identitySpec: { ...fallbackBrief.identitySpec, ...brief.identitySpec }
           },
           model: result.model,
+          usage: result.usage,
           fallback: false
         };
       }
@@ -204,7 +211,7 @@ async function generateBrief(input) {
     } catch (error) {
       lastError = error;
     }
-    if (attempt + 1 < MAX_ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, 250));
+    if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw lastError || new Error('BRIEF_GENERATION_FAILED');
 }
@@ -241,7 +248,16 @@ export default async function handler(req, res) {
 
   let evidence = [];
   let projectAssets = [];
-  const providerConfigured = isProviderConfigured();
+  let provider;
+  try {
+    await ensureNewAPIAuthorization(auth.user.id);
+    provider = getChatProviderConfig('', { userId: auth.user.id, purpose: 'magic' });
+  } catch (error) {
+    const external = newAPITextErrorResponse(error);
+    if (external) return json(res, external.status, { ok: false, error: external.error });
+    throw error;
+  }
+  const providerConfigured = Boolean(provider?.apiKey);
   if (projectId) {
     project ||= getEcommerceProject(auth.user.id, projectId);
     if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
@@ -253,7 +269,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const fingerprint = automatic ? automaticAnalysisFingerprint(project, projectAssets) : '';
+  const fingerprint = automatic ? automaticAnalysisFingerprint(project, projectAssets, provider) : '';
   if (automatic && !evidence.length) {
     markEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, { fingerprint, status: 'waiting-for-image' });
     return json(res, 409, { ok: false, error: 'PRODUCT_IMAGE_REQUIRED' });
@@ -289,7 +305,7 @@ export default async function handler(req, res) {
       return json(res, 503, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
     }
     try {
-      const generated = await generateBrief(input);
+      const generated = await generateBrief(input, provider);
       const merged = mergeAutomaticBrief(project, generated.brief);
       const savedProject = saveEcommerceProjectAutomaticAnalysis(auth.user.id, projectId, {
         ...merged,
@@ -309,47 +325,49 @@ export default async function handler(req, res) {
         code: error?.code || null,
         message: String(error?.message || 'unknown').slice(0, 240)
       });
-      return json(res, 502, { ok: false, error: 'AUTOMATIC_ANALYSIS_FAILED' });
+      const external = newAPITextErrorResponse(error);
+      return json(res, external?.status || 502, { ok: false, error: external?.error || 'AUTOMATIC_ANALYSIS_FAILED' });
     }
   }
 
-  let user;
+  if (!providerConfigured) return json(res, 503, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED' });
+  let reservation;
   try {
-    user = chargeAiToolCredit(auth.user.id, {
+    reservation = reserveMagicCredit(auth.user.id, provider, {
       source: input.focus === 'identitySpec' ? 'ai_magic_identity' : 'ai_magic_brief',
-      amount: 1,
-      metadata: { projectId, focus: input.focus }
+      text: `${ECOMMERCE_BRIEF_SYSTEM_PROMPT}\n${buildEcommerceBriefRequestText(input)}`,
+      outputTokens: 1200,
+      imageCount: evidence.length
     });
   } catch (error) {
+    const external = newAPITextErrorResponse(error);
+    if (external) return json(res, external.status, { ok: false, error: external.error });
     if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED'].includes(error?.code)) return json(res, 402, { ok: false, error: error.code });
     if (error?.code === 'GROUP_ACCESS_SUSPENDED') return json(res, 403, { ok: false, error: error.code });
     return json(res, 500, { ok: false, error: 'AI_TOOL_CHARGE_FAILED' });
   }
 
-  if (!providerConfigured) {
-    return json(res, 200, {
-      ok: true,
-      brief: fallbackBrief,
-      model: 'local-product-brief',
-      fallback: true,
-      user
-    });
-  }
-
   try {
-    const generated = await generateBrief(input);
-    return json(res, 200, { ok: true, ...generated, user });
+    const generated = await generateBrief(input, provider);
+    const billing = completeMagicCredit(reservation, generated.usage);
+    return json(res, 200, { ok: true, ...generated, ...billing });
   } catch (error) {
     console.warn('AI product brief generation failed', {
       status: error?.status || null,
       code: error?.code || null,
       message: String(error?.message || 'unknown').slice(0, 240)
     });
+    const user = cancelMagicCredit(reservation, error?.code || 'AI_BRIEF_FAILED');
+    if (provider.billingSource) {
+      const external = newAPITextErrorResponse(error);
+      return json(res, external?.status || 502, { ok: false, error: external?.error || 'AI_BRIEF_FAILED', user });
+    }
     return json(res, 200, {
       ok: true,
       brief: fallbackBrief,
       model: 'local-product-brief',
       fallback: true,
+      chargedCredits: 0,
       user
     });
   }

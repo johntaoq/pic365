@@ -50,8 +50,9 @@ import {
 import { ECOMMERCE_PLATFORMS } from '../shared/ecommerce-catalog.js';
 import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-selection.js';
 import { resolveEcommerceRefinementSize } from '../shared/image-pricing.js';
-import { ImageCreditPrice, useServerImagePricing } from './image-pricing-client.jsx';
+import { ImageCreditPrice, useImagePricingAccess, useServerImagePricing } from './image-pricing-client.jsx';
 import { clampImagePanOffset } from './image-pan-zoom.js';
+import EcommerceWatermarkSettings, { useEcommerceWatermarkSettings, watermarkReady } from './ecommerce-watermark-settings.jsx';
 
 const copy = {
   zh: {
@@ -128,6 +129,9 @@ const copy = {
     exportAll: '导出交付',
     exporting: '正在打包……',
     includeDetailPage: '同时生成详情长图',
+    watermarkScope: '本次下载',
+    watermarkIncomplete: '请先完成文字或图片水印设置。',
+    watermarkSaveFailed: '个人水印配置尚未保存，请重试。',
     checkAll: '一键检查',
     checkSummary: (ready, total) => `${ready}/${total} 张通过 · 仅供参考`,
     platformRules: '参考检查结果',
@@ -285,6 +289,9 @@ const copy = {
     exportAll: 'Export delivery',
     exporting: 'Packaging...',
     includeDetailPage: 'Also create a long detail page',
+    watermarkScope: 'This download',
+    watermarkIncomplete: 'Complete the text or image watermark settings first.',
+    watermarkSaveFailed: 'Your watermark settings could not be saved. Please retry.',
     checkAll: 'Check all',
     checkSummary: (ready, total) => `${ready}/${total} passed · advisory only`,
     platformRules: 'Advisory check results',
@@ -588,6 +595,8 @@ function DeliveryArtboardLightbox({
   language,
   t,
   project,
+  providerModel,
+  chargeTextTokens,
   assets,
   selectedObject,
   selectedObjectOpacity,
@@ -627,7 +636,7 @@ function DeliveryArtboardLightbox({
   const selectedReferenceAssets = referenceInputs
     .map((input) => ({ ...input, asset: availableAssets.find((asset) => asset.id === input.assetId) }))
     .filter((input) => input.asset);
-  const refinementSize = slot ? resolveEcommerceRefinementSize(generation, slot) : '1024x1024';
+  const refinementSize = slot ? resolveEcommerceRefinementSize(generation, slot, providerModel) : '1024x1024';
   const refinementReferenceCount = countEcommerceReferenceImages({
     project,
     slot,
@@ -635,6 +644,7 @@ function DeliveryArtboardLightbox({
     baseGenerationId: generation?.id || '',
     referenceInputs
   });
+  const { skipImagePricing, showImagePricing } = useImagePricingAccess();
   const {
     pricing: refinementPricing,
     loading: refinementPricingLoading
@@ -642,8 +652,11 @@ function DeliveryArtboardLightbox({
     size: refinementSize,
     quality: 'medium',
     providerId: project.imageProviderId,
-    referenceCount: refinementReferenceCount
-  }, { enabled: Boolean(slot && generation?.id) });
+    projectId: project.id, slotId: slot?.id, baseGenerationId: generation?.id,
+    adjustment: refinementPrompt, targetArea, referenceInputs,
+    referenceCount: refinementReferenceCount,
+    chargeTextTokens
+  }, { enabled: Boolean(slot && generation?.id && project.imageProviderId) });
   const selectedLayerVisible = selectedObject === 'mask' ? maskVisible : textVisible;
 
   useEffect(() => {
@@ -867,9 +880,9 @@ function DeliveryArtboardLightbox({
             </details>
             <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={uploadReferenceAssets} />
             <button className="deliveryUploadRefinementAsset" type="button" onClick={() => fileInputRef.current?.click()} disabled={busy || referenceInputs.length >= 4 || !onUploadAssets}><Upload size={14} />{refinementState === 'uploading' ? t.uploadingRefinementAsset : t.uploadRefinementAsset}</button>
-            <button className="deliveryCreateRefinement" type="button" onClick={createRefinement} disabled={busy || refinementPricingLoading || !refinementPricing || !onRefine || !generation?.id || !refinementPrompt.trim()}>
+            <button className="deliveryCreateRefinement" type="button" onClick={createRefinement} disabled={busy || (!skipImagePricing && (refinementPricingLoading || !refinementPricing)) || !onRefine || !generation?.id || !refinementPrompt.trim()}>
               {refinementState === 'generating' ? <LoaderCircle className="spin" size={15} /> : <WandSparkles size={15} />}
-              {refinementState === 'generating' ? t.refiningImage : <>{t.createRefinementLabel} · <ImageCreditPrice pricing={refinementPricing} language={language} compact /></>}
+              {refinementState === 'generating' ? t.refiningImage : <>{t.createRefinementLabel}{showImagePricing && <> · <ImageCreditPrice pricing={refinementPricing} language={language} compact totalOnly /></>}</>}
             </button>
             {refinementMessage ? <p className={refinementMessage === t.refinementSuccess ? 'success' : 'error'}>{refinementMessage}</p> : null}
           </aside>
@@ -897,7 +910,10 @@ function ValidationPanel({ document, language, t }) {
 
 export default function EcommerceDeliveryCenter({
   language,
+  userId,
   project,
+  providerModel,
+  chargeTextTokens,
   platform,
   slots,
   outputs,
@@ -919,6 +935,9 @@ export default function EcommerceDeliveryCenter({
   const [dirty, setDirty] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [includeDetailPage, setIncludeDetailPage] = useState(true);
+  const [deliveryWatermarkEnabled, setDeliveryWatermarkEnabled] = useState(false);
+  const [watermarkReading, setWatermarkReading] = useState(false);
+  const watermarkSettings = useEcommerceWatermarkSettings(userId || '');
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [largePreviewOpen, setLargePreviewOpen] = useState(false);
   const [selectedCanvasObject, setSelectedCanvasObject] = useState('text');
@@ -960,6 +979,10 @@ export default function EcommerceDeliveryCenter({
   const workflowStep = getDeliveryWorkflowStep(documents, { dirty });
   const exportAvailability = getDeliveryExportAvailability(documents, { dirty });
   const canExportDelivery = exportAvailability.canExport;
+
+  useEffect(() => {
+    setDeliveryWatermarkEnabled(false);
+  }, [project.id, userId]);
 
   useEffect(() => {
     function moveCanvasObject(event) {
@@ -1324,6 +1347,11 @@ export default function EcommerceDeliveryCenter({
     }
     setStatus('exporting');
     try {
+      if (deliveryWatermarkEnabled) {
+        if (!watermarkSettings.ready) throw new Error('WATERMARK_SETTINGS_SAVE_FAILED');
+        if (!watermarkReady(watermarkSettings.settings)) throw new Error('WATERMARK_SETTINGS_INCOMPLETE');
+        if (!watermarkReady(await watermarkSettings.flush())) throw new Error('WATERMARK_SETTINGS_INCOMPLETE');
+      }
       const response = await fetch('/api/ecommerce/delivery-render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1331,12 +1359,14 @@ export default function EcommerceDeliveryCenter({
           projectId: project.id,
           documentIds,
           language,
-          includeDetailPage: documentIds.length ? false : includeDetailPage
+          includeDetailPage: documentIds.length ? false : includeDetailPage,
+          watermark: deliveryWatermarkEnabled
         })
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         if (payload.error === 'DELIVERY_SOURCE_UNAVAILABLE') setMessage(t.exportBlocked);
+        else if (payload.error === 'WATERMARK_SETTINGS_INCOMPLETE' || payload.error === 'LAYOUT_WATERMARK_INVALID') setMessage(t.watermarkIncomplete);
         else setMessage(t.actionFailed);
         setStatus('error');
         return;
@@ -1345,9 +1375,10 @@ export default function EcommerceDeliveryCenter({
       triggerDownload(blob, filenameFromDisposition(response.headers.get('content-disposition'), `${project.productName}-delivery.zip`));
       setStatus('idle');
       setMessage('');
-    } catch {
+    } catch (error) {
       setStatus('error');
-      setMessage(t.actionFailed);
+      setMessage(error?.message === 'WATERMARK_SETTINGS_INCOMPLETE' ? t.watermarkIncomplete
+        : error?.message === 'WATERMARK_SETTINGS_SAVE_FAILED' ? t.watermarkSaveFailed : t.actionFailed);
     }
   }
 
@@ -1358,9 +1389,16 @@ export default function EcommerceDeliveryCenter({
     }
     setStatus('exporting');
     try {
-      const response = await fetch(`/api/ecommerce/delivery-render?documentId=${encodeURIComponent(selectedDocument.id)}&download=1&language=${language}`);
+      if (deliveryWatermarkEnabled) {
+        if (!watermarkSettings.ready) throw new Error('WATERMARK_SETTINGS_SAVE_FAILED');
+        if (!watermarkReady(watermarkSettings.settings)) throw new Error('WATERMARK_SETTINGS_INCOMPLETE');
+        if (!watermarkReady(await watermarkSettings.flush())) throw new Error('WATERMARK_SETTINGS_INCOMPLETE');
+      }
+      const response = await fetch(`/api/ecommerce/delivery-render?documentId=${encodeURIComponent(selectedDocument.id)}&download=1&language=${language}${deliveryWatermarkEnabled ? '&watermark=1' : ''}`);
       if (!response.ok) {
-        setMessage(t.actionFailed);
+        const payload = await response.json().catch(() => ({}));
+        setMessage(['WATERMARK_SETTINGS_INCOMPLETE', 'LAYOUT_WATERMARK_INVALID'].includes(payload.error)
+          ? t.watermarkIncomplete : t.actionFailed);
         setStatus('error');
         return;
       }
@@ -1368,9 +1406,10 @@ export default function EcommerceDeliveryCenter({
       triggerDownload(blob, filenameFromDisposition(response.headers.get('content-disposition'), `${project.productName}.${selectedDocument.outputFormat}`));
       setStatus('idle');
       setMessage('');
-    } catch {
+    } catch (error) {
       setStatus('error');
-      setMessage(t.actionFailed);
+      setMessage(error?.message === 'WATERMARK_SETTINGS_INCOMPLETE' ? t.watermarkIncomplete
+        : error?.message === 'WATERMARK_SETTINGS_SAVE_FAILED' ? t.watermarkSaveFailed : t.actionFailed);
     }
   }
 
@@ -1621,10 +1660,16 @@ export default function EcommerceDeliveryCenter({
                     <button className="reset" type="button" onClick={() => resetCanvasObject(selectedCanvasObject)} disabled={!selectedObjectVisible}><RotateCcw size={13} />{t.resetObject}</button>
                   </div>
                 ) : null}
-                <div className="deliveryPreviewActions">
-                  <button type="button" onClick={exportCurrentDocument} disabled={!selectedDocument.sourceGenerationId || status === 'exporting'}>
-                    <Download size={14} /> {t.exportCurrent}
-                  </button>
+                <div className="deliveryExportControls">
+                  <EcommerceWatermarkSettings language={language} scope={t.watermarkScope}
+                    className="deliveryWatermarkSettings" active={deliveryWatermarkEnabled}
+                    onActiveChange={setDeliveryWatermarkEnabled} state={watermarkSettings}
+                    disabled={status === 'exporting'} onBusyChange={setWatermarkReading} onMessage={setMessage} />
+                  <div className="deliveryPreviewActions">
+                    <button type="button" onClick={exportCurrentDocument} disabled={!selectedDocument.sourceGenerationId || status === 'exporting' || watermarkReading}>
+                      <Download size={14} /> {t.exportCurrent}
+                    </button>
+                  </div>
                 </div>
               </section>
 
@@ -1684,7 +1729,7 @@ export default function EcommerceDeliveryCenter({
 
       {activeTab === 'sequence' ? (
         <div className="deliverySequenceWorkspace">
-          <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div><div><button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button></div></header>
+          <header><div><strong>{t.sequenceTitle}</strong><span>{t.sequenceText}</span></div></header>
           <div className="deliverySequenceStats"><span><Layers3 size={15} /> {t.selectedCount(exportCount)}</span><label><input type="checkbox" checked={includeDetailPage} onChange={(event) => setIncludeDetailPage(event.target.checked)} />{t.includeDetailPage}</label></div>
           <div className="deliverySequenceGrid">
             <div className="deliverySequenceList">
@@ -1702,6 +1747,13 @@ export default function EcommerceDeliveryCenter({
               }) : <div className="deliverySequenceEmpty"><CircleMinus size={24} /><strong>{t.noIncludedTitle}</strong><span>{t.noIncludedText}</span></div>}
             </div>
             <div className="deliveryLongPreview">{includedDocuments.map((document) => { const generation = generationById.get(document.sourceGenerationId); return generation?.imageUrl ? <img src={generation.imageUrl} alt={document.slotId} key={document.id} /> : null; })}</div>
+          </div>
+          <div className="deliverySequenceExportActions">
+            <EcommerceWatermarkSettings language={language} scope={t.watermarkScope}
+              className="deliveryWatermarkSettings deliverySequenceWatermark" active={deliveryWatermarkEnabled}
+              onActiveChange={setDeliveryWatermarkEnabled} state={watermarkSettings}
+              disabled={status === 'exporting'} onBusyChange={setWatermarkReading} onMessage={setMessage} />
+            <button className="primary" type="button" onClick={() => exportDocuments()} disabled={status === 'exporting' || !exportCount || watermarkReading}>{status === 'exporting' ? <LoaderCircle className="spin" size={14} /> : <FileArchive size={14} />}{t.exportAll}</button>
           </div>
         </div>
       ) : null}
@@ -1741,6 +1793,8 @@ export default function EcommerceDeliveryCenter({
           language={language}
           t={t}
           project={project}
+          providerModel={providerModel}
+          chargeTextTokens={chargeTextTokens}
           assets={assets}
           selectedObject={selectedCanvasObject}
           selectedObjectOpacity={selectedObjectOpacity}

@@ -4,7 +4,6 @@ import {
   clearChatConversation,
   commitChatExchange,
   deleteChatMessage,
-  getChatProviderConfig,
   getChatResultByRequestId,
   listChatMessages,
   requestChatCompletion,
@@ -12,6 +11,8 @@ import {
 } from './_lib/chat-engine.js';
 import { releaseCreditReservation } from './_lib/local-db.js';
 import { readJsonBody } from './_lib/request.js';
+import { getUserChatSettings, resolveChatAssistantProvider } from './_lib/chat-assistant-settings.js';
+import { newAPITextErrorResponse, ensureNewAPIAuthorization } from './_lib/newapi-account.js';
 
 const MAX_TEXT_LENGTH = 6000;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -33,6 +34,7 @@ function inspectImageDataUrl(value) {
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
   if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
     res.setHeader('Allow', 'GET, POST, DELETE');
     return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
@@ -42,11 +44,14 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const history = listChatMessages(auth.user.id, req.query?.limit);
-    const provider = getChatProviderConfig('', { includeSecret: false, userId: auth.user.id });
+    const settings = getUserChatSettings(auth.user.id);
+    const provider = settings.providers.find((p) => p.id === settings.effectiveProviderId);
     return res.status(200).json({
       ok: true,
       ...history,
-      provider: provider ? { name: provider.name, model: provider.model } : null,
+      provider: provider ? { id: provider.id, name: provider.name, model: provider.model } : null,
+      providers: settings.providers,
+      settings,
       user: auth.profile
     });
   }
@@ -81,8 +86,8 @@ export default async function handler(req, res) {
     const rawImages = Array.isArray(body.images) ? body.images.slice(0, MAX_IMAGES) : [];
     const images = rawImages.map((item) => inspectImageDataUrl(item?.dataUrl || item)).filter(Boolean);
     if (rawImages.length !== images.length) return res.status(400).json({ ok: false, error: 'INVALID_CHAT_IMAGE' });
-    const provider = getChatProviderConfig('', { userId: auth.user.id });
-    if (!provider) return res.status(503).json({ ok: false, error: 'CHAT_PROVIDER_NOT_CONFIGURED' });
+    await ensureNewAPIAuthorization(auth.user.id);
+    const provider = resolveChatAssistantProvider(auth.user.id, clean(body.providerId, 80));
     const chat = buildChatMessages(auth.user.id, { text, images: images.map((item) => item.dataUrl) });
     const textualContext = chat.messages.map((item) => Array.isArray(item.content)
       ? item.content.filter((part) => part?.type === 'text').map((part) => part.text || '').join('\n')
@@ -120,6 +125,8 @@ export default async function handler(req, res) {
       throw error;
     }
   } catch (error) {
+    const external = newAPITextErrorResponse(error);
+    if (external) return res.status(external.status).json({ ok: false, error: external.error });
     const code = error?.code || (error?.name === 'AbortError' ? 'CHAT_PROVIDER_TIMEOUT' : 'CHAT_FAILED');
     const status = ['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED'].includes(code) ? 402
       : code === 'AUTH_REQUIRED' ? 401

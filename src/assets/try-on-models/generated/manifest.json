@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "models": {
+    "female-01": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:02:20.752Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 26 years old. East Asian, fair warm skin, dark straight shoulder-length hair. Body build: slim.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in ivory crew-neck blouse, tailored taupe full-length trousers, closed-toe loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte champagne beige with a subtle warm tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-02": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:02:57.937Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 34 years old. East Asian, medium warm skin, neatly tied dark hair. Body build: average.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in navy blazer over a fully buttoned cotton shirt, straight-leg trousers, low-heeled shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: refined warm stone gray with a soft tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-03": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:03:12.180Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 29 years old. European, light freckled skin, wavy auburn shoulder-length hair. Body build: average.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in olive long-sleeve crew-neck knit top, beige full-length trousers, loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte graphite charcoal with subtle studio falloff. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-04": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:03:26.400Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 42 years old. Black, rich deep-brown skin, natural short curls. Body build: curvy.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in cream modest long-sleeve midi dress with a high neckline, flat closed-toe shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: deep midnight navy with a gentle illuminated center. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-05": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:03:47.475Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 31 years old. Latina, medium olive skin, dark chin-length bob. Body build: athletic.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in charcoal crew-neck long-sleeve top, sand tailored trousers, clean sneakers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte champagne beige with a subtle warm tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-06": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:04:08.275Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 24 years old. South Asian, warm medium-brown skin, dark hair loosely tied back. Body build: petite.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in light blue modest cotton shirt, navy straight-leg trousers, flat loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: rich muted forest green with velvety tonal depth. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-07": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:04:21.015Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 51 years old. East Asian, medium neutral skin, elegant dark hair with subtle gray. Body build: average.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in taupe relaxed blazer, ivory high-neck top, matching full-length trousers, closed-toe shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: refined warm stone gray with a soft tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-08": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:04:50.561Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 38 years old. Black, warm dark skin, neat shoulder-length natural braids. Body build: tall and curvy.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in forest-green long-sleeve blouse, charcoal wide-leg trousers, flat loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte graphite charcoal with subtle studio falloff. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-09": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:05:15.896Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 28 years old. European, fair neutral skin, brown ponytail. Body build: athletic.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in beige long-sleeve crew-neck sweatshirt, full-length dark joggers, clean sneakers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: deep midnight navy with a gentle illuminated center. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "female-10": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:05:30.313Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult woman, unmistakably 46 years old. Middle Eastern, olive skin, dark wavy shoulder-length hair. Body build: curvy.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in modest rust long-sleeve high-neck blouse, stone full-length trousers, flat closed-toe shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: rich muted forest green with velvety tonal depth. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-01": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:05:40.730Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 27 years old. East Asian, fair warm skin, neatly styled short dark hair. Body build: slim.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in pale blue fully buttoned shirt, charcoal tailored trousers, brown loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte champagne beige with a subtle warm tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-02": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:05:56.670Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 36 years old. East Asian, medium neutral skin, short dark hair. Body build: average.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in navy blazer, ivory crew-neck top, full-length gray trousers, leather shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: refined warm stone gray with a soft tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-03": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:06:15.352Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 25 years old. European, fair lightly freckled skin, short wavy brown hair. Body build: athletic.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in cream crew-neck long-sleeve knit top, olive full-length trousers, clean sneakers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: rich muted forest green with velvety tonal depth. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-04": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:06:34.737Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 47 years old. Black, rich dark-brown skin, neatly cropped hair. Body build: broad-shouldered.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in charcoal relaxed suit, fully buttoned white cotton shirt, black leather shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: deep midnight navy with a gentle illuminated center. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-05": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:06:46.728Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 32 years old. Latino, warm olive skin, neat short black hair. Body build: average.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in taupe overshirt over a white crew-neck top, navy trousers, brown loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte graphite charcoal with subtle studio falloff. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-06": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:07:00.970Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 28 years old. South Asian, warm brown skin, short dark hair. Body build: athletic.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in navy long-sleeve crew-neck sweatshirt, gray full-length joggers, clean sneakers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: refined warm stone gray with a soft tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-07": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:07:14.502Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 55 years old. European, light neutral skin, short salt-and-pepper hair. Body build: average.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in forest-green blazer, cream high-neck knit top, charcoal trousers, closed-toe shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte champagne beige with a subtle warm tonal gradient. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-08": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:07:35.143Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 41 years old. Black, medium deep-brown skin, shaved head. Body build: plus-size.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in stone long-sleeve crew-neck knit top, navy straight-leg trousers, leather loafers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: rich muted forest green with velvety tonal depth. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-09": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:07:50.317Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 30 years old. East Asian, medium warm skin, tidy short dark hair. Body build: tall and slim.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in olive long-sleeve cotton shirt, sand full-length trousers, clean white sneakers. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: deep midnight navy with a gentle illuminated center. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    },
+    "male-10": {
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "size": "1024x1536",
+      "width": 1024,
+      "height": 1536,
+      "createdAt": "2026-10-01T17:08:04.402Z",
+      "prompt": "Create one photorealistic premium ecommerce studio MODEL REFERENCE photograph, not a collage.\nExactly one fictional adult man, unmistakably 44 years old. Middle Eastern, medium olive skin, neatly trimmed short beard and dark hair. Body build: broad-shouldered.\nFull body from the top of the head to both complete shoes, with a comfortable margin. Pose: standing naturally facing the camera, arms relaxed slightly away from torso, hands visible, feet apart naturally. Eye-level camera, natural anatomy and hands, neutral friendly expression.\nFully and modestly dressed in camel relaxed blazer, charcoal crew-neck top, dark tailored trousers, brown shoes. Opaque non-revealing everyday clothing, covered chest and torso, no underwear or nudity, no childlike styling.\nPremium seamless studio background: matte graphite charcoal with subtle studio falloff. Large softbox lighting, subtle natural contact shadow beneath the shoes, realistic skin and fabric.\nSingle unobstructed person only. No props obscuring the outfit, no text, no logos, no watermark, no additional people.\nAdult age, modest clothing and the single full-body photograph are mandatory and take precedence over any conflicting descriptive detail."
+    }
+  }
+}

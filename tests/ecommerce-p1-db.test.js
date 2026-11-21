@@ -141,20 +141,54 @@ test('P1 tasks survive state transitions and can be retried or cancelled', () =>
   );
   assert.equal(p1Db.claimEcommerceGenerationTask(user.id, first.id)?.status, 'running');
   assert.equal(p1Db.completeEcommerceGenerationTask(user.id, first.id, { status: 'failed', errorCode: 'TEST_FAILURE' })?.status, 'failed');
+  assert.equal(p1Db.claimEcommerceGenerationTask(user.id, first.id), null);
   const updatedProject = localDb.updateEcommerceProject(user.id, project.id, { ...project, projectName: 'Updated while queued' });
   const retried = p1Db.retryEcommerceGenerationTask(user.id, first.id);
   assert.equal(retried?.status, 'queued');
+  assert.notEqual(retried?.id, first.id);
+  assert.equal(retried?.request.retryOfTaskId, first.id);
   assert.equal(retried?.request.projectUpdatedAt, updatedProject.updatedAt);
-  assert.equal(p1Db.claimEcommerceGenerationTask(user.id, first.id)?.attempts, 2);
-  const cancelling = p1Db.requestEcommerceGenerationTaskCancellation(user.id, first.id);
+  assert.equal(p1Db.retryEcommerceGenerationTask(user.id, first.id)?.id, retried.id);
+  assert.equal(p1Db.listEcommerceGenerationTasks(user.id, project.id).filter((task) => task.slotId === 'main-square').length, 2);
+  assert.equal(p1Db.getEcommerceGenerationTask(user.id, first.id)?.errorCode, 'TEST_FAILURE');
+  assert.equal(p1Db.claimEcommerceGenerationTask(user.id, retried.id)?.attempts, 1);
+  const cancelling = p1Db.requestEcommerceGenerationTaskCancellation(user.id, retried.id);
   assert.equal(cancelling?.cancelRequested, true);
   assert.equal(cancelling?.status, 'cancelling');
-  assert.equal(p1Db.getActiveEcommerceGenerationTask(user.id, project.id, 'main-square')?.id, first.id);
-  assert.equal(p1Db.completeEcommerceGenerationTask(user.id, first.id, { status: 'cancelled', errorCode: 'GENERATION_CANCELLED' })?.status, 'cancelled');
+  assert.equal(p1Db.getActiveEcommerceGenerationTask(user.id, project.id, 'main-square')?.id, retried.id);
+  assert.equal(p1Db.completeEcommerceGenerationTask(user.id, retried.id, { status: 'cancelled', errorCode: 'GENERATION_CANCELLED' })?.status, 'cancelled');
+  const secondRetry = p1Db.retryEcommerceGenerationTask(user.id, retried.id);
+  assert.equal(secondRetry?.status, 'queued');
+  assert.notEqual(secondRetry?.id, retried.id);
+  assert.equal(p1Db.retryEcommerceGenerationTask(user.id, first.id)?.id, retried.id);
 
   const cancelledQueued = p1Db.requestEcommerceGenerationTaskCancellation(user.id, second.id);
   assert.equal(cancelledQueued.status, 'cancelled');
   assert.equal(cancelledQueued.cancelRequested, true);
+});
+
+test('retry creates a fresh billing key and cannot reserve twice for the same retry', () => {
+  const { user, project } = createProjectFixture();
+  const [original] = p1Db.createEcommerceGenerationTasks(user.id, project.id, [
+    { slotId: 'main-square', quality: 'low', projectUpdatedAt: project.updatedAt }
+  ]);
+  const originalKey = `ecommerce:${original.id}`;
+  const oldReservation = localDb.reserveCredit(user.id, { requestKey: originalKey, amount: 20 });
+  localDb.releaseCreditReservation(oldReservation.reservationId, 'GENERATION_CANCELLED');
+  p1Db.completeEcommerceGenerationTask(user.id, original.id, { status: 'cancelled', errorCode: 'GENERATION_CANCELLED' });
+
+  const retried = p1Db.retryEcommerceGenerationTask(user.id, original.id);
+  const duplicate = p1Db.retryEcommerceGenerationTask(user.id, original.id);
+  assert.notEqual(retried.id, original.id);
+  assert.equal(duplicate.id, retried.id);
+  assert.equal(p1Db.listEcommerceGenerationTasks(user.id, project.id).length, 2);
+  const retryReservation = localDb.reserveCredit(user.id, { requestKey: `ecommerce:${retried.id}`, amount: 10 });
+  assert.equal(retryReservation.duplicate, false);
+  assert.throws(
+    () => localDb.reserveCredit(user.id, { requestKey: `ecommerce:${retried.id}`, amount: 10 }),
+    (error) => error?.code === 'BILLING_REQUEST_DUPLICATE'
+  );
+  localDb.releaseCreditReservation(retryReservation.reservationId, 'GENERATION_CANCELLED');
 });
 
 test('P1 asset purpose and ordering are persisted', () => {

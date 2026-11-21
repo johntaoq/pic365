@@ -43,6 +43,8 @@ function ensureOwnedSource(userId, { sourceAssetId = '', sourceGenerationId = ''
     const generation = db.prepare(`
       SELECT id FROM generations
       WHERE id = ? AND user_id = ? AND status = 'succeeded' AND storage_path IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions deletion JOIN assets asset ON asset.id = deletion.asset_id
+          WHERE asset.source_table = 'generations' AND asset.source_id = generations.id)
     `).get(sourceGenerationId, userId);
     if (!generation) throw Object.assign(new Error('VIDEO_SOURCE_NOT_FOUND'), { code: 'VIDEO_SOURCE_NOT_FOUND' });
   }

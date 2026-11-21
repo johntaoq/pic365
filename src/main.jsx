@@ -6,7 +6,8 @@ import {
   getImageGenerationPricing,
   IMAGE_PRICING_PIXEL_STEP,
   IMAGE_PRICING_STRATEGIES,
-  normalizeImagePricingConfig
+  normalizeImagePricingConfig,
+  imageTokenBillingFlagsMatch
 } from '../shared/image-pricing.js';
 import { isGeminiImageModel } from '../shared/image-generation.js';
 import { buildSafePromptFallback } from '../shared/prompt-safety.js';
@@ -16,7 +17,7 @@ import {
   quoteCustomRecharge
 } from '../shared/recharge-config.js';
 import { formatStoragePriceYuan, normalizeStorageBillingConfig } from '../shared/storage-billing.js';
-import { getClientImagePricing, ImageCreditPrice, refreshImagePromotion, requestImagePricing, useServerImagePricing } from './image-pricing-client.jsx';
+import { getClientImagePricing, ImageCreditPrice, ImagePricingProvider, refreshImagePromotion } from './image-pricing-client.jsx';
 import {
   ArrowUpRight,
   AudioLines,
@@ -65,7 +66,6 @@ import {
 import './styles.css';
 import { authClient } from './authClient';
 import CreateWorkspace from './create-workspace';
-import { fetchImageGeneration } from './image-generation-client.js';
 import {
   createSiteNoticeSnoozeValue,
   isSiteNoticeSnoozedToday,
@@ -73,13 +73,18 @@ import {
   SITE_NOTICE_SNOOZE_STORAGE_KEY
 } from '../shared/site-notice.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
-import AdminChatProvider from './admin-chat-provider.jsx';
+import AdminUpstreamRules from './admin-upstream-rules.jsx';
+import AdminChatSettings from './admin-chat-settings.jsx';
 import AdminSystemGroups from './admin-system-groups.jsx';
 import AdminVideoProvider from './admin-video-provider.jsx';
 import ChatCompanion from './chat-companion.jsx';
 import Homepage from './homepage.jsx';
 import GroupAccountPanel from './group-account-panel.jsx';
+import EcommerceWatermarkSettings, { useEcommerceWatermarkSettings } from './ecommerce-watermark-settings.jsx';
+import AssetRetentionSettings from './asset-retention-settings.jsx';
 import CreditLedgerPanel from './credit-ledger.jsx';
+import NewAPIWallet, { newAPIErrorMessage } from './newapi-wallet.jsx';
+import NewAPIStorage from './newapi-storage.jsx';
 import {
   AuditEventsPanel,
   CreditAdjustmentDialog,
@@ -169,7 +174,7 @@ const copy = {
     eyebrow: 'Live GPT-Image2 prompt gallery',
     title: 'From viral images to reusable prompts.',
     subtitle:
-      'A visual workspace for GPT-Image2 creation: browse real cases, copy prompts, test image generation, and explore industrial templates.',
+      'A visual workspace for GPT-Image2 creation: browse real cases, copy prompts, and explore industrial templates.',
     explore: 'Explore cases',
     cases: 'cases',
     categories: 'categories',
@@ -451,7 +456,7 @@ const copy = {
     eyebrow: '实时更新的 GPT-Image2 提示词画廊',
     title: '从爆款图片，复用提示词',
     subtitle:
-      '一个面向图像创作的可视化工作台：浏览真实案例、复制 Prompt、在线测试生图、查看工业级模板。',
+      '一个面向图像创作的可视化工作台：浏览真实案例、复制 Prompt、查看工业级模板。',
     explore: '浏览案例',
     cases: '个案例',
     categories: '个分类',
@@ -780,7 +785,6 @@ function compactText(value, maxLength = 180) {
 }
 
 const GENERATED_TESTS_STORAGE_KEY = 'gpt-image-2-generated-tests:v1';
-const MAX_SAVED_GENERATIONS = 12;
 const HERO_CASE_COUNT = 5;
 const HOT_STRIP_CASE_COUNT = 8;
 const GALLERY_INITIAL_COUNT = 12;
@@ -992,29 +996,6 @@ function getSavedGeneration(caseId) {
   return saved?.image ? saved : null;
 }
 
-function saveGeneratedTest(caseId, entry) {
-  const key = String(caseId);
-  const saved = readSavedGenerations();
-  saved[key] = entry;
-
-  const latestEntries = Object.entries(saved)
-    .filter(([, value]) => value?.image)
-    .sort(([, a], [, b]) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0))
-    .slice(0, MAX_SAVED_GENERATIONS);
-
-  try {
-    localStorage.setItem(GENERATED_TESTS_STORAGE_KEY, JSON.stringify(Object.fromEntries(latestEntries)));
-  } catch {
-    const compactEntries = latestEntries.slice(0, Math.max(1, Math.floor(MAX_SAVED_GENERATIONS / 2)));
-    try {
-      localStorage.setItem(GENERATED_TESTS_STORAGE_KEY, JSON.stringify(Object.fromEntries(compactEntries)));
-    } catch {
-      // Browser storage can be full or blocked. The generated image still stays
-      // visible for the current dialog state when persistence is unavailable.
-    }
-  }
-}
-
 function normalizeFavoriteRows(favorites = []) {
   const rows = Array.isArray(favorites) ? favorites : [];
   return rows
@@ -1106,6 +1087,8 @@ function useCopy() {
 
 function generationErrorMessage(error, language) {
   const t = copy[language];
+  const externalError = newAPIErrorMessage(error, language);
+  if (externalError) return externalError;
   if (error === 'FREE_LIMIT_REACHED') return t.freeLimitReached;
   if (error === 'CREDITS_REQUIRED') return t.creditsRequired;
   if (error === 'GUEST_FREE_LIMIT_REACHED') return t.guestFreeLimitReached;
@@ -1260,22 +1243,6 @@ function isEligibleForSiteNotice(notice, session, profile) {
   if (audience === 'all') return true;
   if (!isAuthenticatedSession(session)) return false;
   return audience !== 'members' || Number(profile?.creditBalance || 0) > 0;
-}
-
-function getGenerationQuotaText(profile, language, requiredCredits = 0) {
-  const t = copy[language];
-  if (!profile) return t.authRequired;
-  if (profile.groupAccount) {
-    const accountLabel = language === 'zh' ? `集团账户：${profile.groupAccount.name}` : `Group account: ${profile.groupAccount.name}`;
-    return `${accountLabel} · ${t.generationCost(requiredCredits)} · ${t.creditsAvailable(profile.creditBalance)}`;
-  }
-  if (profile.isSuperAdmin) {
-    return `${t.superAdminGeneration(requiredCredits)} ${t.creditsAvailable(profile.creditBalance)}`;
-  }
-  if (profile.creditBalance > 0) {
-    return `${t.generationCost(requiredCredits)} · ${t.creditsAvailable(profile.creditBalance)}`;
-  }
-  return t.creditsRequired;
 }
 
 function productText(value, language) {
@@ -1812,7 +1779,7 @@ function AuthModal({ open, language, initialErrorCode, onClose }) {
   );
 }
 
-function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, onAccount, onFavorites }) {
+function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, onAccount }) {
   const t = copy[language];
   const [open, setOpen] = useState(false);
   const ref = useDropdownDismiss(open, setOpen);
@@ -1864,10 +1831,10 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, 
                 {t.superAdmin}
               </span>
             ) : null}
-            <span className="userStat">
+            {profile?.externalWallet ? <NewAPIWallet language={language} account={profile.externalWallet} /> : <span className="userStat">
               <Coins size={15} />
               {profile?.creditBalance || 0} {t.credits}{profile?.groupAccount ? ` · ${profile.groupAccount.name}` : ''}
-            </span>
+            </span>}
             <span className="userStat">
               <ReceiptText size={15} />
               {t.totalGenerationCredits}: {totalSpent}
@@ -1885,18 +1852,6 @@ function UserMenu({ language, session, profile, onSignIn, onSignOut, onBilling, 
           >
             <Settings size={17} />
             {t.accountSettings}
-          </button>
-          <button
-            className="dropdownAction"
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onFavorites();
-            }}
-          >
-            <Heart size={17} />
-            {t.myFavorites}
           </button>
           <button
             className="dropdownAction"
@@ -1934,8 +1889,6 @@ function AccountPanel({
   session,
   profile,
   casesById,
-  favoriteRows,
-  initialSection,
   onClose,
   onBilling,
   onProfileChange,
@@ -1953,9 +1906,9 @@ function AccountPanel({
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordStatus, setPasswordStatus] = useState('idle');
   const [passwordMessage, setPasswordMessage] = useState('');
-  const favoritesRef = useRef(null);
   const avatarInputRef = useRef(null);
   const providerAvatarUrl = session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture || '';
+  const watermarkSettings = useEcommerceWatermarkSettings(open ? session?.user?.id || profile?.id || '' : '');
   useBodyScrollLock(open);
 
   useEffect(() => {
@@ -1972,14 +1925,6 @@ function AccountPanel({
     setPasswordMessage('');
   }, [open, profile?.fullName, profile?.avatarUrl, providerAvatarUrl, session?.user?.user_metadata?.name]);
 
-  useEffect(() => {
-    if (!open || initialSection !== 'favorites') return;
-    const frame = window.requestAnimationFrame(() => {
-      favoritesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [open, initialSection, favoriteRows]);
-
   if (!open) return null;
 
   const email = profile?.email || session?.user?.email || '';
@@ -1987,12 +1932,6 @@ function AccountPanel({
   const usage = profile?.usage || {};
   const recentTransactions = profile?.recentTransactions || [];
   const generationTransactions = recentTransactions.filter((transaction) => ['generation', 'refund', 'storage'].includes(transaction.type));
-  const favoriteCases = normalizeFavoriteRows(favoriteRows)
-    .map((favorite) => ({
-      ...favorite,
-      caseItem: casesById?.get(favorite.caseId)
-    }))
-    .filter((favorite) => favorite.caseItem);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -2257,35 +2196,11 @@ function AccountPanel({
           onMenuChanged={onMenuChanged}
         />
 
-        <section className="transactionSection favoritesSection" ref={favoritesRef}>
-          <h3>
-            <Heart size={18} />
-            {t.myFavorites}
-          </h3>
-          {favoriteCases.length ? (
-            <div className="favoriteGrid">
-              {favoriteCases.map(({ caseId, createdAt, caseItem }) => (
-                <button
-                  className="favoriteCard"
-                  type="button"
-                  onClick={() => onOpenCase?.(caseItem)}
-                  key={caseId}
-                >
-                  <img src={caseItem.thumbnail || caseItem.image} alt={caseItem.imageAlt} loading="lazy" decoding="async" />
-                  <span>#{caseId}</span>
-                  <strong>{caseItem.title}</strong>
-                  <em>
-                    {createdAt
-                      ? new Date(createdAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')
-                      : localizeLabel(caseItem.category, language, null)}
-                  </em>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="emptyTransactions">{t.noFavorites}</p>
-          )}
+        <section className="accountWatermarkPanel">
+          <EcommerceWatermarkSettings language={language} presetOnly state={watermarkSettings} />
         </section>
+
+        <AssetRetentionSettings language={language} profile={profile} onProfileChange={onProfileChange} />
 
         <section className="transactionSection accountTransactions">
           <h3>
@@ -3256,6 +3171,27 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
   async function saveProvider(event) {
     event.preventDefault();
     setProviderMessage('');
+    const requestedPricing = providerDraft.pricingConfig;
+    if (providerDraft.id) {
+      try {
+        const check = await fetch('/api/admin/image-providers', {
+          headers: getAuthHeaders(session),
+          cache: 'no-store'
+        });
+        const current = await check.json();
+        if (!check.ok || !current.ok) throw new Error(current.error || 'PROVIDER_LOAD_FAILED');
+        const stored = current.providers?.find((item) => item.id === providerDraft.id);
+        if (!stored || ['chargeTextTokens', 'chargeReferenceTokens'].some((key) => typeof stored.pricingConfig?.[key] !== 'boolean')) {
+          setProviderMessage(language === 'zh'
+            ? '当前端口的本地服务仍是旧版本，计费规则尚未提交。请重启该服务并刷新页面。'
+            : 'The local service on this port is outdated. Nothing was submitted. Restart it and refresh this page.');
+          return;
+        }
+      } catch {
+        setProviderMessage(language === 'zh' ? '无法确认生图服务版本，尚未提交，请重试。' : 'Cannot verify the image service version; nothing was submitted. Try again.');
+        return;
+      }
+    }
     const response = await fetch('/api/admin/image-providers', {
       method: providerDraft.id ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders(session) },
@@ -3263,7 +3199,15 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
-      setProviderMessage(language === 'zh' ? `保存失败：${payload.error || '配置错误'}` : `Save failed: ${payload.error || 'invalid configuration'}`);
+      setProviderMessage(['UPSTREAM_MODEL_PRICE_REQUIRED', 'UPSTREAM_INPUT_PRICE_REQUIRED'].includes(payload.error)
+        ? (language === 'zh' ? '保存失败：请先在上游规则中配置这个精确模型的文本/参考图输入单价，再开启 Token 另计。' : 'Configure this exact upstream model and its input rates before enabling token fees.')
+        : language === 'zh' ? `保存失败：${payload.error || '配置错误'}` : `Save failed: ${payload.error || 'invalid configuration'}`);
+      return;
+    }
+    if (!imageTokenBillingFlagsMatch(requestedPricing, payload.provider?.pricingConfig)) {
+      setProviderMessage(language === 'zh'
+        ? '接口返回的 Token 开关与提交值不一致。请刷新页面核对已保存的规则；当前勾选已保留。'
+        : 'The returned token switches differ from what you submitted. Refresh to inspect the saved rule; your selection is retained.');
       return;
     }
     if (activeSection === 'pricing') {
@@ -3495,6 +3439,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         ? t.promotionExpired
         : t.promotionInactive;
   const adminSections = [
+    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && { id: 'upstream-rules', groupId: 'financial', label: language === 'zh' ? '上游规则' : 'Upstream rules', Icon: Calculator },
     can(ADMIN_PERMISSIONS.MANAGE_PRICING) && { id: 'pricing', groupId: 'financial', label: language === 'zh' ? '计费规则' : 'Pricing rules', Icon: Calculator },
     can(ADMIN_PERMISSIONS.ADJUST_CREDITS) && { id: 'credits', groupId: 'financial', label: language === 'zh' ? '积分管理' : 'Credit management', Icon: Coins },
     can(ADMIN_PERMISSIONS.MANAGE_RECHARGE) && { id: 'recharge', groupId: 'financial', label: language === 'zh' ? '充值设置' : 'Recharge settings', Icon: CreditCard },
@@ -3504,10 +3449,10 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
     can(ADMIN_PERMISSIONS.MANAGE_PROMOTIONS) && { id: 'promotion', groupId: 'financial', label: language === 'zh' ? '促销优惠' : 'Promotions', Icon: Tags },
     can(ADMIN_PERMISSIONS.VIEW_USERS) && { id: 'users', groupId: 'users-content', label: language === 'zh' ? '用户管理' : 'User management', Icon: Users },
     profile?.isSuperAdmin && { id: 'prompt-records', groupId: 'users-content', label: language === 'zh' ? '提示词记录' : 'Prompt logs', Icon: ReceiptText },
-    can(ADMIN_PERMISSIONS.MANAGE_PRICING) && can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'chat-assistant', groupId: 'system', label: language === 'zh' ? '聊天精灵' : 'Chat assistant', Icon: Cat },
     can(ADMIN_PERMISSIONS.MANAGE_NOTIFICATIONS) && { id: 'notifications', groupId: 'system', label: language === 'zh' ? '通知管理' : 'Notifications', Icon: Bell },
     can(ADMIN_PERMISSIONS.MANAGE_CHANNELS) && { id: 'channels', groupId: 'system', label: language === 'zh' ? '渠道配置' : 'Channels', Icon: KeyRound },
     can(ADMIN_PERMISSIONS.MANAGE_GLOBAL_SETTINGS) && { id: 'global-settings', groupId: 'system', label: language === 'zh' ? '全局设置' : 'Global settings', Icon: Settings },
+    can(ADMIN_PERMISSIONS.MANAGE_GLOBAL_SETTINGS) && { id: 'chat-assistant', groupId: 'system', label: language === 'zh' ? '聊天精灵设置' : 'Chat assistant settings', Icon: Cat },
     (can(ADMIN_PERMISSIONS.VIEW_ALL_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_FINANCE_AUDIT) || can(ADMIN_PERMISSIONS.VIEW_OPERATIONS_AUDIT)) && { id: 'audit', groupId: 'security', label: language === 'zh' ? '审计记录' : 'Audit log', Icon: ShieldCheck }
   ].filter(Boolean);
   const adminGroups = [
@@ -3547,7 +3492,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
       <header>
         <div>
           <strong>{language === 'zh' ? '独立计费规则' : 'Independent pricing rule'}</strong>
-          <span>{language === 'zh' ? '单张原价＝基础生图费＋参考图数量×单价；促销在合计原价之后计算' : 'List price per output = base generation fee + reference count × unit price; promotions apply afterward.'}</span>
+          <span>{language === 'zh' ? '基础生图费按本页规则与促销计算。Token 另计使用精确匹配模型的上游单价，不参与促销。' : 'Base image fees follow these retail rules and promotions. Optional token fees use the exact upstream model rates without promotion.'}</span>
         </div>
         <button type="button" onClick={resetProviderPricingForModel}><RefreshCw size={14} />{language === 'zh' ? '应用模型预设' : 'Apply model preset'}</button>
       </header>
@@ -3558,34 +3503,37 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
           <option value={IMAGE_PRICING_STRATEGIES.FIXED_IMAGE}>{language === 'zh' ? '每张固定价' : 'Fixed per image'}</option>
           <option value={IMAGE_PRICING_STRATEGIES.PIXEL_QUALITY_MATRIX}>{language === 'zh' ? '像素区间矩阵' : 'Pixel-band matrix'}</option>
         </select></label>
-        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '价格阶梯（元）' : 'Price step (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.priceStepRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ priceStepRmb: value })} /></label>
-        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最低收费（元）' : 'Minimum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.minimumChargeRmb} min={0} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ minimumChargeRmb: value })} /></label>
-        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最高收费（元）' : 'Maximum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.maximumChargeRmb} min={0.01} step="0.01" precision={2} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ maximumChargeRmb: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '价格阶梯（元）' : 'Price step (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.priceStepRmb} min={0.001} step="0.001" precision={3} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ priceStepRmb: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最低收费（元）' : 'Minimum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.minimumChargeRmb} min={0} step="0.001" precision={3} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ minimumChargeRmb: value })} /></label>
+        <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? '最高收费（元）' : 'Maximum charge (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.maximumChargeRmb} min={0.001} step="0.001" precision={3} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ maximumChargeRmb: value })} /></label>
         <label className={cx(!steppedPricingActive && 'isPricingDisabled')}><span>{language === 'zh' ? 'Auto 计费像素' : 'Auto billed pixels'}</span><PricingNumberInput value={providerDraft.pricingConfig.autoSizePixels} min={655360} max={providerPricingMaximumPixels} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} disabled={!steppedPricingActive} onCommit={(value) => updateProviderPricingConfig({ autoSizePixels: value })} /></label>
         <label className="isPricingDisabled"><span>{language === 'zh' ? 'Auto 计费质量' : 'Auto billed quality'}</span><select value="medium" disabled><option value="medium">Medium</option></select></label>
-        <label><span>{language === 'zh' ? '参考图单价（元/张）' : 'Reference price (RMB/image)'}</span><PricingNumberInput value={providerDraft.pricingConfig.referenceImagePriceRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ referenceImagePriceRmb: value })} /></label>
+        <label><span>{language === 'zh' ? '参考图单价（元/张）' : 'Reference price (RMB/image)'}</span><PricingNumberInput disabled={providerDraft.pricingConfig.chargeReferenceTokens} value={providerDraft.pricingConfig.referenceImagePriceRmb} min={0} step="0.001" precision={3} onCommit={(value) => updateProviderPricingConfig({ referenceImagePriceRmb: value })} /></label>
         <label><span>{language === 'zh' ? '参考图数量（报价预览）' : 'Reference count (preview)'}</span><PricingNumberInput value={providerPricingReferenceCount} min={0} max={9} step={1} precision={0} onCommit={(value) => setProviderPricingReferenceCount(Math.max(0, Math.min(9, Math.round(Number(value) || 0))))} /></label>
         <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.pricingConfig.promotionEligible !== false} onChange={(event) => updateProviderPricingConfig({ promotionEligible: event.target.checked })} /><span>{language === 'zh' ? '允许参与促销' : 'Promotion eligible'}</span></label>
+        <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.pricingConfig.chargeTextTokens === true} onChange={(event) => updateProviderPricingConfig({ chargeTextTokens: event.target.checked })} /><span>{language === 'zh' ? '文本Token另计' : 'Bill text tokens separately'}</span></label>
+        <label className="adminProviderCheck"><input type="checkbox" checked={providerDraft.pricingConfig.chargeReferenceTokens === true} onChange={(event) => updateProviderPricingConfig({ chargeReferenceTokens: event.target.checked })} /><span>{language === 'zh' ? '参考图Token另计' : 'Bill reference tokens separately'}</span></label>
       </div>
+      <p className="upstreamMessage">{language === 'zh' ? `匹配上游模型：${providerDraft.model || '未选择'}。文本费用超过 0.5 积分才计费；参考图另计开启后替代按张附加费。先冻结预估额度，按返回的实际分类 Token 结算，缺少明细不另扣、超额不超扣。` : `Upstream model: ${providerDraft.model || 'not selected'}. Text fees over 0.5 credits are charged; reference-token billing replaces per-image reference fees. Reserve first, settle reported modality usage; missing usage and over-budget fees are not charged.`}</p>
       {formulaPricingActive ? (
         <div className="adminProviderPricingGrid formula">
-          <label><span>{language === 'zh' ? '基础成本（折扣前/元）' : 'Base list cost (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.baseCostRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingFormula({ baseCostRmb: value })} /></label>
+          <label><span>{language === 'zh' ? '基础成本（折扣前/元）' : 'Base list cost (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.baseCostRmb} min={0} step="0.001" precision={3} onCommit={(value) => updateProviderPricingFormula({ baseCostRmb: value })} /></label>
           <label className="isPricingReadonly"><span>{language === 'zh' ? '每百万像素成本（元）' : 'Cost per MP (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.costPerMegapixelRmb} min={0} step="0.000001" precision={6} readOnly title={language === 'zh' ? '系统根据模型成本预设，不可编辑' : 'Read-only model cost coefficient'} /></label>
           {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{qualityName.toUpperCase()} {language === 'zh' ? '质量倍率' : 'quality factor'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.qualityFactors[qualityName]} min={0} step="0.1" onCommit={(value) => updateProviderPricingFormula({ qualityFactors: { ...providerDraft.pricingConfig.formula.qualityFactors, [qualityName]: value } })} /></label>)}
           <label><span>{language === 'zh' ? '售价倍率' : 'Price multiplier'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.priceMultiplier} min={0} step="0.01" onCommit={(value) => updateProviderPricingFormula({ priceMultiplier: value })} /></label>
-          <label><span>{language === 'zh' ? '固定附加费（元）' : 'Fixed fee (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.fixedFeeRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingFormula({ fixedFeeRmb: value })} /></label>
+          <label><span>{language === 'zh' ? '固定附加费（元）' : 'Fixed fee (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.fixedFeeRmb} min={0} step="0.001" precision={3} onCommit={(value) => updateProviderPricingFormula({ fixedFeeRmb: value })} /></label>
           <label><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.formula.actualCostRatio} min={0} step="0.01" onCommit={(value) => updateProviderPricingFormula({ actualCostRatio: value })} /></label>
         </div>
       ) : null}
       {fixedQualityPricingActive ? (
         <div className="adminProviderPricingGrid formula">
-          {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{providerPricingQualityLabels[qualityName]} {language === 'zh' ? '单张价格（元）' : 'price (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.qualityPricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ qualityPricesRmb: { ...providerDraft.pricingConfig.qualityPricesRmb, [qualityName]: value } })} /></label>)}
+          {['low', 'medium', 'high'].map((qualityName) => <label key={qualityName}><span>{providerPricingQualityLabels[qualityName]} {language === 'zh' ? '单张价格（元）' : 'price (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.qualityPricesRmb[qualityName]} min={0} step="0.001" precision={3} onCommit={(value) => updateProviderPricingConfig({ qualityPricesRmb: { ...providerDraft.pricingConfig.qualityPricesRmb, [qualityName]: value } })} /></label>)}
           <label className="isPricingDisabled"><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.actualCostRatio} min={0} step="0.01" disabled /></label>
         </div>
       ) : null}
       {fixedImagePricingActive ? (
         <div className="adminProviderPricingGrid formula">
-          <label><span>{language === 'zh' ? '每张价格（元）' : 'Price per image (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.fixedPriceRmb} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderPricingConfig({ fixedPriceRmb: value })} /></label>
+          <label><span>{language === 'zh' ? '每张价格（元）' : 'Price per image (RMB)'}</span><PricingNumberInput value={providerDraft.pricingConfig.fixedPriceRmb} min={0} step="0.001" precision={3} onCommit={(value) => updateProviderPricingConfig({ fixedPriceRmb: value })} /></label>
           <label className="isPricingDisabled"><span>{language === 'zh' ? '实际采购成本比例' : 'Actual cost ratio'}</span><PricingNumberInput value={providerDraft.pricingConfig.actualCostRatio} min={0} step="0.01" disabled /></label>
         </div>
       ) : null}
@@ -3594,7 +3542,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
           <div className="adminProviderMatrixHeader"><span>{language === 'zh' ? '像素上限' : 'Max pixels'}</span><span>Low</span><span>Medium</span><span>High</span><span /></div>
           {(providerDraft.pricingConfig.bands || []).map((band, index) => <div className="adminProviderMatrixRow" key={`${band.id}-${index}`}>
             <PricingNumberInput value={band.maxPixels} min={655360} max={providerPricingMaximumPixels} step={IMAGE_PRICING_PIXEL_STEP} alignUpStep={IMAGE_PRICING_PIXEL_STEP} onCommit={(value) => updateProviderMatrixBand(index, { maxPixels: value })} />
-            {['low', 'medium', 'high'].map((qualityName) => <PricingNumberInput value={band.pricesRmb[qualityName]} min={0} step="0.01" precision={2} onCommit={(value) => updateProviderMatrixBand(index, { pricesRmb: { ...band.pricesRmb, [qualityName]: value } })} key={qualityName} />)}
+            {['low', 'medium', 'high'].map((qualityName) => <PricingNumberInput value={band.pricesRmb[qualityName]} min={0} step="0.001" precision={3} onCommit={(value) => updateProviderMatrixBand(index, { pricesRmb: { ...band.pricesRmb, [qualityName]: value } })} key={qualityName} />)}
             <button type="button" onClick={() => removeProviderMatrixBand(index)} aria-label={language === 'zh' ? '删除档位' : 'Remove band'}><Trash2 size={14} /></button>
           </div>)}
           <button className="adminProviderMatrixAdd" type="button" onClick={addProviderMatrixBand}><Plus size={14} />{language === 'zh' ? '增加像素档位' : 'Add pixel band'}</button>
@@ -3822,6 +3770,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
         {activeSection === 'credit-ledger' ? <CreditLedgerPanel language={language} mode="admin" /> : null}
         {activeSection === 'finance' ? <FinancialReportsPanel language={language} /> : null}
         {activeSection === 'global-settings' ? <GlobalMenuSettingsPanel language={language} onChanged={onMenuSettingsChanged} /> : null}
+        {activeSection === 'chat-assistant' ? <AdminChatSettings language={language} session={session} /> : null}
         {activeSection === 'audit' ? <AuditEventsPanel language={language} profile={profile} /> : null}
 
         {activeSection === 'promotion' ? (
@@ -3978,7 +3927,7 @@ function AdminPanel({ language, session, profile, casesById, onOpenCase, onMenuS
           </div>
         ) : null}
 
-        {activeSection === 'chat-assistant' ? <AdminChatProvider language={language} session={session} /> : null}
+        {activeSection === 'upstream-rules' ? <AdminUpstreamRules language={language} session={session} /> : null}
       </div>
 
       <UserEditDialog
@@ -4080,8 +4029,8 @@ function CreditPanel({
   }
 
   useEffect(() => {
-    if (open) loadBilling();
-  }, [open, isAuthenticatedSession(session)]);
+      if (open && !profile?.externalWallet) loadBilling();
+    }, [open, isAuthenticatedSession(session), Boolean(profile?.externalWallet)]);
 
   const customQuote = useMemo(() => quoteCustomRecharge(
     Math.round(Number(customAmount || 0) * 100),
@@ -4137,6 +4086,16 @@ function CreditPanel({
   }
 
   if (!open) return null;
+
+  if (profile?.externalWallet) return (
+    <div className="previewOverlay billingOverlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="billingDialog" role="dialog" aria-modal="true" aria-labelledby="newapi-billing-title">
+        <button className="previewClose" type="button" onClick={onClose} aria-label={t.closePreview}><X size={20} /></button>
+        <div className="billingHero"><h2 id="newapi-billing-title">{profile.externalWallet.label}</h2><NewAPIWallet language={language} account={profile.externalWallet} showRecharge /></div>
+        <NewAPIStorage language={language} label={profile.externalWallet.label} />
+      </section>
+    </div>
+  );
 
   return (
     <div
@@ -4349,7 +4308,6 @@ function PromptCard({
   language,
   onCopy,
   onOpen,
-  onGenerate,
   onToggleFavorite,
   styleLibrary
 }) {
@@ -4403,10 +4361,6 @@ function PromptCard({
             <Eye size={17} />
             {t.viewDetails}
           </button>
-          <button type="button" onClick={() => onGenerate(caseItem)}>
-            <ImageIcon size={17} />
-            {t.generateTest}
-          </button>
         </div>
       </div>
     </article>
@@ -4419,27 +4373,16 @@ function PreviewDialog({
   styleLibrary,
   copiedId,
   session,
-  profile,
   favorite,
   favoriteBusy,
   onClose,
   onCopyText,
   onToggleFavorite,
-  onAuthRequired,
-  onBillingRequired,
-  onProfileChange
+  onAuthRequired
 }) {
   const t = copy[language];
-  const { pricing: casePricing, loading: casePricingLoading } = useServerImagePricing(
-    { size: '1024x1024', quality: 'medium' },
-    { enabled: preview?.type === 'case' }
-  );
   const [editablePrompt, setEditablePrompt] = useState('');
-  const [generationState, setGenerationState] = useState({
-    status: 'idle',
-    image: '',
-    message: ''
-  });
+  const [savedGeneration, setSavedGeneration] = useState(null);
   const [sanitizeState, setSanitizeState] = useState({
     status: 'idle',
     message: ''
@@ -4461,19 +4404,8 @@ function PreviewDialog({
 
   useEffect(() => {
     if (preview?.type !== 'case') return;
-    const savedGeneration = getSavedGeneration(preview.item.id);
+    setSavedGeneration(getSavedGeneration(preview.item.id));
     setEditablePrompt(preview.item.prompt || '');
-    setGenerationState(
-      savedGeneration
-        ? {
-            status: 'saved',
-            image: savedGeneration.image,
-            message: '',
-            prompt: savedGeneration.prompt || preview.item.prompt || '',
-            savedAt: savedGeneration.savedAt || ''
-          }
-        : { status: 'idle', image: '', message: '', prompt: '', savedAt: '' }
-    );
     setSanitizeState({ status: 'idle', message: '' });
   }, [preview]);
 
@@ -4499,15 +4431,9 @@ function PreviewDialog({
     : [...new Set([...(item.styles || []), ...(item.scenes || [])])].slice(0, 8);
   const guidance = listFor(item.guidance, language);
   const pitfalls = listFor(item.pitfalls, language);
-  const isGenerating = generationState.status === 'generating';
-  const generatedImage = !isTemplate ? generationState.image : '';
+  const generatedImage = !isTemplate ? savedGeneration?.image : '';
   const isSignedIn = isAuthenticatedSession(session);
-  const creditBalance = Number(profile?.creditBalance || 0);
-  const isOutOfCredits = isSignedIn && Boolean(casePricing) && creditBalance < casePricing.credits && !profile?.isSuperAdmin;
   const isSanitizing = sanitizeState.status === 'processing';
-  const moderationLocked = generationState.status === 'content_moderation_blocked';
-  const generationLocked = isGenerating || isSanitizing || moderationLocked || (isSignedIn && (casePricingLoading || !casePricing));
-  const quotaText = isSignedIn ? getGenerationQuotaText(profile, language, Number(casePricing?.credits || 0)) : t.authRequired;
 
   async function handleSanitize() {
     if (isTemplate || isSanitizing) return;
@@ -4541,128 +4467,18 @@ function PreviewDialog({
         }
         const fallbackPrompt = buildSafePromptFallback(prompt);
         setEditablePrompt(fallbackPrompt);
-        if (moderationLocked) {
-          setGenerationState((current) => ({
-            ...current,
-            status: 'idle',
-            image: '',
-            message: '',
-            prompt: fallbackPrompt
-          }));
-        }
         setSanitizeState({ status: 'success', message: t.sanitizeDone });
         return;
       }
 
       let nextPrompt = String(payload.prompt).trim();
       if (!nextPrompt || nextPrompt === prompt) nextPrompt = buildSafePromptFallback(prompt);
-      const changed = nextPrompt !== prompt;
       setEditablePrompt(nextPrompt);
-      if (moderationLocked) {
-        setGenerationState((current) => ({
-          ...current,
-          status: 'idle',
-          image: '',
-          message: '',
-          prompt: nextPrompt
-        }));
-      }
       setSanitizeState({ status: 'success', message: t.sanitizeDone });
     } catch {
       const fallbackPrompt = buildSafePromptFallback(prompt);
       setEditablePrompt(fallbackPrompt);
-      if (moderationLocked) {
-        setGenerationState((current) => ({
-          ...current,
-          status: 'idle',
-          image: '',
-          message: '',
-          prompt: fallbackPrompt
-        }));
-      }
       setSanitizeState({ status: 'success', message: t.sanitizeDone });
-    }
-  }
-
-  async function handleGenerate() {
-    if (isTemplate || isGenerating || isSanitizing || moderationLocked) return;
-    if (!isSignedIn) {
-      onAuthRequired();
-      setGenerationState({ status: 'idle', image: generatedImage, message: '' });
-      return;
-    }
-    const prompt = editablePrompt.trim();
-    if (!prompt || prompt.length > 6000) {
-      setGenerationState({ status: 'error', image: '', message: t.promptRequired });
-      return;
-    }
-    let confirmedPricing;
-    try {
-      confirmedPricing = await requestImagePricing({ size: '1024x1024', quality: 'medium' });
-    } catch {
-      setGenerationState({ status: 'error', image: generatedImage, message: t.generationFailed });
-      return;
-    }
-    if (!profile?.isSuperAdmin && creditBalance < Number(confirmedPricing.credits || 0)) {
-      onBillingRequired();
-      setGenerationState({ status: 'idle', image: generatedImage, message: t.creditsRequired });
-      return;
-    }
-
-    setGenerationState({ status: 'generating', image: '', message: '' });
-
-    try {
-      const response = await fetchImageGeneration('/api/generate-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(session)
-        },
-        body: JSON.stringify({
-          caseId: item.id,
-          prompt,
-          size: '1024x1024',
-          quality: 'medium',
-          count: 1
-        })
-      });
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok || !payload.ok || !payload.image) {
-        if (payload.user) onProfileChange(payload.user);
-        if (payload.error === 'AUTH_REQUIRED' || payload.loginRequired) {
-          onAuthRequired();
-          setGenerationState({ status: 'idle', image: generatedImage, message: '' });
-          return;
-        }
-        if (payload.error === 'CONTENT_MODERATION_BLOCKED') {
-          setGenerationState({
-            status: 'content_moderation_blocked',
-            image: '',
-            message: t.contentModerationBlocked,
-            prompt
-          });
-          setSanitizeState({ status: 'error', message: '' });
-          return;
-        }
-        throw new Error(payload.error || 'GENERATION_FAILED');
-      }
-
-      const savedAt = new Date().toISOString();
-      saveGeneratedTest(item.id, {
-        image: payload.image,
-        prompt,
-        savedAt
-      });
-      if (payload.user) onProfileChange(payload.user);
-      setGenerationState({ status: 'success', image: payload.image, message: '', prompt, savedAt });
-    } catch (error) {
-      setGenerationState({
-        status: 'error',
-        image: '',
-        message: generationErrorMessage(error.message, language),
-        prompt
-      });
     }
   }
 
@@ -4700,7 +4516,7 @@ function PreviewDialog({
               <figure className="comparisonFigure generatedFigure">
                 <div className="comparisonLabel">
                   {t.generatedResult}
-                  {generationState.status === 'saved' ? <span>{t.savedInBrowser}</span> : null}
+                  {savedGeneration ? <span>{t.savedInBrowser}</span> : null}
                 </div>
                 <img src={generatedImage} alt={t.generatedResult} />
               </figure>
@@ -4732,42 +4548,28 @@ function PreviewDialog({
               <p>{textFor(item.useWhen, language)}</p>
             </div>
           ) : null}
-          <div className={cx('previewActions', moderationLocked && 'moderationLocked')}>
+          <div className="previewActions">
             {!isTemplate ? (
               <button
                 className={cx('favoriteAction', favorite && 'active')}
                 type="button"
                 onClick={() => onToggleFavorite(item)}
-                disabled={favoriteBusy || moderationLocked}
+                disabled={favoriteBusy}
                 aria-pressed={Boolean(favorite)}
               >
                 {favoriteBusy ? <LoaderCircle className="spinIcon" size={17} /> : <Heart size={17} />}
                 {favorite ? t.unfavorite : t.favorite}
               </button>
             ) : null}
-            <button type="button" onClick={() => onCopyText(promptText, copyId)} disabled={moderationLocked}>
+            <button type="button" onClick={() => onCopyText(promptText, copyId)}>
               {isCopied ? <Check size={17} /> : <Copy size={17} />}
               {isCopied ? t.copied : isTemplate ? t.copyTemplatePrompt : t.copyPrompt}
             </button>
-            {!isTemplate ? (
-              <button type="button" onClick={handleGenerate} disabled={generationLocked}>
-                {isGenerating ? <LoaderCircle className="spinIcon" size={17} /> : <ImageIcon size={17} />}
-                {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? (
-                  <>{t.generateTest} · <ImageCreditPrice pricing={casePricing} language={language} compact /></>
-                ) : t.signInToGenerate}
-              </button>
-            ) : null}
             {!isTemplate && item.sourceUrl ? (
               <a
-                className={moderationLocked ? 'moderationLockedAction' : undefined}
                 href={item.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
-                aria-disabled={moderationLocked}
-                tabIndex={moderationLocked ? -1 : undefined}
-                onClick={(event) => {
-                  if (moderationLocked) event.preventDefault();
-                }}
               >
                 {t.source}
                 <ArrowUpRight size={17} />
@@ -4779,7 +4581,7 @@ function PreviewDialog({
               <h3>{isTemplate ? t.templatePrompt : t.editablePrompt}</h3>
               {!isTemplate ? (
                 <div className="promptActionGroup">
-                  <button type="button" onClick={handleSanitize} disabled={isSanitizing || isGenerating}>
+                  <button type="button" onClick={handleSanitize} disabled={isSanitizing}>
                     {isSanitizing ? <LoaderCircle className="spinIcon" size={14} /> : <WandSparkles size={14} />}
                     {isSanitizing ? t.sanitizingPrompt : t.sanitizePrompt}
                   </button>
@@ -4793,38 +4595,18 @@ function PreviewDialog({
               <pre className="promptBlock">{promptText}</pre>
             ) : (
               <textarea
-                className={cx(
-                  'promptEditor',
-                  moderationLocked && 'moderationBlocked',
-                  sanitizeState.status === 'success' && 'promptSanitized'
-                )}
+                className={cx('promptEditor', sanitizeState.status === 'success' && 'promptSanitized')}
                 value={editablePrompt}
                 onChange={handlePromptChange}
                 maxLength={6000}
               />
             )}
             {!isTemplate && sanitizeState.message ? (
-              <p className={cx('promptSafetyMessage', moderationLocked && 'moderationLocked', sanitizeState.status === 'error' && 'error')}>
+              <p className={cx('promptSafetyMessage', sanitizeState.status === 'error' && 'error')}>
                 {sanitizeState.message}
               </p>
             ) : null}
           </div>
-          {!isTemplate ? (
-            <div className={cx('generationPanel', moderationLocked && 'moderationLocked')}>
-              <div className={cx('generationQuota', (!isSignedIn || isOutOfCredits) && 'used')}>
-                {quotaText}
-              </div>
-              <button type="button" onClick={handleGenerate} disabled={generationLocked}>
-                {isGenerating ? <LoaderCircle className="spinIcon" size={17} /> : <ImageIcon size={17} />}
-                {isGenerating ? t.generating : isOutOfCredits ? t.buyCredits : isSignedIn ? (
-                  <>{t.generateImage} · <ImageCreditPrice pricing={casePricing} language={language} compact /></>
-                ) : t.signInToGenerate}
-              </button>
-              {generationState.status === 'error' || moderationLocked ? (
-                <p className="generationMessage">{generationState.message}</p>
-              ) : null}
-            </div>
-          ) : null}
           {isTemplate && (guidance.length || pitfalls.length || item.exampleCases?.length) ? (
             <div className="previewColumns">
               {guidance.length ? (
@@ -4908,7 +4690,6 @@ function PublicNavigation({
   onSignIn,
   onSignOut,
   onAccount,
-  onFavorites,
   onBilling,
   onProfileChange
 }) {
@@ -4934,7 +4715,7 @@ function PublicNavigation({
         <LanguageSwitch language={language} setLanguage={setLanguage} />
         <NotificationBell language={language} session={session} profile={profile} onProfileChange={onProfileChange} onSignIn={onSignIn} />
         <ThemePicker language={language} siteTheme={siteTheme} setSiteTheme={setSiteTheme} />
-        <UserMenu language={language} session={session} profile={profile} onSignIn={onSignIn} onSignOut={onSignOut} onAccount={onAccount} onFavorites={onFavorites} onBilling={onBilling} />
+        <UserMenu language={language} session={session} profile={profile} onSignIn={onSignIn} onSignOut={onSignOut} onAccount={onAccount} onBilling={onBilling} />
         <button className="homePrimaryButton homeWorkspaceButton" type="button" onClick={onWorkspace}>{labels.workspace}<ArrowUpRight size={16} /></button>
       </div>
     </nav>
@@ -4958,7 +4739,6 @@ function App() {
   const [category, setCategory] = useState('All');
   const [style, setStyle] = useState('All');
   const [scene, setScene] = useState('All');
-  const [creationCategory, setCreationCategory] = useState('All');
   const [preview, setPreview] = useState(null);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -4968,7 +4748,6 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authErrorCode, setAuthErrorCode] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
-  const [accountInitialSection, setAccountInitialSection] = useState('overview');
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
   const [siteNotice, setSiteNotice] = useState(null);
@@ -5260,6 +5039,11 @@ function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get('newapi_login') === 'failed') {
+      setFavoriteMessage(language === 'zh' ? '来源账户登录未完成，请从来源站点重新进入 Pic365。' : 'Source sign-in failed. Enter Pic365 from the source dashboard again.');
+      params.delete('newapi_login');
+      window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}${window.location.hash}`);
+    }
     const billing = params.get('billing');
     if (!billing) return;
     if (billing === 'success') setBillingNotice(t.billingSuccess);
@@ -5320,23 +5104,6 @@ function App() {
     () => (siteData && styleLibrary ? orderByLibrary(siteData.scenes, styleLibrary.scenes) : []),
     [siteData, styleLibrary]
   );
-
-  const creationCategoryOptions = useMemo(() => {
-    if (!siteData || !styleLibrary) return [];
-    const templateCategories = (styleLibrary.templates || []).map((item) => item.category);
-    const values = [...new Set([...siteData.categories, ...templateCategories])];
-    return orderByLibrary(values, styleLibrary.categories).map((value) => ({
-      value,
-      label: localizeLabel(value, language, styleLibrary)
-    }));
-  }, [language, siteData, styleLibrary]);
-
-  const creationCases = useMemo(() => {
-    if (!siteData) return [];
-    return siteData.cases
-      .filter((item) => creationCategory === 'All' || item.category === creationCategory)
-      .slice(0, 12);
-  }, [creationCategory, siteData]);
 
   const visibleCases = filteredCases.slice(0, visibleCaseCount);
   const casesById = useMemo(() => new Map((siteData?.cases || []).map((caseItem) => [caseItem.id, caseItem])), [siteData]);
@@ -5510,17 +5277,12 @@ function App() {
     }
   }
 
-  function handleOpenAccount(section = 'overview') {
-    setAccountInitialSection(section);
+  function handleOpenAccount() {
     setAccountOpen(true);
-    if (section === 'favorites') {
-      loadFavorites({ silent: false });
-    }
   }
 
   function handleCloseAccount() {
     setAccountOpen(false);
-    setAccountInitialSection('overview');
   }
 
   const isPublicPage = PUBLIC_PAGES.has(activePage);
@@ -5567,7 +5329,6 @@ function App() {
     onSignIn={openAuth}
     onSignOut={handleSignOut}
     onAccount={() => handleOpenAccount('overview')}
-    onFavorites={() => handleOpenAccount('favorites')}
     onBilling={() => {
       setBillingNotice('');
       setBillingOpen(true);
@@ -5576,6 +5337,7 @@ function App() {
   />;
 
   return (
+    <ImagePricingProvider profile={profile}>
     <main className={cx('siteApp', isPublicPage && 'sitePublicPage', activePage === 'home' && 'siteHomepageActive', activePage === 'canvas' && 'siteWorkspaceCanvas', siteTheme === 'light' && 'siteThemeLight', siteTheme === 'dark' && 'siteThemeDark', siteTheme === 'black' && 'siteThemeBlack')} data-theme={siteTheme}>
       {isPublicPage && activePage !== 'home' ? publicNavigation : null}
       {!isPublicPage ? <header className={cx('topbar', 'workspaceTopbar', `topbarPage-${activePage}`)}>
@@ -5653,7 +5415,6 @@ function App() {
             onSignIn={openAuth}
             onSignOut={handleSignOut}
             onAccount={() => handleOpenAccount('overview')}
-            onFavorites={() => handleOpenAccount('favorites')}
             onBilling={() => {
               setBillingNotice('');
               setBillingOpen(true);
@@ -5769,10 +5530,6 @@ function App() {
               language={language}
               onCopy={handleCopyCasePrompt}
               onOpen={openCasePreview}
-              onGenerate={(item) => {
-                openCasePreview(item);
-                if (!isAuthenticatedSession(session)) openAuth();
-              }}
               onToggleFavorite={handleToggleFavorite}
               styleLibrary={styleLibrary}
               key={caseItem.id}
@@ -5809,13 +5566,7 @@ function App() {
           language={language}
           session={session}
           profile={profile}
-          cases={creationCases}
           styleCases={siteData?.cases || []}
-          categoryOptions={creationCategoryOptions}
-          category={creationCategory}
-          onCategoryChange={setCreationCategory}
-          onOpenCase={openCasePreview}
-          onBrowseCases={() => handlePageChange('cases')}
           onSignIn={openAuth}
           onBilling={() => {
             setBillingNotice(t.creditsRequired);
@@ -5884,18 +5635,12 @@ function App() {
         styleLibrary={styleLibrary}
         copiedId={copiedId}
         session={session}
-        profile={profile}
         favorite={preview?.type === 'case' ? favoriteCaseIds.has(preview.item.id) : false}
         favoriteBusy={preview?.type === 'case' && favoriteBusyId === preview.item.id}
         onClose={() => setPreview(null)}
         onCopyText={copyText}
         onToggleFavorite={handleToggleFavorite}
         onAuthRequired={openAuth}
-        onBillingRequired={() => {
-          setBillingNotice(t.creditsRequired);
-          setBillingOpen(true);
-        }}
-        onProfileChange={handleProfileChange}
       />
       <SiteNoticeModal
         notice={siteNoticeOpen ? siteNotice : null}
@@ -5918,8 +5663,6 @@ function App() {
         session={session}
         profile={profile}
         casesById={casesById}
-        favoriteRows={favoriteRows}
-        initialSection={accountInitialSection}
         onClose={handleCloseAccount}
         onProfileChange={handleProfileChange}
         onMenuChanged={handleMenuSettingsChanged}
@@ -5943,6 +5686,7 @@ function App() {
         onOpenCase={handleOpenCaseFromAccount}
       />
       <ChatCompanion
+        key={session?.user?.id || profile?.id || 'guest'}
         language={language}
         session={session}
         profile={profile}
@@ -5954,6 +5698,7 @@ function App() {
         onProfileChange={handleProfileChange}
       />
     </main>
+    </ImagePricingProvider>
   );
 }
 

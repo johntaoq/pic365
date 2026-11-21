@@ -79,6 +79,7 @@ export default function FreeImageReferenceEditor({ reference, language, onClose,
   const [annotations, setAnnotations] = useState(() => reference?.annotations || []);
   const [draft, setDraft] = useState(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const originalImageUrl = reference.originalImageUrl || reference.imageUrl;
 
   useEffect(() => {
     setAnnotations(reference?.annotations || []);
@@ -97,11 +98,11 @@ export default function FreeImageReferenceEditor({ reference, language, onClose,
         height: Math.max(1, Math.round(image.naturalHeight * scale))
       });
     };
-    image.src = reference.imageUrl;
+    image.src = originalImageUrl;
     return () => {
       image.onload = null;
     };
-  }, [reference.imageUrl]);
+  }, [originalImageUrl]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

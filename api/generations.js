@@ -1,7 +1,7 @@
 import { clearGenerationHistory, hideGenerationFromHistory, listGenerations } from './_lib/local-db.js';
 import { authenticateRequest } from './_lib/local-auth.js';
 import { readJsonBody } from './_lib/request.js';
-import { generatedImageUrl, GENERATED_THUMBNAIL_VARIANT } from '../shared/image-thumbnails.js';
+import { generatedImageUrl, GENERATED_THUMBNAIL_VARIANT, GENERATED_PREVIEW_VARIANT } from '../shared/image-thumbnails.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -59,6 +59,7 @@ export default async function handler(req, res) {
         status: row.status,
         imageUrl: generatedImageUrl(row.id),
         thumbnailUrl: generatedImageUrl(row.id, GENERATED_THUMBNAIL_VARIANT),
+        previewUrl: generatedImageUrl(row.id, GENERATED_PREVIEW_VARIANT),
         mimeType: imageMimeType(row.storage_path),
         fileSize: Number(row.file_size || 0),
         createdAt: row.created_at || '',

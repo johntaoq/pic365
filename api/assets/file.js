@@ -1,6 +1,7 @@
 import { authenticateRequest } from '../_lib/local-auth.js';
 import { ensureImageVariants, getVariantRecord, recordAssetUsage } from '../_lib/media-assets.js';
 import { getStoredFileInfo, openStoredFileStream, readStoredFileRange } from '../_lib/storage.js';
+import { startMediaProcessingWorker } from '../../server/media-processing-worker.js';
 
 function json(res, status, payload) {
   res.status(status).json(payload);
@@ -72,12 +73,19 @@ export default async function handler(req, res) {
   const assetId = String(req.query?.id || '').trim();
   const requestedVariant = String(req.query?.variant || 'original').trim();
   let record = getVariantRecord(auth.user.id, assetId, requestedVariant);
-  if (record?.asset?.mediaType === 'image' && !record.variant && ['thumbnail', 'preview'].includes(requestedVariant)) {
-    await ensureImageVariants(auth.user.id, assetId).catch(() => undefined);
+  const imageVariant = record?.asset?.mediaType === 'image' && ['thumbnail', 'preview'].includes(requestedVariant);
+  if (imageVariant && (!record.variant || record.variant.status !== 'ready')) {
+    startMediaProcessingWorker();
+    try { await ensureImageVariants(auth.user.id, assetId); }
+    catch {
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Retry-After', '2');
+      return json(res, 503, { ok: false, error: 'ASSET_VARIANT_PENDING' });
+    }
     record = getVariantRecord(auth.user.id, assetId, requestedVariant);
   }
   if (!record?.asset) return json(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
-  if (!record.variant && requestedVariant !== 'original') record = getVariantRecord(auth.user.id, assetId, 'original');
+  if (!record.variant && requestedVariant !== 'original' && !imageVariant) record = getVariantRecord(auth.user.id, assetId, 'original');
   if (!record?.variant?.storagePath) return json(res, 404, { ok: false, error: 'ASSET_VARIANT_NOT_FOUND' });
   try {
     const stored = await getStoredFileInfo(record.variant.storagePath);

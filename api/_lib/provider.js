@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { normalizeImageInputUsage } from '../../shared/image-input-billing.js';
 import {
   GEMINI_IMAGE_RATIO_PRESETS,
   getImageModelConstraints,
   isGeminiImageModel,
+  isMaiImage27Model,
   parseImageSize,
-  resolveProviderImageQuality
+  resolveProviderImageQuality,
+  validateImageSizeForModel
 } from '../../shared/image-generation.js';
 
 const DEFAULT_BASE_URL = 'https://www.unikeyx.com';
@@ -20,6 +23,14 @@ function trimBaseUrl(value) {
 
 function resolveImageModel(config, requestedModel) {
   return String(requestedModel || config?.imageModel || config?.model || DEFAULT_IMAGE_MODEL).trim();
+}
+
+function requireMai27Size(size, model) {
+  if (!isMaiImage27Model(model)) return;
+  const result = validateImageSizeForModel(size, model);
+  if (!result.valid) {
+    throw Object.assign(new Error('INVALID_SIZE'), { status: 400, code: 'INVALID_SIZE', reason: result.error });
+  }
 }
 
 export function getProviderConfig() {
@@ -71,7 +82,7 @@ function imageInputBlob(value) {
   };
 }
 
-function buildMultipartEditBody({ prompt, images, model, size, quality, format }) {
+function buildMultipartEditBody({ prompt, images, model, size, quality, format, background }) {
   const form = new FormData();
   form.append('model', model);
   form.append('prompt', prompt);
@@ -79,7 +90,7 @@ function buildMultipartEditBody({ prompt, images, model, size, quality, format }
   form.append('size', size);
   form.append('quality', resolveProviderImageQuality(quality));
   form.append('output_format', format);
-  form.append('background', 'auto');
+  form.append('background', background);
   images.forEach((image, index) => {
     const { blob, contentType } = imageInputBlob(image);
     form.append('image', blob, `reference-${index + 1}.${imageExtension(contentType)}`);
@@ -200,7 +211,7 @@ async function requestGeminiChatImage({ prompt, images = [], model, size, qualit
     error.providerRequestId = requestId;
     throw error;
   }
-  return { ...result, model, providerRequestId: requestId };
+  return { ...result, model, providerRequestId: requestId, inputUsage: normalizeImageInputUsage(payload) };
 }
 
 async function requestProvider(pathname, body, { accept = 'application/json', signal, timeoutMs = REQUEST_TIMEOUT_MS, providerConfig } = {}) {
@@ -218,12 +229,14 @@ async function requestProvider(pathname, body, { accept = 'application/json', si
     const multipart = isFormDataBody(body);
     const response = await fetch(buildProviderUrl(pathname, providerConfig), {
       method: 'POST',
+      ...(providerConfig?.pricingConfig?.externalWallet ? { redirect: 'error' } : {}),
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         ...(multipart ? {} : { 'Content-Type': 'application/json' }),
         Accept: accept,
-        'X-Client-Request-Id': requestId
+        'X-Client-Request-Id': requestId,
+        ...(providerConfig?.headers || {})
       },
       body: multipart ? body : JSON.stringify(body)
     });
@@ -238,6 +251,7 @@ async function requestProvider(pathname, body, { accept = 'application/json', si
 export async function generateImage({ prompt, model, size = '1024x1024', quality = 'low', format = 'png', providerConfig, signal }) {
   const config = providerConfig || getProviderConfig();
   const imageModel = resolveImageModel(config, model);
+  requireMai27Size(size, imageModel);
   if (isGeminiImageModel(imageModel)) {
     return requestGeminiChatImage({
       prompt,
@@ -271,6 +285,7 @@ export async function generateImage({ prompt, model, size = '1024x1024', quality
   return {
     ...result,
     model: imageModel,
+    inputUsage: normalizeImageInputUsage(payload),
     providerRequestId: requestId
   };
 }
@@ -287,6 +302,7 @@ export async function editImage({
 }) {
   const config = providerConfig || getProviderConfig();
   const imageModel = resolveImageModel(config, model);
+  requireMai27Size(size, imageModel);
   const constraints = getImageModelConstraints(imageModel);
   const requestedImages = (Array.isArray(images) ? images : []).filter(Boolean);
   if (requestedImages.length && constraints.maxReferenceImages === 0) {
@@ -315,6 +331,8 @@ export async function editImage({
   const imageInputs = requestedImages
     .map((imageUrl) => ({ image_url: imageUrl }));
   if (!imageInputs.length) throw new Error('IMAGE_INPUT_REQUIRED');
+  // Both MAI 2.7 variants use an explicit opaque default for reference edits.
+  const background = isMaiImage27Model(imageModel) ? 'opaque' : 'auto';
 
   const requestBody = {
     model: imageModel,
@@ -324,7 +342,7 @@ export async function editImage({
     size,
     quality: resolveProviderImageQuality(quality),
     output_format: format,
-    background: 'auto'
+    background
   };
   const routeKey = multipartRouteKey(config, imageModel);
   const multipartPreferred = config.providerType === 'openai-compatible-multipart'
@@ -332,7 +350,7 @@ export async function editImage({
   let providerResponse = await requestProvider(
     'images/edits',
     multipartPreferred
-      ? buildMultipartEditBody({ prompt, images: requestedImages, model: imageModel, size, quality, format })
+      ? buildMultipartEditBody({ prompt, images: requestedImages, model: imageModel, size, quality, format, background })
       : requestBody,
     { signal, timeoutMs: IMAGE_REQUEST_TIMEOUT_MS, providerConfig: config }
   );
@@ -340,7 +358,7 @@ export async function editImage({
     multipartEditRoutes.add(routeKey);
     providerResponse = await requestProvider(
       'images/edits',
-      buildMultipartEditBody({ prompt, images: requestedImages, model: imageModel, size, quality, format }),
+      buildMultipartEditBody({ prompt, images: requestedImages, model: imageModel, size, quality, format, background }),
       { signal, timeoutMs: IMAGE_REQUEST_TIMEOUT_MS, providerConfig: config }
     );
   }
@@ -360,6 +378,7 @@ export async function editImage({
   return {
     ...result,
     model: imageModel,
+    inputUsage: normalizeImageInputUsage(payload),
     providerRequestId: requestId
   };
 }

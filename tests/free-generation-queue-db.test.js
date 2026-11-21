@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
+import sharp from 'sharp';
+import { expandSharedTaskReferences } from '../shared/generation-task-references.js';
 
 const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pic365-free-queue-'));
 process.env.APP_DB_PATH = path.join(tempDirectory, 'app.sqlite');
@@ -37,6 +39,206 @@ function taskRequest(index = 0) {
   };
 }
 
+test('completed task results expose cache-busted canonical thumbnails and previews while keeping the original', () => {
+  const user = createTestUser('preview-urls');
+  const task = queue.createFreeGenerationTask(user.id, taskRequest());
+  queue.completeFreeGenerationTask(user.id, task.id, { status: 'completed', result: {
+    image: '/api/generated?id=preview-result', generationId: 'preview-result',
+    thumbnailUrl: '/api/generated?id=preview-result&variant=thumbnail', downloadAllowed: true
+  } });
+  const result = queue.listFreeGenerationTasks(user.id)[0].results[0];
+  assert.equal(result.imageUrl, '/api/generated?id=preview-result');
+  assert.equal(result.thumbnailUrl, '/api/generated?id=preview-result&variant=thumb&v=v3');
+  assert.equal(result.previewUrl, '/api/generated?id=preview-result&variant=preview&v=v3');
+  assert.equal(result.downloadAllowed, true);
+});
+
+test('task polling reads cached metadata instead of large inline references and lazily repairs old rows once', () => {
+  const user = createTestUser('lightweight-poll');
+  const task = queue.createFreeGenerationTask(user.id, { ...taskRequest(), canvasProjectId: 'cached-project',
+    references: [{ imageDataUrl: `data:image/png;base64,${'A'.repeat(2 * 1024 * 1024)}` }] });
+  const connection = localDb.getDb();
+  const summary = connection.prepare('SELECT summary_json FROM free_generation_tasks WHERE id = ?').get(task.id).summary_json;
+  assert.ok(summary.length < 1000);
+  assert.equal(summary.includes('imageDataUrl'), false);
+  const prepare = connection.prepare;
+  const queries = [];
+  connection.prepare = function (sql) { queries.push(sql); return prepare.call(this, sql); };
+  try {
+    const tasks = queue.listFreeGenerationTasks(user.id);
+    assert.equal(tasks[0].canvasProjectId, 'cached-project');
+    const listSql = queries.find((sql) => sql.includes('SELECT id, user_id, status'));
+    assert.ok(listSql);
+    assert.equal(listSql.includes('request_json'), false);
+    assert.equal(JSON.stringify(tasks).includes('imageDataUrl'), false);
+    connection.prepare("UPDATE free_generation_tasks SET summary_json = '' WHERE id = ?").run(task.id);
+    queue.listFreeGenerationTasks(user.id);
+    assert.notEqual(connection.prepare('SELECT summary_json FROM free_generation_tasks WHERE id = ?').get(task.id).summary_json, '');
+    queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+    assert.equal(queue.buildFreeGenerationRedoRequest(user.id, task.id).references[0].imageDataUrl.length > 2 * 1024 * 1024, true);
+  } finally { connection.prepare = prepare; }
+});
+
+test('commerce batches persist three shared products and each sample as independent retryable queue tasks', () => {
+  const user = createTestUser('commerce-shared');
+  const shared = [{ assetId: 'primary' }, { assetId: 'side' }, { assetId: 'detail' }];
+  const requests = expandSharedTaskReferences(['low', 'medium', 'high'].map((quality, index) => ({
+    ...taskRequest(index), quality, batchId: 'layout-shared', batchIndex: index,
+    layoutProductReferenceCount: 3,
+    references: [{ imageDataUrl: `data:image/jpeg;base64,sample${index}`, clientId: `sample-${index}` }]
+  })), shared);
+  const created = queue.createFreeGenerationTasks(user.id, requests);
+  assert.equal(created.length, 3);
+  for (const [index, task] of created.entries()) {
+    assert.equal(task.status, 'queued');
+    const restored = queue.getFreeGenerationTask(user.id, task.id, { includeRequest: true });
+    assert.deepEqual(restored.request.references, requests[index].references);
+    assert.equal(restored.request.references.length, 4);
+    assert.equal(restored.request.quality, requests[index].quality);
+    assert.equal(restored.request.layoutProductReferenceCount, 3);
+    queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+    const redo = queue.buildFreeGenerationRedoRequest(user.id, task.id);
+    assert.deepEqual(redo.references, requests[index].references);
+    assert.equal(redo.layoutProductReferenceCount, 3);
+    assert.equal(redo.batchId, 'layout-shared');
+  }
+});
+
+test('prompt-only first layout keeps its product references and mode across retries', () => {
+  const user = createTestUser('commerce-prompt-only');
+  const products = [{ assetId: 'primary' }, { assetId: 'detail' }];
+  const request = {
+    ...taskRequest(1), batchId: 'layout-prompt-only', layoutId: 'single-frame',
+    layoutProductReferenceCount: products.length, references: products
+  };
+  const task = queue.createFreeGenerationTask(user.id, request);
+  const stored = queue.getFreeGenerationTask(user.id, task.id, { includeRequest: true });
+  assert.equal(stored.request.layoutId, 'single-frame');
+  assert.equal(stored.layoutId, 'single-frame');
+  assert.equal(queue.listFreeGenerationTasks(user.id)[0].layoutId, 'single-frame');
+  assert.deepEqual(stored.request.references, products);
+  assert.equal(stored.redoAvailable, true);
+  queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+  const retry = queue.buildFreeGenerationRedoRequest(user.id, task.id);
+  assert.equal(retry.layoutId, 'single-frame');
+  assert.equal(retry.layoutProductReferenceCount, 2);
+  assert.deepEqual(retry.references, products);
+  const retried = queue.createFreeGenerationTask(user.id, retry);
+  assert.equal(queue.getFreeGenerationTask(user.id, retried.id, { includeRequest: true }).request.references.length, 2);
+});
+
+test('second and third prompt-only layouts preserve their mode through queue retry', () => {
+  const user = createTestUser('commerce-prompt-only-next');
+  const products = [{ assetId: 'primary' }, { assetId: 'detail' }];
+  for (const layoutId of ['bottom-band', 'full-bleed-detail']) {
+    const task = queue.createFreeGenerationTask(user.id, {
+      ...taskRequest(layoutId), batchId: 'layout-prompt-only-next', layoutId,
+      layoutProductReferenceCount: products.length, references: products
+    });
+    const stored = queue.getFreeGenerationTask(user.id, task.id, { includeRequest: true });
+    assert.equal(stored.request.layoutId, layoutId);
+    assert.equal(stored.request.references.length, 2);
+    queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+    const retry = queue.buildFreeGenerationRedoRequest(user.id, task.id);
+    assert.equal(retry.layoutId, layoutId);
+    assert.deepEqual(retry.references, products);
+    const retried = queue.createFreeGenerationTask(user.id, retry);
+    assert.equal(queue.getFreeGenerationTask(user.id, retried.id, { includeRequest: true }).request.layoutId, layoutId);
+  }
+});
+
+test('remaining prompt-only layouts persist their mode without a template across retries', () => {
+  const user = createTestUser('commerce-prompt-only-rest');
+  const products = [{ assetId: 'primary' }, { assetId: 'detail' }];
+  for (const layoutId of ['detail-window', 'detail-ribbons', 'icon-rails', 'quad-cards']) {
+    const task = queue.createFreeGenerationTask(user.id, {
+      ...taskRequest(layoutId), batchId: 'layout-prompt-only-rest', layoutId,
+      layoutReferenceMode: 'prompt-only', layoutProductReferenceCount: products.length,
+      references: products
+    });
+    const stored = queue.getFreeGenerationTask(user.id, task.id, { includeRequest: true });
+    assert.equal(stored.request.layoutReferenceMode, 'prompt-only');
+    assert.deepEqual(stored.request.references, products);
+    queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+    const retry = queue.buildFreeGenerationRedoRequest(user.id, task.id);
+    assert.equal(retry.layoutId, layoutId);
+    assert.equal(retry.layoutReferenceMode, 'prompt-only');
+    assert.deepEqual(retry.references, products);
+  }
+});
+
+test('one watermark setting survives independent layout tasks and retries without appearing in task listings', async () => {
+  const user = createTestUser('commerce-watermark');
+  const image = await sharp({ create: {
+    width: 64, height: 24, channels: 4, background: { r: 240, g: 35, b: 35, alpha: 1 }
+  } }).png().toBuffer();
+  const imageDataUrl = `data:image/png;base64,${image.toString('base64')}`;
+  const layoutWatermark = { angle: -45, columns: 4, text: '我的店铺', textImageDataUrl: imageDataUrl, imageDataUrl };
+  const requests = ['single-frame', 'bottom-band'].map((layoutId, index) => ({
+    ...taskRequest(index), batchId: 'layout-watermarked', batchIndex: index, layoutId,
+    layoutReferenceMode: 'prompt-only', layoutProductReferenceCount: 1,
+    references: [{ assetId: 'primary' }], layoutWatermark
+  }));
+  assert.throws(() => queue.createFreeGenerationTasks(user.id, [
+    requests[0], { ...requests[1], layoutWatermark: { ...layoutWatermark, text: '图'.repeat(20) } }
+  ]), (error) => error.code === 'LAYOUT_WATERMARK_INVALID');
+  assert.equal(queue.listFreeGenerationTasks(user.id).length, 0);
+
+  const created = queue.createFreeGenerationTasks(user.id, requests);
+  for (const task of created) {
+    assert.equal(task.request, undefined);
+    assert.equal(task.layoutWatermark, undefined);
+    const stored = queue.getFreeGenerationTask(user.id, task.id, { includeRequest: true });
+    assert.deepEqual(stored.request.layoutWatermark, layoutWatermark);
+    queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+    const retry = queue.buildFreeGenerationRedoRequest(user.id, task.id);
+    assert.deepEqual(retry.layoutWatermark, layoutWatermark);
+    const retried = queue.createFreeGenerationTask(user.id, retry);
+    assert.deepEqual(queue.getFreeGenerationTask(user.id, retried.id, { includeRequest: true }).request.layoutWatermark,
+      layoutWatermark);
+  }
+  assert.throws(() => queue.createFreeGenerationTask(user.id, {
+    ...taskRequest(33), layoutWatermark
+  }), (error) => error.code === 'LAYOUT_WATERMARK_INVALID');
+  assert.throws(() => queue.createFreeGenerationTask(user.id, {
+    ...requests[0], clientTaskId: 'invalid-watermark-columns',
+    layoutWatermark: { ...layoutWatermark, columns: 9 }
+  }), (error) => error.code === 'LAYOUT_WATERMARK_INVALID');
+});
+
+test('queued image-guided layouts from an older version remain retryable', () => {
+  const user = createTestUser('commerce-before-prompt-only');
+  const references = [{ assetId: 'primary' }, { imageDataUrl: 'data:image/jpeg;base64,original-template' }];
+  const task = queue.createFreeGenerationTask(user.id, {
+    ...taskRequest(1), batchId: 'layout-before-prompt-only', layoutId: 'icon-rails',
+    layoutProductReferenceCount: 1, references
+  });
+  assert.equal(queue.getFreeGenerationTask(user.id, task.id).redoAvailable, true);
+  queue.completeFreeGenerationTask(user.id, task.id, { status: 'failed', errorCode: 'TEST_FAILURE' });
+  const retry = queue.buildFreeGenerationRedoRequest(user.id, task.id);
+  assert.deepEqual(retry.references, references);
+  assert.equal(retry.layoutId, 'icon-rails');
+  assert.equal(retry.layoutReferenceMode, undefined);
+});
+
+test('incomplete layout batches are atomic and legacy sample-only tasks cannot be retried', () => {
+  const user = createTestUser('layout-reference-guard');
+  const valid = {
+    ...taskRequest(1), batchId: 'layout-reference-guard', layoutProductReferenceCount: 1,
+    references: [{ assetId: 'primary' }, { imageDataUrl: 'data:image/jpeg;base64,sample' }]
+  };
+  const invalid = { ...valid, clientTaskId: 'layout-missing-product', references: valid.references.slice(1) };
+  assert.throws(() => queue.createFreeGenerationTasks(user.id, [valid, invalid]), /LAYOUT_REFERENCES_INCOMPLETE/);
+  assert.equal(queue.listFreeGenerationTasks(user.id).length, 0);
+  const created = queue.createFreeGenerationTask(user.id, valid);
+  queue.completeFreeGenerationTask(user.id, created.id, { status: 'completed', result: { images: [] } });
+  const legacyRequest = { ...invalid };
+  delete legacyRequest.layoutProductReferenceCount;
+  localDb.getDb().prepare('UPDATE free_generation_tasks SET request_json=? WHERE id=?')
+    .run(JSON.stringify(legacyRequest), created.id);
+  assert.equal(queue.getFreeGenerationTask(user.id, created.id).redoAvailable, false);
+  assert.throws(() => queue.buildFreeGenerationRedoRequest(user.id, created.id), /LAYOUT_REFERENCES_INCOMPLETE/);
+});
 test('free generation tasks keep 30 records and evict the oldest completed task', () => {
   const user = createTestUser('queue-capacity');
   const created = Array.from({ length: 20 }, (_, index) => queue.createFreeGenerationTask(user.id, taskRequest(index)));

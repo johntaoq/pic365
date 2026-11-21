@@ -545,6 +545,7 @@ export function PersonalMenuSettings({ language = 'zh', profile, onMenuChanged }
     return () => { cancelled = true; };
   }, [profile?.id]);
   async function updatePreference(key, checked) {
+    if (menu?.personal.locked?.[key]) return;
     const next = { ...menu.personal, [key]: checked };
     setMenu((current) => ({ ...current, personal: next }));
     const response = await fetch('/api/menu-settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) });
@@ -559,6 +560,8 @@ export function PersonalMenuSettings({ language = 'zh', profile, onMenuChanged }
     ['hideApi', 'api', zh ? '隐藏“API”' : 'Hide API']
   ].map(([preference, globalKey, label]) => {
     const globallyDisabled = Boolean(globalKey && !menu.global[globalKey]);
-    return <label className={globallyDisabled ? 'globallyDisabled' : ''} key={preference}><input type="checkbox" checked={globallyDisabled || Boolean(menu.personal[preference])} disabled={globallyDisabled} onChange={(e) => updatePreference(preference, e.target.checked)} /><span>{label}</span>{globallyDisabled ? <em>{zh ? '全局已关闭' : 'Disabled globally'}</em> : null}</label>;
+    const accountLocked = Boolean(menu.personal.locked?.[preference]);
+    const disabled = globallyDisabled || accountLocked;
+    return <label className={disabled ? 'globallyDisabled' : ''} key={preference}><input type="checkbox" checked={disabled || Boolean(menu.personal[preference])} disabled={disabled} onChange={(e) => updatePreference(preference, e.target.checked)} /><span>{label}</span>{accountLocked ? <em>{zh ? '来源账号已锁定' : 'Locked for linked account'}</em> : globallyDisabled ? <em>{zh ? '全局已关闭' : 'Disabled globally'}</em> : null}</label>;
   })}</div> : <LoaderCircle className="spinIcon" size={18} />}</section></div>;
 }

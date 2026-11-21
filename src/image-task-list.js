@@ -27,6 +27,13 @@ export function isActiveImageTask(task) {
 }
 
 export function imageTaskSourceLabel(task, language = 'zh') {
+  if (task?.studioWorkflow?.kind === 'clothing-try-on') {
+    const workflow = task.studioWorkflow;
+    return `${language === 'zh' ? '衣服换装' : 'Clothing try-on'} · ${workflow.garmentName || ''} + ${workflow.modelName || ''}`;
+  }
+  if (task?.studioWorkflow?.kind === 'model-creation') {
+    return `${language === 'zh' ? 'Low 模特' : 'Low model'} · ${task.studioWorkflow.definition?.name || ''}`;
+  }
   const sourceName = String(task?.sourceName || '').trim();
   const looksLikePrompt = !sourceName
     || sourceName.length > 80

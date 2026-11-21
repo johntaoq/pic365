@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MagicModelControl, useTextModels } from './text-model-client.jsx';
+import { newAPIErrorMessage } from './newapi-wallet.jsx';
 import {
   Box,
   ArrowDown,
@@ -66,8 +68,7 @@ import EcommerceAssetLibraryPicker from './ecommerce-asset-library-picker.jsx';
 import { clampImagePanOffset } from './image-pan-zoom.js';
 import {
   ImageCreditPrice,
-  requestImagePricing,
-  requestImagePricingBatch,
+  useImagePricingAccess,
   useServerImagePricing,
   useServerImagePricingBatch
 } from './image-pricing-client.jsx';
@@ -76,7 +77,7 @@ import { countEcommerceReferenceImages } from '../shared/ecommerce-reference-sel
 function ecommerceProviderCompatibility(provider, assets = []) {
   if (!provider) return { valid: false, error: 'AI_PROVIDER_NOT_CONFIGURED' };
   const constraints = getImageModelConstraints(provider.model);
-  if (!constraints.isMai) return { valid: true, constraints };
+  if (!constraints.isMai || constraints.modelFamily === 'mai-image-2.7') return { valid: true, constraints };
   const availableAssets = assets.filter((asset) => asset.available !== false);
   return validateImageReferenceInputsForModel({
     model: provider.model,
@@ -108,6 +109,7 @@ function isGptImageProvider(provider) {
 
 const copy = {
   en: {
+    language: 'en',
     title: 'One image in, a full set out',
     projects: 'Product projects',
     collapseProjects: 'Collapse project list',
@@ -225,6 +227,9 @@ const copy = {
     taskAlreadyActive: 'This image already has a task in progress.',
     retry: (credits) => `Retry · ${credits} credits`,
     retryLabel: 'Retry',
+    retrySubmitting: 'Submitting...',
+    retryRequestConflict: 'The previous task is already being retried. Please check its current status.',
+    creditsRequired: 'Insufficient credits. Add credits before retrying.',
     cancel: 'Cancel',
     cancelling: 'Cancelling...',
     selectAtLeastOne: 'Select at least one image.',
@@ -294,7 +299,7 @@ const copy = {
     fieldHelp: 'Show guidance',
     clearField: 'Clear and show the default guidance',
     restoreAiField: 'Restore the original AI draft',
-    aiFillBrief: 'AI autofill · 1 credit',
+    aiFillBrief: 'AI autofill',
     aiFillingBrief: 'Writing brief...',
     aiBriefFilled: 'AI draft ready',
     aiBriefFailed: 'Could not prepare the product brief.',
@@ -311,6 +316,7 @@ const copy = {
     updated: 'Updated'
   },
   zh: {
+    language: 'zh',
     title: '一图入，全套生',
     projects: '商品项目',
     collapseProjects: '收起项目列表',
@@ -428,6 +434,9 @@ const copy = {
     taskAlreadyActive: '这张图片已有任务正在执行。',
     retry: (credits) => `重试 · ${credits}积分`,
     retryLabel: '重试',
+    retrySubmitting: '提交中……',
+    retryRequestConflict: '这张图已有重试任务，请查看当前任务状态。',
+    creditsRequired: '积分不足，请充值后再重试。',
     cancel: '取消',
     cancelling: '取消中……',
     selectAtLeastOne: '请至少选择一张图片。',
@@ -497,7 +506,7 @@ const copy = {
     fieldHelp: '查看填写提示',
     clearField: '清空并恢复缺省提示',
     restoreAiField: '恢复 AI 原始生成内容',
-    aiFillBrief: 'AI 智能填写 · 1 积分',
+    aiFillBrief: 'AI 智能填写',
     aiFillingBrief: '正在生成商品资料……',
     aiBriefFilled: 'AI 初稿已生成',
     aiBriefFailed: '商品资料暂时无法生成。',
@@ -992,6 +1001,8 @@ function EcommerceVersionCenterModal({
   project,
   assets,
   providerId,
+  providerModel,
+  chargeTextTokens,
   quality,
   actionState,
   onClose,
@@ -1012,11 +1023,12 @@ function EcommerceVersionCenterModal({
   }, [slot?.id, output?.selectedGenerationId]);
 
   const baseGeneration = versions.find((item) => item.id === baseGenerationId) || null;
-  const revisionSize = slot ? resolveEcommerceRefinementSize(baseGeneration, slot) : '1024x1024';
+  const revisionSize = slot ? resolveEcommerceRefinementSize(baseGeneration, slot, providerModel) : '1024x1024';
   const referenceCount = countEcommerceReferenceImages({ project, slot, assets, baseGenerationId });
+  const { skipImagePricing, showImagePricing } = useImagePricingAccess();
   const { pricing: revisionPricing, loading: revisionPricingLoading } = useServerImagePricing(
-    { size: revisionSize, quality, providerId, referenceCount },
-    { enabled: Boolean(slot) }
+    { size: revisionSize, quality, providerId, referenceCount, projectId: project.id, slotId: slot?.id, baseGenerationId, adjustment, chargeTextTokens },
+    { enabled: Boolean(slot && providerId) }
   );
 
   if (!slot) return null;
@@ -1127,11 +1139,11 @@ function EcommerceVersionCenterModal({
           <textarea value={adjustment} onChange={(event) => setAdjustment(event.target.value)} placeholder={t.localRevisionPlaceholder} disabled={output?.locked} />
           <button
             type="button"
-            disabled={output?.locked || revisionPricingLoading || !revisionPricing || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
+            disabled={output?.locked || (!skipImagePricing && (revisionPricingLoading || !revisionPricing)) || !baseGenerationId || !adjustment.trim() || actionState === 'revise'}
             onClick={() => onRevise({ baseGenerationId, adjustment: adjustment.trim() })}
           >
             {actionState === 'revise' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-            {t.createRevisionLabel} · <ImageCreditPrice pricing={revisionPricing} language={language} compact />
+            {t.createRevisionLabel}{showImagePricing && <> · <ImageCreditPrice pricing={revisionPricing} language={language} compact totalOnly /></>}
           </button>
           {output?.locked ? <p>{t.slotLocked}</p> : null}
         </div>
@@ -1142,6 +1154,12 @@ function EcommerceVersionCenterModal({
 
 function ecommerceGenerationFailureText(payload, t) {
   const code = payload?.error || payload;
+  const externalError = newAPIErrorMessage(code, t.language);
+  if (externalError) return externalError;
+  if (code === 'CREDITS_REQUIRED') return t.creditsRequired;
+  if (code === 'BILLING_REQUEST_DUPLICATE' || code === 'TASK_NOT_RETRYABLE' || code === 'TASK_ALREADY_ACTIVE') return t.retryRequestConflict;
+  if (code === 'PROJECT_CHANGED') return t.projectChanged;
+  if (code === 'CONTENT_MODERATION_BLOCKED') return t.moderationBlocked;
   if (code === 'AI_PROVIDER_NOT_CONFIGURED' || code === 'AI_PROVIDER_NOT_AVAILABLE') return t.projectProviderMissing;
   if (code === 'INVALID_IMAGE_PROVIDER') return t.providerRequired;
   if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.maiReferenceUnsupported;
@@ -1172,7 +1190,8 @@ export default function EcommerceWorkspace({
 }) {
   const t = copy[language] || copy.en;
   const signedIn = hasSession(session);
-  const hasAccess = signedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
+  const { skipImagePricing, showImagePricing, requestImagePricing, requestImagePricingBatch } = useImagePricingAccess();
+  const hasAccess = signedIn && Boolean(profile?.isSuperAdmin || profile?.externalWallet || Number(profile?.creditBalance || 0) > 0);
   const [projects, setProjects] = useState([]);
   const [form, setForm] = useState(() => createEmptyForm());
   const [status, setStatus] = useState('idle');
@@ -1180,6 +1199,12 @@ export default function EcommerceWorkspace({
   const [imageProvidersLoaded, setImageProvidersLoaded] = useState(false);
   const [message, setMessage] = useState('');
   const [assets, setAssets] = useState([]);
+  const magicModels = useTextModels({
+    enabled: signedIn, mode: 'ecommerce',
+    text: JSON.stringify({ productName: form.productName, brandName: form.brandName, industryId: form.industryId,
+      currentBrief: { coreUser: form.coreUser, coreScenario: form.coreScenario, sellingPoints: form.sellingPoints, identitySpec: form.identitySpec } }),
+    imageCount: Math.min(4, assets.length)
+  });
   const [assetStatus, setAssetStatus] = useState('idle');
   const [assetFeedback, setAssetFeedback] = useState('');
   const [assetDragging, setAssetDragging] = useState(false);
@@ -1212,6 +1237,8 @@ export default function EcommerceWorkspace({
   aiBriefOriginalsRef.current = aiBriefOriginals;
   const fileInputRef = useRef(null);
   const generationTasksRef = useRef(new Map());
+  const retryingSlotsRef = useRef(new Map());
+  const [retryingSlots, setRetryingSlots] = useState([]);
   const automaticAnalysisRequestsRef = useRef(new Map());
   const taskStartedNoticeTimerRef = useRef(null);
   const sectionRefs = useRef({});
@@ -1412,6 +1439,8 @@ export default function EcommerceWorkspace({
   useEffect(() => {
     setSelectedProductionSlots([]);
     generationTasksRef.current.clear();
+    retryingSlotsRef.current.clear();
+    setRetryingSlots([]);
     setGenerationTasks({});
     setBatchRunning(false);
     setVersionCenterSlotId('');
@@ -1452,6 +1481,10 @@ export default function EcommerceWorkspace({
           const latestBySlot = new Map();
           for (const task of taskResult.payload.tasks || []) {
             if (!latestBySlot.has(task.slotId)) latestBySlot.set(task.slotId, { ...task, taskId: task.id });
+          }
+          for (const [slotId, current] of generationTasksRef.current) {
+            const received = latestBySlot.get(slotId);
+            if (received && current.createdAt > received.createdAt) latestBySlot.set(slotId, current);
           }
           generationTasksRef.current = latestBySlot;
           setGenerationTasks(Object.fromEntries(latestBySlot));
@@ -1544,6 +1577,7 @@ export default function EcommerceWorkspace({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           focus: 'identitySpec',
+          providerId: magicModels.providerId,
           language,
           projectId: form.id,
           industryId: form.industryId,
@@ -1939,6 +1973,7 @@ export default function EcommerceWorkspace({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           focus: 'brief',
+          providerId: magicModels.providerId,
           language,
           projectId: form.id,
           industryId: form.industryId,
@@ -1992,7 +2027,7 @@ export default function EcommerceWorkspace({
     const request = fetch('/api/ecommerce/auto-fill-brief', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ automatic: true, language, projectId })
+      body: JSON.stringify({ automatic: true, language, projectId, providerId: magicModels.providerId })
     })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
@@ -2319,6 +2354,10 @@ export default function EcommerceWorkspace({
       for (const task of taskPayload.tasks || []) {
         if (!latestBySlot.has(task.slotId)) latestBySlot.set(task.slotId, { ...task, taskId: task.id });
       }
+      for (const [slotId, current] of generationTasksRef.current) {
+        const received = latestBySlot.get(slotId);
+        if (received && current.createdAt > received.createdAt) latestBySlot.set(slotId, current);
+      }
       generationTasksRef.current = latestBySlot;
       setGenerationTasks(Object.fromEntries(latestBySlot));
     }
@@ -2377,43 +2416,50 @@ export default function EcommerceWorkspace({
       setGenerationMessage(t.slotLocked);
       return false;
     }
-    const catalogSlot = platform.slots.find((item) => item.id === slotId);
-    const referenceCount = countEcommerceReferenceImages({
-      project,
-      slot: catalogSlot,
-      assets,
-      baseGenerationId: request.baseGenerationId || '',
-      referenceInputs: request.referenceInputs || []
-    });
-    const baseGeneration = request.baseGenerationId
-      ? generations.find((generation) => generation.id === request.baseGenerationId)
-      : null;
-    const pricingSize = catalogSlot
-      ? request.baseGenerationId
-        ? resolveEcommerceRefinementSize(baseGeneration, catalogSlot)
-        : resolveEcommerceSlotGenerationSize(catalogSlot)
-      : '1024x1024';
-    let confirmedPricing;
-    try {
-      confirmedPricing = await requestImagePricing({
-        size: pricingSize,
-        quality: effectiveGenerationQuality,
-        providerId: project.imageProviderId,
-        referenceCount
+    if (!skipImagePricing) {
+      const catalogSlot = platform.slots.find((item) => item.id === slotId);
+      const referenceCount = countEcommerceReferenceImages({
+        project,
+        slot: catalogSlot,
+        assets,
+        baseGenerationId: request.baseGenerationId || '',
+        referenceInputs: request.referenceInputs || []
       });
-    } catch (error) {
-      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
-      return false;
-    }
-    const requiredCredits = Number(confirmedPricing.credits || 0);
-    if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
-      setGenerationMessage(profile?.groupAccount?.role === 'member'
-        ? t.groupBudgetRequired
-        : profile?.groupAccount?.role === 'admin'
-          ? t.groupBalanceRequired
-          : t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
-      if (!profile?.groupAccount) onBilling?.();
-      return false;
+      const baseGeneration = request.baseGenerationId
+        ? generations.find((generation) => generation.id === request.baseGenerationId)
+        : null;
+      const provider = imageProviders.find((item) => item.id === project.imageProviderId);
+      const pricingSize = catalogSlot
+        ? request.baseGenerationId
+          ? resolveEcommerceRefinementSize(baseGeneration, catalogSlot, provider?.model)
+          : resolveEcommerceSlotGenerationSize(catalogSlot)
+        : '1024x1024';
+      let confirmedPricing;
+      try {
+        confirmedPricing = await requestImagePricing(!request.baseGenerationId && !request.adjustment && !request.referenceInputs?.length && catalogSlot
+          ? productionQuoteItem(project, catalogSlot)
+          : {
+            projectId: project.id, slotId, ...request,
+            size: pricingSize,
+            quality: effectiveGenerationQuality,
+            providerId: project.imageProviderId,
+            chargeTextTokens: provider?.chargeTextTokens,
+            referenceCount
+          });
+      } catch (error) {
+        setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+        return false;
+      }
+      const requiredCredits = Number(confirmedPricing.credits || 0);
+      if (!profile?.isSuperAdmin && Number(profile?.creditBalance || 0) < requiredCredits) {
+        setGenerationMessage(profile?.groupAccount?.role === 'member'
+          ? t.groupBudgetRequired
+          : profile?.groupAccount?.role === 'admin'
+            ? t.groupBalanceRequired
+            : t.insufficientBatchCredits(requiredCredits, Number(profile?.creditBalance || 0)));
+        if (!profile?.groupAccount) onBilling?.();
+        return false;
+      }
     }
 
     let serverTask = taskId ? generationTasksRef.current.get(slotId) : null;
@@ -2477,8 +2523,13 @@ export default function EcommerceWorkspace({
   }
 
   async function handleRetryTask(slotId) {
+    if (retryingSlotsRef.current.has(slotId)) return false;
     const task = generationTasksRef.current.get(slotId);
     if (!task?.taskId) return runSlotGeneration(slotId);
+    if (!['failed', 'cancelled', 'interrupted'].includes(task.status)) return false;
+    retryingSlotsRef.current.set(slotId, task.taskId);
+    setRetryingSlots([...retryingSlotsRef.current.keys()]);
+    const projectId = formRef.current.id;
     try {
       const response = await fetch('/api/ecommerce/tasks', {
         method: 'POST',
@@ -2487,11 +2538,23 @@ export default function EcommerceWorkspace({
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.task) throw new Error(payload.error || 'TASK_RETRY_FAILED');
-      updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
+      if (formRef.current.id === projectId) {
+        updateGenerationTask(slotId, { ...payload.task, taskId: payload.task.id });
+        setGenerationMessage('');
+      }
       return true;
     } catch (error) {
-      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+      if (formRef.current.id === projectId) {
+        await refreshProjectRuntime().catch(() => undefined);
+        const current = generationTasksRef.current.get(slotId);
+        if (current?.taskId === task.taskId) setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+      }
       return false;
+    } finally {
+      if (retryingSlotsRef.current.get(slotId) === task.taskId) {
+        retryingSlotsRef.current.delete(slotId);
+        setRetryingSlots([...retryingSlotsRef.current.keys()]);
+      }
     }
   }
 
@@ -2523,29 +2586,25 @@ export default function EcommerceWorkspace({
       setGenerationMessage(selectedProviderCompatibilityMessage);
       return;
     }
-    let pricingQuotes;
-    try {
-      pricingQuotes = await requestImagePricingBatch(slotIds.map((slotId) => {
-        const slot = platform.slots.find((item) => item.id === slotId);
-        const referenceCount = countEcommerceReferenceImages({ project, slot, assets });
-        return slot
-          ? { key: slotId, size: resolveEcommerceSlotGenerationSize(slot), quality: effectiveGenerationQuality, providerId: project.imageProviderId, referenceCount }
-          : { key: slotId, size: '1024x1024', quality: effectiveGenerationQuality, providerId: project.imageProviderId, referenceCount };
-      }));
-    } catch (error) {
-      setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
-      return;
-    }
-    const requiredCredits = pricingQuotes.reduce((total, quote) => total + Number(quote?.pricing?.credits || 0), 0);
-    const availableCredits = profile?.isSuperAdmin ? Number.POSITIVE_INFINITY : Number(profile?.creditBalance || 0);
-    if (requiredCredits > availableCredits) {
-      setGenerationMessage(profile?.groupAccount?.role === 'member'
-        ? t.groupBudgetRequired
-        : profile?.groupAccount?.role === 'admin'
-          ? t.groupBalanceRequired
-          : t.insufficientBatchCredits(requiredCredits, availableCredits));
-      if (!profile?.groupAccount) onBilling?.();
-      return;
+    if (!skipImagePricing) {
+      let pricingQuotes;
+      try {
+        pricingQuotes = await requestImagePricingBatch(slotIds.map((slotId) => productionQuoteItem(project, platform.slots.find((item) => item.id === slotId), slotId)));
+      } catch (error) {
+        setGenerationMessage(ecommerceGenerationFailureText(error?.message, t));
+        return;
+      }
+      const requiredCredits = pricingQuotes.reduce((total, quote) => total + Number(quote?.pricing?.credits || 0), 0);
+      const availableCredits = profile?.isSuperAdmin ? Number.POSITIVE_INFINITY : Number(profile?.creditBalance || 0);
+      if (requiredCredits > availableCredits) {
+        setGenerationMessage(profile?.groupAccount?.role === 'member'
+          ? t.groupBudgetRequired
+          : profile?.groupAccount?.role === 'admin'
+            ? t.groupBalanceRequired
+            : t.insufficientBatchCredits(requiredCredits, availableCredits));
+        if (!profile?.groupAccount) onBilling?.();
+        return;
+      }
     }
     try {
       await createServerTasks(slotIds.map((slotId) => ({
@@ -2644,7 +2703,7 @@ export default function EcommerceWorkspace({
       const response = await fetch('/api/ecommerce/check-consistency', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: form.id, slotId })
+        body: JSON.stringify({ projectId: form.id, slotId, providerId: magicModels.providerId })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok || !payload.output) throw new Error(payload.error || 'CONSISTENCY_CHECK_FAILED');
@@ -2710,18 +2769,29 @@ export default function EcommerceWorkspace({
     return latest;
   }, [generationsBySlot]);
   const productionSlots = platform.slots.filter((item) => form.selectedSlots.includes(item.id));
+  const pricingAssetRevision = useMemo(() => JSON.stringify(assets.map((asset) => [asset.id, asset.createdAt, asset.available])), [assets]);
+  function productionQuoteItem(project, slot, slotId = slot?.id) {
+    const provider = imageProviders.find((item) => item.id === project.imageProviderId);
+    return {
+      key: slotId,
+      projectId: slot ? project.id : '',
+      slotId: slot ? slotId : '',
+      projectRevision: project.updatedAt ? `${project.updatedAt}:${pricingAssetRevision}` : '',
+      size: slot ? resolveEcommerceSlotGenerationSize(slot) : '1024x1024',
+      quality: effectiveGenerationQuality,
+      providerId: project.imageProviderId,
+      chargeTextTokens: provider?.chargeTextTokens,
+      referenceCount: countEcommerceReferenceImages({ project, slot, assets })
+    };
+  }
   const {
     pricingByKey: productionPricingQuotes,
     loading: productionPricingLoading,
     error: productionPricingError
-  } = useServerImagePricingBatch(productionSlots.map((slot) => ({
-    key: slot.id,
-    size: resolveEcommerceSlotGenerationSize(slot),
-    quality: effectiveGenerationQuality,
-    providerId: form.imageProviderId,
-    referenceCount: countEcommerceReferenceImages({ project: form, slot, assets })
-  })), { enabled: Boolean(signedIn && selectedImageProvider) });
-  const showProductionPricing = Boolean(selectedImageProvider) && productionPricingError !== 'AI_PROVIDER_NOT_CONFIGURED';
+  } = useServerImagePricingBatch(productionSlots.map((slot) => productionQuoteItem(form, slot)), {
+    enabled: Boolean(signedIn && selectedImageProvider)
+  });
+  const showProductionPricing = showImagePricing && Boolean(selectedImageProvider) && productionPricingError !== 'AI_PROVIDER_NOT_CONFIGURED';
   const productionPricingBySlot = new Map(productionSlots.map((slot) => [slot.id, productionPricingQuotes[slot.id] || null]));
   const selectableProductionSlots = productionSlots.filter((item) => !outputsBySlot.get(item.id)?.locked);
   const selectedPricingComplete = selectedProductionSlots.every((slotId) => Boolean(productionPricingBySlot.get(slotId)));
@@ -2914,6 +2984,13 @@ export default function EcommerceWorkspace({
               onToggle={() => toggleSection('brief')}
             />
             <div className="ecommerceCollapsibleContent" id="ecommerce-brief-section" hidden={collapsedSections.brief}>
+              <MagicModelControl models={magicModels} language={language} disabled={aiBriefStatus === 'loading' || identitySpecStatus === 'loading'}>
+                <button type="button" onClick={handleAiFillBrief}
+                  disabled={!form.productName.trim() || !magicModels.quote || magicModels.loading || aiBriefStatus === 'loading'}>
+                  {aiBriefStatus === 'loading' ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={16} />}
+                  {language === 'zh' ? '智能补全' : 'AI autofill'}
+                </button>
+              </MagicModelControl>
               <div className="ecommerceSimpleBrief">
                 <label className="ecommerceField ecommerceProductNameField">
                   <span>{t.productName}</span>
@@ -3263,9 +3340,15 @@ export default function EcommerceWorkspace({
                   const task = generationTasks[item.id];
                   const taskActive = Boolean(task && ['queued', 'running', 'cancelling'].includes(task.status));
                   const retryable = Boolean(task && ['failed', 'cancelled', 'interrupted'].includes(task.status));
-                  const latestAttemptFailed = Boolean(adopted && latestAttempt && latestAttempt.id !== adopted.id && latestAttempt.status !== 'succeeded');
+                  const retrySubmitting = retryingSlots.includes(item.id);
+                  const latestAttemptFailed = Boolean(!retrySubmitting && !taskActive && task?.status === 'failed' && adopted && latestAttempt && latestAttempt.id !== adopted.id && latestAttempt.status !== 'succeeded');
+                  const taskFailureText = task?.status === 'failed' && !taskActive && !retrySubmitting
+                    ? ecommerceGenerationFailureText(task.errorCode, t)
+                    : '';
                   const selectedForBatch = selectedProductionSlots.includes(item.id);
-                  const taskLabel = task?.status === 'queued'
+                  const taskLabel = retrySubmitting
+                    ? t.retrySubmitting
+                    : task?.status === 'queued'
                     ? t.queued
                     : task?.status === 'running'
                       ? t.running
@@ -3301,7 +3384,7 @@ export default function EcommerceWorkspace({
                             <span><Maximize2 size={18} /></span>
                           </button>
                         ) : (
-                          <div><ImagePlus size={24} /><span>{latestAttempt?.status === 'failed' ? t.generationFailed : t.noOutput}</span></div>
+                          <div><ImagePlus size={24} /><span>{taskFailureText || (latestAttempt?.status === 'failed' && !taskActive && !retrySubmitting ? t.generationFailed : t.noOutput)}</span></div>
                         )}
                         <label className="ecommerceProductionSelect" aria-label={`${t.selectAll}: ${localName(item)}`}>
                           <input
@@ -3312,7 +3395,7 @@ export default function EcommerceWorkspace({
                           />
                           <span>{selectedForBatch ? <Check size={14} /> : null}</span>
                         </label>
-                        {taskLabel ? <em className="ecommerceTaskStatus">{taskActive ? <LoaderCircle className="spin" size={11} /> : null}{taskLabel}</em> : null}
+                        {taskLabel ? <em className="ecommerceTaskStatus">{taskActive || retrySubmitting ? <LoaderCircle className="spin" size={11} /> : null}{taskLabel}</em> : null}
                         {!taskLabel && output?.locked ? <em className="ecommerceTaskStatus locked"><Lock size={11} /> {t.outputLocked}</em> : null}
                       </div>
                       <div className="ecommerceProductionCopy">
@@ -3327,7 +3410,9 @@ export default function EcommerceWorkspace({
                             </span>
                           ) : null}
                         </div>
-                        {latestAttemptFailed ? <em className="ecommerceLatestAttemptFailed">{t.latestAttemptFailed}</em> : null}
+                        {adopted && taskFailureText
+                          ? <em className="ecommerceLatestAttemptFailed">{latestAttemptFailed ? `${t.latestAttemptFailed} ` : ''}{taskFailureText}</em>
+                          : null}
                       </div>
                       <div className="ecommerceProductionActions">
                         <button
@@ -3338,18 +3423,16 @@ export default function EcommerceWorkspace({
                             : retryable
                               ? handleRetryTask(item.id)
                               : runSlotGeneration(item.id)}
-                          disabled={output?.locked || task?.status === 'cancelling' || (!taskActive && (batchRunning || productionPricingLoading || !slotPricing || !form.masterAssetId || status === 'saving' || !selectedProviderCompatibility.valid || oversizedProjectAssets.length > 0))}
+                          disabled={output?.locked || retrySubmitting || task?.status === 'cancelling' || (!taskActive && (batchRunning || (!skipImagePricing && (productionPricingLoading || !slotPricing)) || !form.masterAssetId || status === 'saving' || !selectedProviderCompatibility.valid || oversizedProjectAssets.length > 0))}
                         >
-                          {taskActive
+                          {retrySubmitting
+                            ? <><LoaderCircle size={15} className="spin" /> {t.retrySubmitting}</>
+                            : taskActive
                             ? task.status === 'cancelling' ? <LoaderCircle size={15} className="spin" /> : <X size={15} />
                             : retryable ? <RotateCcw size={15} /> : adopted ? <RefreshCw size={15} /> : <Sparkles size={15} />}
-                          {taskActive
+                          {retrySubmitting ? null : taskActive
                             ? task.status === 'cancelling' ? t.cancelling : t.cancel
-                            : retryable
-                              ? <>{t.retryLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}</>
-                              : adopted
-                                ? <>{t.regenerateSlotLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}</>
-                                : <>{t.generateSlotLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact /></>}</>}
+                            : <>{retryable ? t.retryLabel : adopted ? t.regenerateSlotLabel : t.generateSlotLabel}{showProductionPricing && <> · <ImageCreditPrice pricing={slotPricing} language={language} compact totalOnly /></>}</>}
                         </button>
                         <button className="versions" type="button" onClick={() => setVersionCenterSlotId(item.id)}>
                           <History size={14} /> {t.versions}{versions.length ? ` · ${versions.length}` : ''}
@@ -3391,7 +3474,10 @@ export default function EcommerceWorkspace({
               <div className="ecommerceCollapsibleContent ecommerceDeliveryContent" id="ecommerce-delivery-section" hidden={collapsedSections.delivery}>
                 <EcommerceDeliveryCenter
                   language={language}
+                  userId={session?.user?.id || profile?.id || ''}
                   project={form}
+                  providerModel={selectedImageProvider?.model}
+                  chargeTextTokens={selectedImageProvider?.chargeTextTokens}
                   platform={platform}
                   slots={productionSlots}
                   outputs={outputs}
@@ -3437,6 +3523,8 @@ export default function EcommerceWorkspace({
         project={form}
         assets={assets}
         providerId={form.imageProviderId}
+        providerModel={selectedImageProvider?.model}
+        chargeTextTokens={selectedImageProvider?.chargeTextTokens}
         quality={effectiveGenerationQuality}
         actionState={versionActionState}
         onClose={() => setVersionCenterSlotId('')}

@@ -107,6 +107,16 @@ test('ecommerce refinement preserves the adopted source generation size', () => 
   assert.equal(resolveEcommerceRefinementSize({ size: 'invalid' }, slot), '1024x1024');
 });
 
+test('MAI 2.7 ecommerce revisions fit historical images to the model cap', () => {
+  const slot = { recommendedSize: '1024x1024', aspectRatio: '1:1' };
+  for (const model of ['MAI-Image-2.7', 'MAI-Image-2.7-Flash']) {
+    assert.equal(resolveEcommerceRefinementSize({ size: '2048x2048' }, slot, model), '2016x2016');
+    assert.equal(resolveEcommerceRefinementSize({ size: '1344x3072' }, slot, model), '1344x3072');
+    assert.equal(resolveEcommerceRefinementSize({ size: '768x3072' }, slot, model), '768x3072');
+    assert.equal(resolveEcommerceRefinementSize({ size: 'invalid' }, slot, model), '1024x1024');
+  }
+});
+
 test('active promotions multiply the list price and round to the nearest single credit', () => {
   const base = getImageGenerationPricing({ size: '1024x1024', quality: 'medium' });
   const pricing = applyImagePromotion(base, {
@@ -163,7 +173,7 @@ test('pricing editor values use stable precision and pixel bands align upward', 
       qualityFactors: { low: 1, medium: 9, high: 36 }
     }
   }, { model: 'gpt-image-2' });
-  assert.equal(formula.formula.baseCostRmb, 0.03);
+  assert.equal(formula.formula.baseCostRmb, 0.027);
   assert.equal(formula.formula.costPerMegapixelRmb, 0.013438);
   assert.equal(formula.autoSizePixels, 655_616);
   assert.equal(formula.autoQuality, 'medium');
@@ -176,7 +186,7 @@ test('pricing editor values use stable precision and pixel bands align upward', 
     ]
   }, { model: 'custom-image' });
   assert.equal(matrix.bands[0].maxPixels, 1_000_192);
-  assert.deepEqual(matrix.bands[0].pricesRmb, { low: 0.23, medium: 0.57, high: 1.24 });
+  assert.deepEqual(matrix.bands[0].pricesRmb, { low: 0.234, medium: 0.567, high: 1.239 });
 });
 
 test('fixed quality and fixed image strategies charge their configured unit price exactly', () => {
@@ -237,4 +247,28 @@ test('promotions respect the minimum charge and scheduled time window', () => {
   );
   assert.equal(scheduled.credits, scheduled.originalCredits);
   assert.equal(scheduled.promotion.scheduled, true);
+});
+
+test('all image price strategies preserve three-decimal yuan and fractional credits', () => {
+  const cases = [
+    { strategy: 'fixed-image', fixedPriceRmb: 0.015 },
+    { strategy: 'fixed-quality', qualityPricesRmb: { low: 0.015, medium: 0.025, high: 0.035 } },
+    { strategy: 'pixel-quality-matrix', priceStepRmb: 0.001, minimumChargeRmb: 0, maximumChargeRmb: 1,
+      bands: [{ maxPixels: 8_294_400, pricesRmb: { low: 0.015, medium: 0.025, high: 0.035 } }] },
+    { strategy: 'pixel-quality-formula', priceStepRmb: 0.001, minimumChargeRmb: 0, maximumChargeRmb: 1,
+      formula: { baseCostRmb: 0.015, costPerMegapixelRmb: 0, qualityFactors: { low: 1, medium: 1, high: 1 }, priceMultiplier: 1, fixedFeeRmb: 0 } }
+  ];
+  for (const config of cases) {
+    const price = getImageGenerationPricing({ quality: 'low', referenceCount: 3 }, { ...config, referenceImagePriceRmb: 0.015 });
+    assert.equal(price.baseCredits, 1.5, config.strategy);
+    assert.equal(price.referenceUnitCredits, 1.5);
+    assert.equal(price.referenceCredits, 4.5);
+    assert.equal(price.referenceChargeRmb, 0.045);
+    assert.equal(price.credits, 6);
+    assert.equal(applyImagePromotion(price, { enabled: false }).credits, 6);
+    assert.equal(applyImagePromotion(price, { enabled: true, payPercent: 80 }).credits, 4.8);
+  }
+  const smallest = getImageGenerationPricing({}, { strategy: 'fixed-image', fixedPriceRmb: 0.001 });
+  assert.equal(smallest.credits, 0.1);
+  assert.equal(applyImagePromotion(smallest, { enabled: true, payPercent: 10 }).credits, 0.1);
 });

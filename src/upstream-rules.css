@@ -1,0 +1,61 @@
+.upstreamRules { --up-line: rgba(139,165,181,.25); --up-surface: rgba(139,165,181,.06); min-width: 0; color: inherit; }
+.upstreamHeading,.upstreamHeading > div,.upstreamRowActions,.upstreamTabs,.upstreamChecks { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.upstreamHeading { justify-content:space-between; margin-bottom:18px; }
+.upstreamHeading h3,.upstreamHeading h4 { margin:0; font-size:18px; }
+.upstreamRules button { display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--up-line); border-radius:8px; background:var(--up-surface); color:inherit; padding:9px 12px; cursor:pointer; }
+.upstreamRules button:disabled { opacity:.5; cursor:wait; }
+.upstreamRules button:focus-visible,.upstreamRules input:focus-visible,.upstreamRules select:focus-visible,.upstreamRules textarea:focus-visible { outline:2px solid #79d9bd; outline-offset:2px; }
+.upstreamTabs { padding-bottom:16px; border-bottom:1px solid var(--up-line); }
+.upstreamTabs [aria-pressed=true] { background:rgba(98,204,163,.16); border-color:#579e8d; }
+.upstreamMessage { font-size:13px; overflow-wrap:anywhere; }
+.upstreamTableWrap { max-width:100%; overflow-x:auto; }
+.upstreamRules table { width:100%; border-collapse:collapse; font-size:13px; }
+.upstreamRules caption { text-align:left; padding:16px 0; opacity:.75; font-size:12px; }
+.upstreamRules th,.upstreamRules td { text-align:left; padding:13px 10px; border-bottom:1px solid var(--up-line); vertical-align:middle; }
+.upstreamRules td strong { display:block; overflow-wrap:anywhere; min-width:130px; font-weight:600; }
+.upstreamRules td small { display:block; font-size:11px; opacity:.75; margin-top:5px; }
+.upstreamRules th { white-space:nowrap; font-size:12px; }
+.upstreamRowActions { flex-wrap:nowrap; }
+.upstreamRules input[type=checkbox],.upstreamRules input[type=radio],.upstreamChecks input { width:16px; height:16px; accent-color:#459883; }
+.upstreamEditor { padding:22px 0; display:grid; gap:20px; }
+.upstreamEditor label { display:grid; gap:8px; min-width:0; font-size:13px; }
+.upstreamFields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.upstreamEditor input:not([type=checkbox]),.upstreamEditor select,.upstreamEditor textarea { width:100%; min-width:0; border:1px solid var(--up-line); border-radius:8px; padding:10px; background:var(--up-surface); color:inherit; }
+.upstreamEditor fieldset { border:0; border-top:1px solid var(--up-line); padding:16px 0 0; min-width:0; }
+.upstreamEditor legend { font-size:13px; padding-right:12px; }
+.upstreamEditor .upstreamChecks,.upstreamChecks label { display:flex; align-items:center; gap:10px; }
+.upstreamTier { margin-top:16px; padding-top:16px; border-top:1px solid var(--up-line); font-size:12px; }
+.upstreamTier > span { display:block; margin-bottom:10px; }
+.magicModelControl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; max-width:100%; }
+.chatModelSelect { max-width:210px; min-width:0; border:1px solid rgba(139,165,181,.3); border-radius:8px; padding:7px; color:inherit; background:transparent; font-size:12px; }
+.magicModelControl small { font-size:12px; opacity:.8; }
+.freeImagePromptHeader { flex-wrap:wrap; }
+.freeImagePromptHeader .freeImagePromptTitle { flex-shrink:0; white-space:nowrap; }
+.freeImagePromptHeader .magicModelControl { flex:1 1 280px; justify-content:flex-end; }
+.ecommerceProductBriefSection .magicModelControl { margin-bottom:16px; }
+.chatCompanionHeader > div { min-width:0; }
+.chatModelSelect { width:100%; max-width:240px; }
+.imageUpstreamRules > header { margin-top:18px; }
+.imageUpstreamRules > header p { flex:1; min-width:220px; font-size:13px; line-height:1.7; margin:0; }
+.imageUpstreamRules .upstreamModelCell small { overflow-wrap:anywhere; max-width:300px; }
+.imageUpstreamRules fieldset { min-width:0; }
+.upstreamBudgetSettings { margin-top:18px; font-size:13px; line-height:1.7; }
+.upstreamBudgetSettings summary { cursor:pointer; padding:8px 0; }
+.upstreamBudgetSettings label { max-width:320px; }
+.imageCreditPrice > small { font-size:10px; font-weight:400; opacity:.8; white-space:nowrap; }
+.siteThemeBlack .upstreamRules { --up-line:rgba(142,248,177,.25); --up-surface:rgba(142,248,177,.045); }
+.siteThemeBlack .upstreamRules input[type=checkbox],.siteThemeBlack .upstreamRules input[type=radio] { accent-color:#8ef8b1; }
+.siteThemeBlack .upstreamTabs [aria-pressed=true] { border-color:#8ef8b1; color:#8ef8b1; }
+@media(max-width:700px) { .upstreamFields { grid-template-columns:1fr; } .upstreamHeading h3 { font-size:16px; } }
+@media(max-width:700px) {
+  .upstreamRules table,.upstreamRules tbody,.upstreamRules caption { display:block; }
+  .upstreamRules thead { display:none; }
+  .upstreamRules tr { display:block; margin:8px 0 18px; border:1px solid var(--up-line); border-radius:8px; padding:10px; }
+  .upstreamRules td { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; overflow-wrap:anywhere; }
+  .upstreamRules td::before { content:attr(data-label); color:inherit; opacity:.75; font-size:12px; }
+  .upstreamRules td:last-child { border-bottom:0; }
+  .upstreamRules td.upstreamModelCell { display:block; }
+  .upstreamModelCell::before { display:none; }
+  .upstreamRules td.upstreamModelCell strong { min-width:0; }
+  .upstreamRules input[type=checkbox],.upstreamRules input[type=radio] { width:20px; height:20px; flex-shrink:0; }
+}

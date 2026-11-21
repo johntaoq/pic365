@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, ImagePlus, LoaderCircle, Send, Trash2, X } from 'lucide-react';
+import { AssistantUserSettings, useAssistantSettings } from './chat-assistant-settings-client.jsx';
+import { Check, Copy, ImagePlus, LoaderCircle, Send, Settings, Trash2, X } from 'lucide-react';
 import { clampFloatingPosition, clampFloatingSize, normalizeFloatingPosition } from '../shared/floating-position.js';
 import foxAvatarUrl from './assets/chat-companion/pic265-fox-avatar.jpg';
+import { newAPIErrorMessage } from './newapi-wallet.jsx';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -74,6 +76,8 @@ function fileToAttachment(file) {
 }
 
 function errorText(code, language) {
+  const external = newAPIErrorMessage(code, language);
+  if (external) return external;
   const zh = {
     AUTH_REQUIRED: '登录后即可和精灵聊天。',
     CREDITS_REQUIRED: '积分不足，请充值后继续。',
@@ -82,8 +86,9 @@ function errorText(code, language) {
     GROUP_ACCESS_SUSPENDED: '你的集团账户已暂停或正在退出。',
     CHAT_REQUEST_IN_PROGRESS: '这条消息正在处理中，请稍候。',
     CHAT_PROVIDER_NOT_CONFIGURED: '聊天引擎暂未配置。',
+    CHAT_MODEL_NOT_AVAILABLE: '所选模型已不可用，请打开精灵设置刷新后重试。本次未扣费。',
     CHAT_PROVIDER_TIMEOUT: '精灵思考超时，请重试。',
-    CHAT_USAGE_UNAVAILABLE: '渠道没有返回实际用量，本次未扣费。',
+    CHAT_USAGE_UNAVAILABLE: '渠道没有返回实际用量，暂无法完成请求。',
     INVALID_CHAT_IMAGE: '图片仅支持 PNG、JPG、WebP，单张不超过 15 MB。',
     IMAGE_TYPE: '图片仅支持 PNG、JPG、WebP。',
     IMAGE_SIZE: '单张图片不能超过 15 MB。'
@@ -96,8 +101,9 @@ function errorText(code, language) {
     GROUP_ACCESS_SUSPENDED: 'Your group access is paused or being removed.',
     CHAT_REQUEST_IN_PROGRESS: 'This message is already being processed.',
     CHAT_PROVIDER_NOT_CONFIGURED: 'The chat engine is not configured.',
+    CHAT_MODEL_NOT_AVAILABLE: 'This model is unavailable. Refresh assistant settings before retrying. Nothing was charged.',
     CHAT_PROVIDER_TIMEOUT: 'The assistant timed out. Please retry.',
-    CHAT_USAGE_UNAVAILABLE: 'The provider returned no usage data, so nothing was charged.',
+    CHAT_USAGE_UNAVAILABLE: 'The provider returned no usage data. The request could not be completed.',
     INVALID_CHAT_IMAGE: 'Use PNG, JPG, or WebP images up to 15 MB each.',
     IMAGE_TYPE: 'Use PNG, JPG, or WebP images.',
     IMAGE_SIZE: 'Each image must be 15 MB or smaller.'
@@ -112,8 +118,11 @@ function displayCredits(value) {
 export default function ChatCompanion({ language, session, profile, onSignIn, onBilling, onProfileChange }) {
   const isSignedIn = Boolean(session?.user || session?.access_token);
   const [open, setOpen] = useState(false);
+  const assistantSettings = useAssistantSettings({ enabled: open && isSignedIn, accessToken: session?.access_token });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const effectiveModel = assistantSettings.settings?.providers.find((p) => p.id === assistantSettings.settings.effectiveProviderId);
+  const modelReady = Boolean(effectiveModel) && !assistantSettings.loading && !assistantSettings.saving;
   const [messages, setMessages] = useState([]);
-  const [provider, setProvider] = useState(null);
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [status, setStatus] = useState('idle');
@@ -134,6 +143,9 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const suppressOrbClickRef = useRef(false);
+  const sendLock = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const t = useMemo(() => language === 'zh' ? {
     name: 'Pic365精灵',
     subtitle: '能看图，也能回答问题',
@@ -300,6 +312,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
       width: rect.width,
       height: rect.height,
       left: rect.left,
+      right: rect.right,
       top: rect.top
     };
     setResizing(true);
@@ -311,13 +324,20 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     event.preventDefault();
     const margin = globalThis.innerWidth <= 760 ? 8 : 12;
     const maximumSize = {
-      width: Math.max(PANEL_MIN_SIZE.width, viewportSize().width - resize.left - margin),
+      width: Math.max(PANEL_MIN_SIZE.width, resize.right - margin),
       height: Math.max(PANEL_MIN_SIZE.height, viewportSize().height - resize.top - margin)
     };
-    setPanelSize(clampFloatingSize({
-      width: resize.width + event.clientX - resize.startX,
+    const nextSize = clampFloatingSize({
+      width: resize.width + resize.startX - event.clientX,
       height: resize.height + event.clientY - resize.startY
-    }, PANEL_MIN_SIZE, maximumSize));
+    }, PANEL_MIN_SIZE, maximumSize);
+    const nextPosition = {
+      x: resize.right - nextSize.width,
+      y: resize.top
+    };
+    resize.position = nextPosition;
+    setPanelSize(nextSize);
+    setPositions((current) => ({ ...current, expanded: nextPosition }));
   }
 
   function finishResize(event) {
@@ -326,6 +346,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     resize.captureTarget?.releasePointerCapture?.(event.pointerId);
     resizeRef.current = null;
     setResizing(false);
+    if (resize.position) storePosition('expanded', resize.position);
     setPanelSize((current) => {
       if (current) storePanelSize(current);
       return current;
@@ -360,7 +381,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     if (!open || !isSignedIn) return;
     let active = true;
     setStatus('loading');
-    fetch('/api/chat?limit=60', { cache: 'no-store' })
+    fetch('/api/chat?limit=60', { cache: 'no-store', headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) throw new Error(payload.error || 'CHAT_FAILED');
@@ -369,7 +390,6 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
       .then((payload) => {
         if (!active) return;
         setMessages(Array.isArray(payload.messages) ? payload.messages : []);
-        setProvider(payload.provider || null);
         if (payload.user) onProfileChange?.(payload.user);
         setStatus('idle');
       })
@@ -388,8 +408,12 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
 
   useEffect(() => {
     if (!open) return;
+    if (settingsOpen) {
+      transcriptRef.current?.scrollTo({ top: 0 });
+      return;
+    }
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, status, open]);
+  }, [messages, status, open, settingsOpen]);
 
   useEffect(() => {
     const keepInsideViewport = () => {
@@ -497,11 +521,13 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || status === 'sending') return;
+    if (!text || status === 'sending' || sendLock.current) return;
     if (!isSignedIn) {
       onSignIn?.();
       return;
     }
+    if (!modelReady) return;
+    sendLock.current = true;
     const clientRequestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const localUserMessage = {
       id: `local-${clientRequestId}`,
@@ -519,9 +545,11 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({
           clientRequestId,
+          // An empty ID follows the latest server-side account preference/default.
+          providerId: assistantSettings.settings?.preferredProviderId || '',
           text,
           images: localUserMessage.attachments.map((item) => ({
             name: item.name,
@@ -531,6 +559,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'CHAT_FAILED');
+      if (!mountedRef.current) return;
       setMessages((current) => [
         ...current.filter((item) => item.id !== localUserMessage.id),
         payload.userMessage || localUserMessage,
@@ -539,11 +568,15 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
       if (payload.user) onProfileChange?.(payload.user);
       setStatus('idle');
     } catch (error) {
+      if (!mountedRef.current) return;
       setMessages((current) => current.filter((item) => item.id !== localUserMessage.id));
       setDraft(text);
       setAttachments(localUserMessage.attachments);
       setStatus('error');
       setMessage(errorText(error.message, language));
+      if (error.message === 'CHAT_MODEL_NOT_AVAILABLE') assistantSettings.refresh();
+    } finally {
+      sendLock.current = false;
     }
   }
 
@@ -556,7 +589,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
     >
       {open ? (
         <section
-          className="chatCompanionPanel"
+          className={`chatCompanionPanel ${settingsOpen ? 'settingsOpen' : ''}`}
           aria-label={t.name}
           style={panelSize ? {
             '--chat-companion-width': `${panelSize.width}px`,
@@ -564,18 +597,26 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
           } : undefined}
         >
           <header
-            className="chatCompanionHeader"
+            className="chatCompanionHeader withSettings"
             title={t.drag}
             onPointerDown={startDrag}
           >
             <FoxHead small />
-            <div><strong>{t.name}</strong><span>{provider?.name || t.subtitle}</span></div>
+            <div><strong>{t.name}</strong>
+              <span title={effectiveModel?.name || t.subtitle}>
+                {effectiveModel?.name || (isSignedIn ? (language === 'zh' ? '暂无可用模型' : 'No available model') : t.subtitle)}
+              </span>
+            </div>
+            <button type="button" disabled={!isSignedIn} onClick={() => { setSettingsOpen(!settingsOpen); if (!settingsOpen) assistantSettings.refresh(); }}
+              aria-expanded={settingsOpen} aria-controls="assistant-user-settings"
+              title={language === 'zh' ? '精灵设置' : 'Assistant settings'} aria-label={language === 'zh' ? '精灵设置' : 'Assistant settings'}><Settings size={17} /></button>
             <button type="button" onClick={copyAllMessages} disabled={!messages.length} title={t.copyAll} aria-label={t.copyAll}>{copiedId === 'all' ? <Check size={17} /> : <Copy size={17} />}</button>
             <button type="button" onClick={clearHistory} disabled={!isSignedIn || status === 'sending'} title={t.clear} aria-label={t.clear}><Trash2 size={17} /></button>
             <button type="button" onClick={() => setOpen(false)} title={language === 'zh' ? '缩小' : 'Minimize'} aria-label={language === 'zh' ? '缩小聊天精灵' : 'Minimize chat'}><X size={19} /></button>
           </header>
 
           <div className="chatCompanionTranscript" ref={transcriptRef}>
+            {settingsOpen ? <AssistantUserSettings language={language} state={assistantSettings} sending={status === 'sending'} onClose={() => setSettingsOpen(false)} /> : <>
             {!messages.length ? <div className="chatCompanionWelcome"><FoxHead /><p>{t.welcome}</p></div> : null}
             {messages.map((item) => (
               <article className={`chatCompanionMessage ${item.role}`} key={item.id}>
@@ -591,6 +632,7 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
               </article>
             ))}
             {status === 'sending' ? <div className="chatCompanionThinking"><LoaderCircle className="spinIcon" size={15} />{t.thinking}</div> : null}
+            </>}
           </div>
 
           {!isSignedIn ? (
@@ -618,9 +660,10 @@ export default function ChatCompanion({ language, session, profile, onSignIn, on
                   <input ref={fileInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
                   <span>{attachments.length ? `${attachments.length}/${MAX_IMAGES}` : t.context}</span>
                 </div>
-                <button className="chatCompanionSend" type="button" onClick={sendMessage} disabled={!draft.trim() || status === 'sending'} aria-label={t.send}><Send size={18} /></button>
+                <button className="chatCompanionSend" type="button" onClick={sendMessage} disabled={!draft.trim() || status === 'sending' || !modelReady} aria-label={t.send}><Send size={18} /></button>
               </div>
               {attachments.length ? <small className="chatCompanionLimit">{t.imageLimit}</small> : null}
+              {!assistantSettings.loading && !effectiveModel && !settingsOpen && <small className="chatCompanionLimit">{language === 'zh' ? '暂无可用模型，请打开精灵设置查看。' : 'Open assistant settings to check model availability.'}</small>}
               {message ? <div className="chatCompanionError">{message}{message === errorText('CREDITS_REQUIRED', language) ? <button type="button" onClick={onBilling}>{t.recharge}</button> : null}</div> : null}
             </div>
           )}

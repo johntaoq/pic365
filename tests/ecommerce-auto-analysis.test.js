@@ -9,10 +9,10 @@ process.env.APP_DB_PATH = path.join(tempDirectory, 'app.sqlite');
 process.env.LOCAL_STORAGE_ROOT = path.join(tempDirectory, 'storage');
 process.env.AI_API_KEY = 'test-auto-analysis-key';
 process.env.AI_BASE_URL = 'https://provider.example.test';
-process.env.AI_BRIEF_MODEL = 'test-vision-model';
 delete process.env.AZURE_STORAGE_CONNECTION_STRING;
 
 const localDb = await import('../api/_lib/local-db.js');
+const chat = await import('../api/_lib/chat-engine.js');
 const storage = await import('../api/_lib/storage.js');
 const { default: autoFillBriefHandler } = await import('../api/ecommerce/auto-fill-brief.js');
 
@@ -41,6 +41,8 @@ test('automatic product analysis uses image evidence and categories, persists on
     fullName: 'Automatic Analysis'
   });
   const session = localDb.createSession(user.id);
+  const currentProvider = chat.getChatProviderConfig();
+  chat.saveChatProviderConfig({ ...currentProvider, model: 'brief-configured-model' });
   const project = localDb.createEcommerceProject(user.id, {
     projectName: 'Pic365 mineral water',
     platformId: 'taobao-tmall',
@@ -99,7 +101,8 @@ test('automatic product analysis uses image evidence and categories, persists on
             }
           })
         }
-      }]
+      }],
+      usage: { prompt_tokens: 150, completion_tokens: 60 }
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
 
@@ -112,6 +115,8 @@ test('automatic product analysis uses image evidence and categories, persists on
     assert.equal(first.statusCode, 200);
     assert.equal(first.payload.analyzed, true);
     assert.equal(providerCalls, 1);
+    assert.equal(providerBody.model, 'brief-configured-model');
+    assert.equal(providerBody.max_completion_tokens, currentProvider.maxOutputTokens);
     assert.ok(providerBody.messages[1].content.some((item) => item.type === 'image_url'));
     assert.match(providerBody.messages[1].content[0].text, /饮料与酒水 \/ 饮用水与软饮/);
 
@@ -127,6 +132,14 @@ test('automatic product analysis uses image evidence and categories, persists on
     assert.equal(second.statusCode, 200);
     assert.equal(second.payload.cached, true);
     assert.equal(providerCalls, 1);
+
+    chat.saveChatProviderConfig({ ...chat.getChatProviderConfig(), model: 'brief-updated-model' });
+    const afterModelChange = await invoke(autoFillBriefHandler, req);
+    assert.equal(afterModelChange.statusCode, 200);
+    assert.equal(afterModelChange.payload.cached, undefined);
+    assert.equal(afterModelChange.payload.model, 'brief-updated-model');
+    assert.equal(providerCalls, 2);
+    assert.equal(providerBody.model, 'brief-updated-model');
   } finally {
     globalThis.fetch = originalFetch;
   }

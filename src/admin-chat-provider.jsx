@@ -5,12 +5,12 @@ import { normalizeChatPricing, pricingCreditsPerMillion } from '../shared/chat-b
 function draftFromProvider(provider = {}) {
   return {
     id: provider.id || '',
-    name: provider.name || '5.6-luna',
+    name: provider.name || '6-luna',
     providerType: provider.providerType || 'openai-compatible',
     baseUrl: provider.baseUrl || 'https://www.unikeyx.com',
     apiKey: '',
     apiKeyMasked: provider.apiKeyMasked || '',
-    model: provider.model || 'gpt-5.6-luna',
+    model: provider.model || 'gpt-6-luna',
     systemPrompt: provider.systemPrompt || '',
     maxOutputTokens: Number(provider.maxOutputTokens || 2048),
     pricing: normalizeChatPricing(provider.pricing),

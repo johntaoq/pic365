@@ -3,9 +3,13 @@ import {
   IMAGE_MIN_PIXELS,
   getImageModelConstraints,
   isGeminiImageModel,
+  isMaiImage27Model,
   parseImageSize,
-  validateImageSize
+  resolveSourceImageSizeForModel,
+  validateImageSize,
+  validateImageSizeForModel
 } from './image-generation.js';
+import { imageInputFees } from './image-input-billing.js';
 
 export const IMAGE_CREDITS_PER_RMB = 100;
 export const IMAGE_MIN_CHARGE_CREDITS = 20;
@@ -66,7 +70,9 @@ export const GPT_IMAGE_2_PRICING_CONFIG = Object.freeze({
   modelFamily: 'gpt-image-2',
   autoQuality: 'medium',
   formula: {
-    baseCostRmb: IMAGE_COST_MODEL.baseCostRmb / 0.3,
+    // Preserve the historically effective default; administrators can now enter
+    // their own three-decimal base cost without changing existing tariffs.
+    baseCostRmb: Number((IMAGE_COST_MODEL.baseCostRmb / 0.3).toFixed(2)),
     costPerMegapixelRmb: IMAGE_COST_MODEL.costPerMegapixelRmb / 0.3,
     qualityFactors: { low: 1, medium: 9, high: 36 },
     priceMultiplier: 1,
@@ -100,7 +106,7 @@ function roundMoney(value, digits = 6) {
 }
 
 function roundUpToStep(value, step) {
-  const safeStep = finiteNumber(step, 0.1, 0.01, 1000);
+  const safeStep = finiteNumber(step, 0.1, 0.001, 1000);
   return Math.ceil((Number(value || 0) - 1e-9) / safeStep) * safeStep;
 }
 
@@ -116,9 +122,9 @@ export function alignImagePricingPixelsUp(value, fallback = IMAGE_MIN_PIXELS, ma
 
 function qualityPrices(value = {}, fallback = {}) {
   return {
-    low: roundMoney(finiteNumber(value.low, fallback.low ?? 0, 0, 100000), 2),
-    medium: roundMoney(finiteNumber(value.medium, fallback.medium ?? value.low ?? 0, 0, 100000), 2),
-    high: roundMoney(finiteNumber(value.high, fallback.high ?? value.medium ?? value.low ?? 0, 0, 100000), 2)
+    low: roundMoney(finiteNumber(value.low, fallback.low ?? 0, 0, 100000), 3),
+    medium: roundMoney(finiteNumber(value.medium, fallback.medium ?? value.low ?? 0, 0, 100000), 3),
+    high: roundMoney(finiteNumber(value.high, fallback.high ?? value.medium ?? value.low ?? 0, 0, 100000), 3)
   };
 }
 
@@ -146,6 +152,13 @@ export function defaultImagePricingConfigForModel(model = '') {
   };
 }
 
+export function imageTokenBillingFlagsMatch(requested = {}, saved = {}) {
+  return ['chargeTextTokens', 'chargeReferenceTokens'].every((key) =>
+    !Object.hasOwn(requested, key)
+    || (typeof saved?.[key] === 'boolean' && saved[key] === (requested[key] === true))
+  );
+}
+
 export function normalizeImagePricingConfig(value = {}, { model = '', strategy = '' } = {}) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const fallback = defaultImagePricingConfigForModel(model);
@@ -163,10 +176,12 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
     version: Math.max(1, Math.round(finiteNumber(source.version, fallback.version || 1, 1, 1000))),
     strategy: resolvedStrategy,
     currency: 'CNY',
-    priceStepRmb: roundMoney(finiteNumber(source.priceStepRmb, fallback.priceStepRmb, 0.01, 1000), 2),
-    minimumChargeRmb: roundMoney(finiteNumber(source.minimumChargeRmb, fallback.minimumChargeRmb, 0, 100000), 2),
-    maximumChargeRmb: roundMoney(finiteNumber(source.maximumChargeRmb, fallback.maximumChargeRmb, 0.01, 100000), 2),
-    referenceImagePriceRmb: roundMoney(finiteNumber(source.referenceImagePriceRmb, fallback.referenceImagePriceRmb ?? 0, 0, 100000), 2),
+    priceStepRmb: roundMoney(finiteNumber(source.priceStepRmb, fallback.priceStepRmb, 0.001, 1000), 3),
+    minimumChargeRmb: roundMoney(finiteNumber(source.minimumChargeRmb, fallback.minimumChargeRmb, 0, 100000), 3),
+    maximumChargeRmb: roundMoney(finiteNumber(source.maximumChargeRmb, fallback.maximumChargeRmb, 0.001, 100000), 3),
+    referenceImagePriceRmb: roundMoney(finiteNumber(source.referenceImagePriceRmb, fallback.referenceImagePriceRmb ?? 0, 0, 100000), 3),
+    chargeTextTokens: source.chargeTextTokens === true,
+    chargeReferenceTokens: source.chargeReferenceTokens === true,
     promotionEligible: source.promotionEligible == null ? fallback.promotionEligible !== false : source.promotionEligible !== false,
     autoSizePixels: alignImagePricingPixelsUp(source.autoSizePixels, fallback.autoSizePixels, maximumPixels),
     maximumPixels,
@@ -181,11 +196,11 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
     return {
       ...common,
       formula: {
-        baseCostRmb: roundMoney(finiteNumber(formulaSource.baseCostRmb, formulaFallback.baseCostRmb, 0, 100000), 2),
+        baseCostRmb: roundMoney(finiteNumber(formulaSource.baseCostRmb, formulaFallback.baseCostRmb, 0, 100000), 3),
         costPerMegapixelRmb: roundMoney(finiteNumber(formulaSource.costPerMegapixelRmb, formulaFallback.costPerMegapixelRmb, 0, 100000), 6),
         qualityFactors: qualityPrices(formulaSource.qualityFactors, formulaFallback.qualityFactors),
         priceMultiplier: finiteNumber(formulaSource.priceMultiplier, formulaFallback.priceMultiplier ?? 1, 0, 10000),
-        fixedFeeRmb: roundMoney(finiteNumber(formulaSource.fixedFeeRmb, formulaFallback.fixedFeeRmb ?? 0, 0, 100000), 2),
+        fixedFeeRmb: roundMoney(finiteNumber(formulaSource.fixedFeeRmb, formulaFallback.fixedFeeRmb ?? 0, 0, 100000), 3),
         actualCostRatio: finiteNumber(formulaSource.actualCostRatio, formulaFallback.actualCostRatio ?? 1, 0, 1000)
       }
     };
@@ -194,7 +209,7 @@ export function normalizeImagePricingConfig(value = {}, { model = '', strategy =
   if (resolvedStrategy === IMAGE_PRICING_STRATEGIES.FIXED_IMAGE) {
     return {
       ...common,
-      fixedPriceRmb: roundMoney(finiteNumber(source.fixedPriceRmb, fallback.fixedPriceRmb ?? common.minimumChargeRmb, 0, 100000), 2),
+      fixedPriceRmb: roundMoney(finiteNumber(source.fixedPriceRmb, fallback.fixedPriceRmb ?? common.minimumChargeRmb, 0, 100000), 3),
       actualCostRatio: finiteNumber(source.actualCostRatio, fallback.actualCostRatio ?? 1, 0, 1000)
     };
   }
@@ -269,18 +284,25 @@ export function resolveImagePromotion(value = {}, { now = Date.now() } = {}) {
 }
 
 export function applyImagePromotion(pricing, promotion = {}, options = {}) {
-  const minimumCredits = Math.max(0, Math.round(Number(pricing?.minimumCredits ?? IMAGE_MIN_CHARGE_CREDITS)));
-  const originalCredits = Math.max(minimumCredits, Math.round(Number(pricing?.credits) || 0));
+  if (pricing?.externalWallet) return { ...pricing, minimumCredits: 0, credits: 0, originalCredits: 0, retailRmb: 0, discountApplied: false };
+  const minimumCredits = Math.max(0, roundMoney(Number(pricing?.minimumCredits ?? IMAGE_MIN_CHARGE_CREDITS), 2));
+  const textCredits = Number(pricing?.imageTextCredits || 0) + Number(pricing?.referenceTokenCredits || 0);
+  const originalImageCredits = Math.max(minimumCredits, roundMoney((Number(pricing?.credits) || 0) - textCredits, 2));
+  const originalCredits = roundMoney(originalImageCredits + textCredits, 2);
   const resolvedPromotion = resolveImagePromotion(promotion, options);
   const promotionEligible = pricing?.promotionEligible !== false;
+  const roundingStep = pricing?.promotionRoundingStep || IMAGE_PROMOTION_ROUNDING_STEP;
   const discountedCredits = resolvedPromotion.active && promotionEligible
-    ? Math.round((originalCredits * resolvedPromotion.payPercent) / 100)
-    : originalCredits;
-  const credits = clamp(discountedCredits, minimumCredits, originalCredits);
+    ? roundMoney(Math.round((originalImageCredits * resolvedPromotion.payPercent) / 100 / roundingStep) * roundingStep, 2)
+    : originalImageCredits;
+  const promotionFloor = roundingStep < 1 && originalImageCredits > 0 ? Math.max(minimumCredits, roundingStep) : minimumCredits;
+  const imageCredits = clamp(discountedCredits, promotionFloor, originalImageCredits);
+  const credits = roundMoney(imageCredits + textCredits, 2);
   const discountApplied = resolvedPromotion.active && credits < originalCredits;
   return {
     ...pricing,
     credits,
+    imageCredits,
     retailRmb: credits / IMAGE_CREDITS_PER_RMB,
     originalCredits,
     originalRetailRmb: originalCredits / IMAGE_CREDITS_PER_RMB,
@@ -346,7 +368,29 @@ function pricingBaseRmb(config, pixels, quality) {
   };
 }
 
-export function getImageGenerationPricing({ size = '1024x1024', quality = 'low', model = '', referenceCount = 0 } = {}, pricingConfig = GPT_IMAGE_2_PRICING_CONFIG) {
+// Upstream costs need sub-cent precision; retail normalization intentionally
+// rounds fixed selling prices to milli-yuan and must not truncate these cost rates.
+export function normalizeUpstreamImageCost(value, model = '') {
+  const config = normalizeImagePricingConfig(value, { model });
+  if (value?.fixedPriceRmb != null) config.fixedPriceRmb = roundMoney(Number(value.fixedPriceRmb));
+  if (value?.qualityPricesRmb) {
+    config.qualityPricesRmb = Object.fromEntries(['low', 'medium', 'high'].map((key) => [key,
+      roundMoney(Number(value.qualityPricesRmb[key] ?? config.qualityPricesRmb?.[key] ?? 0))
+    ]));
+  }
+  return config;
+}
+
+export function getImageGenerationPricing({ size = '1024x1024', quality = 'low', model = '', referenceCount = 0, prompt = '', estimatedTextTokens } = {}, pricingConfig = GPT_IMAGE_2_PRICING_CONFIG) {
+  if (pricingConfig?.externalWallet) {
+    return {
+      size, quality, model, referenceCount, credits: 0, baseCredits: 0, originalCredits: 0,
+      referenceCredits: 0, referenceUnitCredits: 0, referenceTokenCredits: 0, imageTextCredits: 0,
+      retailRmb: 0, discountApplied: false, promotionEligible: false,
+      pricingStrategy: 'external-wallet', pricingVersion: 1, billedQuality: quality,
+      billingSource: pricingConfig.billingSource, externalWallet: true
+    };
+  }
   const config = normalizeImagePricingConfig(pricingConfig, { model, strategy: pricingConfig?.strategy });
   const parsed = parseImageSize(size);
   const requestedPixels = parsed && !parsed.auto
@@ -359,35 +403,56 @@ export function getImageGenerationPricing({ size = '1024x1024', quality = 'low',
     ? resolutionTier.pixels
     : clamp(requestedPixels, IMAGE_MIN_PIXELS, config.maximumPixels || IMAGE_MAX_PIXELS);
   const base = pricingBaseRmb(config, billedPixels, billedQuality);
+  const upstreamRule = pricingConfig?.upstreamCost;
+  const upstreamConfig = upstreamRule?.imagePricingConfig
+    ? normalizeUpstreamImageCost(upstreamRule.imagePricingConfig, model)
+    : null;
+  const upstreamBase = upstreamConfig ? pricingBaseRmb(upstreamConfig, billedPixels, billedQuality) : base;
+  const upstreamCost = upstreamRule?.unit === 'image'
+    ? Number(upstreamRule.fixedPriceRmb)
+    : upstreamBase.actualCostRmb;
+  const upstreamCostUnknown = upstreamRule?.pricingSchemaVersion === 2 && upstreamRule.unit === 'tokens';
   const isFixedPrice = config.strategy === IMAGE_PRICING_STRATEGIES.FIXED_QUALITY
     || config.strategy === IMAGE_PRICING_STRATEGIES.FIXED_IMAGE;
   const roundedChargeRmb = isFixedPrice
-    ? roundMoney(base.rawChargeRmb, 2)
+    ? roundMoney(base.rawChargeRmb, 3)
     : clamp(
         roundUpToStep(base.rawChargeRmb, config.priceStepRmb),
         config.minimumChargeRmb,
         config.maximumChargeRmb
       );
-  const baseCredits = Math.round(roundedChargeRmb * IMAGE_CREDITS_PER_RMB);
+  const baseCredits = roundMoney(roundedChargeRmb * IMAGE_CREDITS_PER_RMB, 1);
   const billedReferenceCount = Math.max(0, Math.min(9, Math.round(Number(referenceCount) || 0)));
-  const referenceUnitCredits = Math.round(config.referenceImagePriceRmb * IMAGE_CREDITS_PER_RMB);
-  const referenceCredits = billedReferenceCount * referenceUnitCredits;
-  const credits = baseCredits + referenceCredits;
+  const referenceUnitCredits = roundMoney(config.referenceImagePriceRmb * IMAGE_CREDITS_PER_RMB, 1);
+  const referenceCredits = config.chargeReferenceTokens ? 0 : roundMoney(billedReferenceCount * referenceUnitCredits, 1);
+  const hasSubcentRate = [roundedChargeRmb, config.referenceImagePriceRmb, config.priceStepRmb,
+    config.minimumChargeRmb, config.maximumChargeRmb].some((value) => Math.abs(value * 100 - Math.round(value * 100)) > 1e-8);
+  const inputFees = imageInputFees({ prompt, estimatedTextTokens, referenceCount: billedReferenceCount }, { ...config, upstreamCost: upstreamRule });
+  const { imageTextCredits, imageTextCostRmb, referenceTokenCredits, referenceTokenCostRmb } = inputFees;
+  const credits = roundMoney(baseCredits + referenceCredits + imageTextCredits + referenceTokenCredits, 2);
   return {
     credits,
-    retailRmb: roundMoney(credits / IMAGE_CREDITS_PER_RMB, 2),
-    estimatedCostRmb: roundMoney(base.actualCostRmb),
-    estimatedActualCostRmb: roundMoney(base.actualCostRmb),
-    estimatedListCostRmb: roundMoney(base.listCostRmb),
+    imageCredits: roundMoney(baseCredits + referenceCredits, 1),
+    ...inputFees,
+    retailRmb: roundMoney(credits / IMAGE_CREDITS_PER_RMB, 4),
+    estimatedCostRmb: upstreamCostUnknown ? null : roundMoney(upstreamCost + imageTextCostRmb + referenceTokenCostRmb),
+    estimatedActualCostRmb: upstreamCostUnknown ? null : roundMoney(upstreamCost + imageTextCostRmb + referenceTokenCostRmb),
+    upstreamCostPendingUsage: upstreamCostUnknown,
+    upstreamOutputRmbPerMillion: Number(upstreamRule?.pricing?.output || 0),
+    upstreamFixedPriceRmb: upstreamRule?.unit === 'image' ? Number(upstreamRule.fixedPriceRmb || 0) : null,
+    estimatedListCostRmb: roundMoney(upstreamConfig ? upstreamBase.listCostRmb : base.listCostRmb),
+    upstreamModel: upstreamRule?.model || '',
+    upstreamPriceSource: upstreamRule?.pricingSource || 'legacy-estimate',
+    upstreamEstimateSource: upstreamRule?.estimateSource || 'pixel-quality-calibration',
     rawChargeRmb: roundMoney(base.rawChargeRmb),
     baseCredits,
-    baseRetailRmb: roundMoney(baseCredits / IMAGE_CREDITS_PER_RMB, 2),
+    baseRetailRmb: roundMoney(baseCredits / IMAGE_CREDITS_PER_RMB, 3),
     referenceCount: billedReferenceCount,
     referenceImagePriceRmb: config.referenceImagePriceRmb,
     referenceUnitCredits,
     referenceCredits,
-    referenceChargeRmb: roundMoney(referenceCredits / IMAGE_CREDITS_PER_RMB, 2),
-    totalRawChargeRmb: roundMoney((baseCredits + referenceCredits) / IMAGE_CREDITS_PER_RMB, 2),
+    referenceChargeRmb: roundMoney(referenceCredits / IMAGE_CREDITS_PER_RMB, 3),
+    totalRawChargeRmb: roundMoney(credits / IMAGE_CREDITS_PER_RMB, 4),
     requestedPixels,
     billedPixels,
     maximumPixels: config.maximumPixels,
@@ -397,9 +462,10 @@ export function getImageGenerationPricing({ size = '1024x1024', quality = 'low',
     billedQuality,
     autoSize: !parsed || parsed.auto,
     autoQuality: quality === 'auto',
-    minimumCredits: isFixedPrice ? 0 : Math.round(config.minimumChargeRmb * IMAGE_CREDITS_PER_RMB),
-    maximumCredits: (isFixedPrice ? baseCredits : Math.round(config.maximumChargeRmb * IMAGE_CREDITS_PER_RMB)) + referenceCredits,
-    priceStepCredits: isFixedPrice ? 1 : Math.round(config.priceStepRmb * IMAGE_CREDITS_PER_RMB),
+    minimumCredits: isFixedPrice ? 0 : roundMoney(config.minimumChargeRmb * IMAGE_CREDITS_PER_RMB, 1),
+    maximumCredits: roundMoney((isFixedPrice ? baseCredits : roundMoney(config.maximumChargeRmb * IMAGE_CREDITS_PER_RMB, 1)) + referenceCredits + imageTextCredits + referenceTokenCredits, 2),
+    priceStepCredits: isFixedPrice ? hasSubcentRate ? 0.1 : 1 : roundMoney(config.priceStepRmb * IMAGE_CREDITS_PER_RMB, 1),
+    promotionRoundingStep: hasSubcentRate ? 0.1 : IMAGE_PROMOTION_ROUNDING_STEP,
     promotionEligible: config.promotionEligible,
     pricingStrategy: config.strategy,
     pricingVersion: config.version
@@ -413,7 +479,14 @@ export function resolveEcommerceSlotGenerationSize(slot) {
   return '1024x1536';
 }
 
-export function resolveEcommerceRefinementSize(generation, slot) {
+export function resolveEcommerceRefinementSize(generation, slot, model) {
   const sourceSize = String(generation?.size || '').trim().toLowerCase();
+  if (isMaiImage27Model(model) && sourceSize) {
+    if (validateImageSizeForModel(sourceSize, model).valid) return sourceSize;
+    // Historical results may predate the cap. Fit the output canvas without
+    // changing the requested orientation; the reference file stays unchanged.
+    const fitted = resolveSourceImageSizeForModel({ size: sourceSize }, model);
+    return fitted.valid ? fitted.size : resolveEcommerceSlotGenerationSize(slot);
+  }
   return validateImageSize(sourceSize).valid ? sourceSize : resolveEcommerceSlotGenerationSize(slot);
 }

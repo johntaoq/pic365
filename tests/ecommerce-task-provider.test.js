@@ -10,7 +10,6 @@ process.env.PROVIDER_CONFIG_SECRET = 'ecommerce-task-provider-test-secret';
 process.env.AI_API_KEY = 'sk-test-default-provider';
 process.env.AI_BASE_URL = 'https://provider.example.invalid';
 process.env.AI_IMAGE_MODEL = 'gpt-image-2';
-
 process.env.SUPER_ADMIN_EMAILS = 'provider-admin@example.com';
 
 const [localDb, { default: tasksHandler }, ecommerceWorker, p1Db, { default: adminProvidersHandler }] = await Promise.all([
@@ -98,8 +97,22 @@ test('task creation persists the explicitly selected provider for a legacy proje
   assert.equal(result.payload.ok, true);
   assert.equal(localDb.getEcommerceProject(user.id, project.id).imageProviderId, provider.id);
   assert.equal(result.payload.tasks[0].request.projectUpdatedAt, localDb.getEcommerceProject(user.id, project.id).updatedAt);
-});
 
+  const original = result.payload.tasks[0];
+  p1Db.completeEcommerceGenerationTask(user.id, original.id, { status: 'failed', errorCode: 'GENERATION_FAILED' });
+  const retry = await invoke(session.token, { action: 'retry', taskId: original.id });
+  await ecommerceWorker.stopEcommerceGenerationWorker();
+  assert.equal(retry.statusCode, 200);
+  assert.equal(retry.payload.task.status, 'queued');
+  assert.notEqual(retry.payload.task.id, original.id);
+  assert.equal(retry.payload.task.request.retryOfTaskId, original.id);
+
+  const sameRetry = await invoke(session.token, { action: 'retry', taskId: original.id });
+  await ecommerceWorker.stopEcommerceGenerationWorker();
+  assert.equal(sameRetry.statusCode, 200);
+  assert.equal(sameRetry.payload.task.id, retry.payload.task.id);
+  assert.equal(p1Db.getEcommerceGenerationTask(user.id, original.id).status, 'failed');
+});
 
 test('an admin can delete a channel in use without migrating projects or disturbing image history', async (t) => {
   const admin = localDb.createUser({ email: 'provider-admin@example.com', password: 'testing-1234', fullName: 'Admin' });

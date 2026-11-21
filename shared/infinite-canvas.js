@@ -347,6 +347,15 @@ export function canvasReferencePrompt(prompt, references = [], language = 'zh') 
   const zhLabels = { general: '普通参考', subject: '主体参考', style: '风格参考', composition: '构图参考', color: '色彩参考' };
   const enLabels = { general: 'general reference', subject: 'subject reference', style: 'style reference', composition: 'composition reference', color: 'color reference' };
   const labels = language === 'zh' ? zhLabels : enLabels;
+  if (references.some((node) => node.annotations?.length)) {
+    if (references.length === 1) return base;
+    const inputs = references.map((node, index) => {
+      const name = String(node.name || node.autoName || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      const role = index === 0 ? (language === 'zh' ? '母版' : 'primary image') : labels[node.referenceRole || 'general'] || labels.general;
+      return `Reference ${index + 1} / 图${index + 1}${name ? ` (${name})` : ''}: ${role}`;
+    });
+    return `${language === 'zh' ? '图片顺序' : 'Input order'}:\n${inputs.join('\n')}\n\n${base}`.slice(0, 6000);
+  }
   const lines = references.map((node, index) => {
     const canvasName = String(node?.name || node?.autoName || '').replace(/\s+/g, ' ').trim().slice(0, 40);
     const referenceNumber = index + 1;

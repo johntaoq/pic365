@@ -170,7 +170,7 @@ test('reference prompt explains annotations without asking the model to reproduc
   const references = [{ generationId: 'g-1', annotations: normalizeReferenceAnnotations([{ type: 'line' }]) }];
   const prompt = buildReferencePrompt('Replace the cup with a glass.', references);
   assert.match(prompt, /editing guides/);
-  assert.match(prompt, /never reproduce the colored marks/);
+  assert.match(prompt, /Remove all guide paint, tint and outlines, including boundary strokes/);
   assert.match(prompt, /Replace the cup/);
 });
 
@@ -197,10 +197,11 @@ test('brush annotations preserve an irregular path and lock unpainted regions', 
     generationId: 'g-1',
     annotations: [brush]
   }]);
-  assert.match(prompt, /localized image-editing task/);
-  assert.match(prompt, /Modify only the content inside those marked regions/);
-  assert.match(prompt, /Lock every unmarked region/);
-  assert.match(prompt, /Do not redraw, restyle, reframe, or regenerate the whole image/);
+  assert.match(prompt, /Local edit of image 1/);
+  assert.match(prompt, /Apply the user request only within the marked regions/);
+  assert.match(prompt, /restore the image beneath them/);
+  assert.match(prompt, /Keep all other content and the original framing unchanged/);
+  assert.ok(prompt.length < 500, 'single-image local edits should not repeat the full reference-naming or preservation boilerplate');
 });
 
 test('reference prompt maps the primary image to image one and continues supporting image numbers', () => {

@@ -297,7 +297,7 @@ export function claimEcommerceGenerationTask(userId, taskId) {
     SET status = 'running', attempts = attempts + 1, error_code = NULL,
         started_at = ?, completed_at = NULL, updated_at = ?
     WHERE id = ? AND user_id = ? AND cancel_requested = 0
-      AND status IN ('queued', 'interrupted', 'failed')
+      AND status = 'queued'
   `).run(timestamp, timestamp, taskId, userId);
   return result.changes ? getEcommerceGenerationTask(userId, taskId) : null;
 }
@@ -383,18 +383,52 @@ export function requestEcommerceGenerationTaskCancellation(userId, taskId) {
 }
 
 export function retryEcommerceGenerationTask(userId, taskId) {
-  const task = getEcommerceGenerationTask(userId, taskId);
-  if (!task || !['failed', 'cancelled', 'interrupted'].includes(task.status)) return null;
-  const active = getActiveEcommerceGenerationTask(userId, task.projectId, task.slotId);
-  if (active && active.id !== taskId) return null;
-  const timestamp = now();
-  const project = getDb().prepare('SELECT updated_at FROM ecommerce_projects WHERE id = ? AND user_id = ?').get(task.projectId, userId);
-  const requestJson = JSON.stringify({ ...task.request, projectUpdatedAt: project?.updated_at || task.request.projectUpdatedAt || '' });
-  const result = getDb().prepare(`
-    UPDATE ecommerce_generation_tasks
-    SET status = 'queued', generation_id = NULL, cancel_requested = 0, error_code = NULL,
-        request_json = ?, started_at = NULL, completed_at = NULL, updated_at = ?
-    WHERE id = ? AND user_id = ? AND status IN ('failed', 'cancelled', 'interrupted')
-  `).run(requestJson, timestamp, taskId, userId);
-  return result.changes ? getEcommerceGenerationTask(userId, taskId) : null;
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const task = getEcommerceGenerationTask(userId, taskId);
+    if (!task || !['failed', 'cancelled', 'interrupted'].includes(task.status)) {
+      db.exec('COMMIT');
+      return null;
+    }
+    // Repeating the same retry request must return its existing child task, not create
+    // another chargeable attempt. A failed child can itself be retried separately.
+    const existingRetry = normalizeTask(db.prepare(`
+      SELECT * FROM ecommerce_generation_tasks
+      WHERE user_id = ? AND project_id = ? AND slot_id = ?
+        AND CASE WHEN json_valid(request_json) THEN json_extract(request_json, '$.retryOfTaskId') END = ?
+      ORDER BY created_at DESC LIMIT 1
+    `).get(userId, task.projectId, task.slotId, taskId));
+    if (existingRetry) {
+      db.exec('COMMIT');
+      return existingRetry;
+    }
+    if (getActiveEcommerceGenerationTask(userId, task.projectId, task.slotId)) {
+      db.exec('COMMIT');
+      return null;
+    }
+    const project = db.prepare('SELECT updated_at FROM ecommerce_projects WHERE id = ? AND user_id = ?').get(task.projectId, userId);
+    if (!project) {
+      db.exec('COMMIT');
+      return null;
+    }
+    const timestamp = now();
+    const retryId = randomUUID();
+    const requestJson = JSON.stringify({
+      ...task.request,
+      retryOfTaskId: task.id,
+      projectUpdatedAt: project.updated_at
+    });
+    db.prepare(`
+      INSERT INTO ecommerce_generation_tasks
+        (id, user_id, project_id, slot_id, status, quality, attempts, cancel_requested,
+         request_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'queued', ?, 0, 0, ?, ?, ?)
+    `).run(retryId, userId, task.projectId, task.slotId, task.quality, requestJson, timestamp, timestamp);
+    db.exec('COMMIT');
+    return getEcommerceGenerationTask(userId, retryId);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }

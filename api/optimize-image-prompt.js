@@ -1,15 +1,11 @@
-import { randomUUID } from 'node:crypto';
 import { authenticateRequest } from './_lib/local-auth.js';
-import { chargeAiToolCredit, refundAiToolCredit } from './_lib/local-db.js';
 import { getChatProviderConfig, requestChatCompletion } from './_lib/chat-engine.js';
+import { reserveMagicCredit, completeMagicCredit, cancelMagicCredit } from './_lib/magic-billing.js';
 import { readJsonBody } from './_lib/request.js';
-import {
-  DEFAULT_IMAGE_PROMPT_OPTIMIZER_MODEL,
-  IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT
-} from '../shared/image-prompt-optimizer.js';
+import { IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT } from '../shared/image-prompt-optimizer.js';
+import { newAPITextErrorResponse, ensureNewAPIAuthorization } from './_lib/newapi-account.js';
 
 const MAX_PROMPT_LENGTH = 6000;
-const PROMPT_MODEL = process.env.AI_PROMPT_MODEL || DEFAULT_IMAGE_PROMPT_OPTIMIZER_MODEL;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 12;
 const requestWindows = new Map();
@@ -31,17 +27,16 @@ function checkRateLimit(userId) {
 }
 
 function fallbackPrompt(prompt, { language, referenceCount, hasAnnotations }) {
+  if (hasAnnotations) return prompt.slice(0, MAX_PROMPT_LENGTH);
   const zh = language === 'zh';
   const additions = zh
     ? [
         '画面要求：主体清晰，构图关系明确，光线、材质、色彩和背景协调，细节自然可信。',
-        referenceCount ? `参考图：按输入顺序使用 ${referenceCount} 张参考图，保留用户指向的关键视觉特征。` : '',
-        hasAnnotations ? '局部修改：彩色线框仅用于标记修改区域，成图中不得保留标记；未标记区域尽量保持不变。' : ''
+        referenceCount ? `参考图：按输入顺序使用 ${referenceCount} 张参考图，保留用户指向的关键视觉特征。` : ''
       ]
     : [
         'Image direction: keep the main subject clear, the composition intentional, and the lighting, materials, colors, background, and details visually coherent and believable.',
-        referenceCount ? `References: use all ${referenceCount} reference images in input order and preserve the visual features the user points to.` : '',
-        hasAnnotations ? 'Local edit: colored outlines only identify regions to change; remove the marks from the final image and preserve unmarked areas where possible.' : ''
+        referenceCount ? `References: use all ${referenceCount} reference images in input order and preserve the visual features the user points to.` : ''
       ];
   return [prompt, ...additions.filter(Boolean)].join('\n\n').slice(0, MAX_PROMPT_LENGTH);
 }
@@ -68,25 +63,19 @@ export default async function handler(req, res) {
   const language = body.language === 'zh' ? 'zh' : 'en';
   const referenceCount = Math.max(0, Math.min(9, Number(body.referenceCount) || 0));
   const hasAnnotations = Boolean(body.hasAnnotations);
-  const provider = getChatProviderConfig('', { includeSecret: true, userId: auth.user.id });
-  if (!provider?.apiKey) {
-    return json(res, 503, { ok: false, error: 'PROMPT_OPTIMIZER_UNAVAILABLE' });
-  }
-  const promptProvider = {
-    ...provider,
-    model: PROMPT_MODEL,
-    maxOutputTokens: Math.min(2048, provider.maxOutputTokens || 2048)
-  };
-  const requestId = randomUUID();
-  let user;
+  let provider;
+  let reservation;
   try {
-    user = chargeAiToolCredit(auth.user.id, {
+    await ensureNewAPIAuthorization(auth.user.id);
+    provider = getChatProviderConfig('', { includeSecret: true, userId: auth.user.id, purpose: 'magic' });
+    if (!provider?.apiKey) return json(res, 503, { ok: false, error: 'PROMPT_OPTIMIZER_UNAVAILABLE' });
+    reservation = reserveMagicCredit(auth.user.id, provider, {
       source: 'ai_magic_prompt',
-      amount: 1,
-      referenceId: requestId,
-      metadata: { referenceCount, hasAnnotations, model: PROMPT_MODEL }
+      text: `${IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT}\n${prompt}`
     });
   } catch (error) {
+    const external = newAPITextErrorResponse(error);
+    if (external) return json(res, external.status, { ok: false, error: external.error });
     if (['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED'].includes(error?.code)) return json(res, 402, { ok: false, error: error.code });
     if (error?.code === 'GROUP_ACCESS_SUSPENDED') return json(res, 403, { ok: false, error: error.code });
     return json(res, 500, { ok: false, error: 'AI_TOOL_CHARGE_FAILED' });
@@ -94,7 +83,7 @@ export default async function handler(req, res) {
 
   try {
     const result = await requestChatCompletion({
-      provider: promptProvider,
+      provider,
       messages: [
         { role: 'system', content: IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT },
         {
@@ -104,11 +93,12 @@ export default async function handler(req, res) {
       ]
     });
     const optimized = String(result.content || '').trim().replace(/^```(?:text)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const billing = completeMagicCredit(reservation, result.usage);
     return json(res, 200, {
       ok: true,
       prompt: optimized ? optimized.slice(0, MAX_PROMPT_LENGTH) : fallbackPrompt(prompt, { language, referenceCount, hasAnnotations }),
       model: result.model,
-      user
+      ...billing
     });
   } catch (error) {
     console.warn('Image prompt optimization failed', {
@@ -116,23 +106,20 @@ export default async function handler(req, res) {
       code: error?.code || null,
       message: String(error?.message || 'unknown').slice(0, 240)
     });
-    let refundedUser = user;
+    let refundedUser;
     try {
-      refundedUser = refundAiToolCredit(auth.user.id, {
-        referenceId: requestId,
-        errorCode: error?.code || 'PROMPT_OPTIMIZATION_FAILED',
-        metadata: { model: PROMPT_MODEL }
-      });
+      refundedUser = cancelMagicCredit(reservation, error?.code || 'PROMPT_OPTIMIZATION_FAILED');
     } catch (refundError) {
       console.error('Image prompt optimization refund failed', {
         code: refundError?.code || null,
         message: String(refundError?.message || 'unknown').slice(0, 240)
       });
     }
-    return json(res, 502, {
+    const external = newAPITextErrorResponse(error);
+    return json(res, external?.status || 502, {
       ok: false,
-      error: 'PROMPT_OPTIMIZATION_FAILED',
-      model: PROMPT_MODEL,
+      error: external?.error || 'PROMPT_OPTIMIZATION_FAILED',
+      model: provider.model,
       user: refundedUser
     });
   }

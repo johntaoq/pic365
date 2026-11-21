@@ -7,6 +7,7 @@ import {
 } from '../../shared/storage-billing.js';
 import { chargeCreditImmediatelyInTransaction, getDb } from './local-db.js';
 import { repairMissingAssetFileMetadata } from './media-assets.js';
+import { billNewAPIStorageForDate } from './newapi-storage-billing.js';
 
 const STORAGE_BILLING_SETTING_KEY = 'storage_billing';
 const BATCH_STALE_MS = 30 * 60 * 1000;
@@ -141,6 +142,10 @@ export function billUserStorageForDate({
   unitPriceCentsPerGb = null
 }) {
   const usageDate = assertRunDate(runDate);
+  if (getDb().prepare('SELECT 1 FROM newapi_accounts WHERE user_id = ?').get(userId)) {
+    return billNewAPIStorageForDate({ userId, runDate: usageDate, ownedBytes, ownedAssetCount, measuredAt,
+      unitPriceCentsPerGb: unitPriceCentsPerGb ?? getStorageBillingConfig().unitPriceCentsPerGb });
+  }
   const billingMonth = usageDate.slice(0, 7);
   const runPhase = storageBillingRunPhase(usageDate);
   const bytes = Math.max(0, Math.floor(Number(ownedBytes) || 0));
@@ -409,7 +414,7 @@ export async function runStorageBillingBatch({
         await repairMissingAssetFileMetadata(user.id, { limit: 500, concurrency: 4 });
       }
       const usage = getOwnedAssetStorageUsage(user.id);
-      const result = billUserStorageForDate({
+      const result = await billUserStorageForDate({
         userId: user.id,
         runDate: usageDate,
         ownedBytes: usage.ownedBytes,
