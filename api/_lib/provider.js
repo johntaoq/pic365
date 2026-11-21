@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { normalizeImageInputUsage } from '../../shared/image-input-billing.js';
 import {
   GEMINI_IMAGE_RATIO_PRESETS,
   getImageModelConstraints,
@@ -200,7 +201,7 @@ async function requestGeminiChatImage({ prompt, images = [], model, size, qualit
     error.providerRequestId = requestId;
     throw error;
   }
-  return { ...result, model, providerRequestId: requestId };
+  return { ...result, model, providerRequestId: requestId, inputUsage: normalizeImageInputUsage(payload) };
 }
 
 async function requestProvider(pathname, body, { accept = 'application/json', signal, timeoutMs = REQUEST_TIMEOUT_MS, providerConfig } = {}) {
@@ -218,12 +219,14 @@ async function requestProvider(pathname, body, { accept = 'application/json', si
     const multipart = isFormDataBody(body);
     const response = await fetch(buildProviderUrl(pathname, providerConfig), {
       method: 'POST',
+      ...(providerConfig?.pricingConfig?.externalWallet ? { redirect: 'error' } : {}),
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         ...(multipart ? {} : { 'Content-Type': 'application/json' }),
         Accept: accept,
-        'X-Client-Request-Id': requestId
+        'X-Client-Request-Id': requestId,
+        ...(providerConfig?.headers || {})
       },
       body: multipart ? body : JSON.stringify(body)
     });
@@ -271,6 +274,7 @@ export async function generateImage({ prompt, model, size = '1024x1024', quality
   return {
     ...result,
     model: imageModel,
+    inputUsage: normalizeImageInputUsage(payload),
     providerRequestId: requestId
   };
 }
@@ -360,6 +364,7 @@ export async function editImage({
   return {
     ...result,
     model: imageModel,
+    inputUsage: normalizeImageInputUsage(payload),
     providerRequestId: requestId
   };
 }

@@ -5,6 +5,7 @@ import { assetCalendarDate, normalizeAssetTags } from '../shared/asset-search.js
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
   Download,
   FileAudio,
@@ -61,7 +62,7 @@ const copy = {
     multiSelect: '批量选择', exitMultiSelect: '退出多选', selectedCount: '已选', selectVisible: '全选', clearSelection: '清空选择', chooseCollection: '选择分类', assignCollection: '归入分类', assigningCollection: '保存中', bulkCollectionDone: (count) => `${count} 项资产已归入分类`, bulkCollectionFailed: '批量归类失败，请重试。',
     bulkDelete: '批量删除', bulkDeleteTitle: '删除所选资产？', bulkDeleteLabel: (count) => `${count} 项资产`, bulkDeleteHint: '所选资产将移入回收站，原始文件暂不物理删除。', bulkDeleteDone: (count) => `${count} 项资产已移入回收站`, bulkDeleteFailed: '批量删除失败，请重试。', bulkDeleteSharedBlocked: '所选内容包含他人共享资产，只能批量删除自己的资产。',
     projectLinked: '已加入项目', sharedDone: '共享完成', duration: '时长', size: '尺寸', original: '原始文件', preview: '预览文件', prompt: '提示词', promptHidden: '系统提示词已隐藏',
-    folders: '分类', teams: '我的团队', clickPreview: '点击查看与管理', currentView: '当前浏览', selectedCollections: (count) => `已选择 ${count} 个分类`,
+    folders: '分类', teams: '我的团队', clickPreview: '点击查看与管理', currentView: '当前浏览', browsePath: '资产浏览路径', allAssets: '所有', backToAll: '返回所有资产', selectedCollections: (count) => `已选择 ${count} 个分类`,
     signInTitle: '登录后使用资产库', signInText: '资产按账户隔离，并可跨设备使用。', signIn: '登录', refresh: '刷新'
   },
   en: {
@@ -79,7 +80,7 @@ const copy = {
     multiSelect: 'Batch select', exitMultiSelect: 'Exit selection', selectedCount: 'Selected', selectVisible: 'Select visible', clearSelection: 'Clear', chooseCollection: 'Choose category', assignCollection: 'Assign category', assigningCollection: 'Saving', bulkCollectionDone: (count) => `${count} assets assigned to the category`, bulkCollectionFailed: 'Bulk category assignment failed. Try again.',
     bulkDelete: 'Delete selected', bulkDeleteTitle: 'Delete selected assets?', bulkDeleteLabel: (count) => `${count} assets`, bulkDeleteHint: 'Selected assets will move to Trash. Original files are not permanently deleted yet.', bulkDeleteDone: (count) => `${count} assets moved to Trash`, bulkDeleteFailed: 'Bulk deletion failed. Try again.', bulkDeleteSharedBlocked: 'The selection contains assets shared by other users. You can only delete your own assets.',
     projectLinked: 'Added to project', sharedDone: 'Shared', duration: 'Duration', size: 'Dimensions', original: 'Original', preview: 'Preview', prompt: 'Prompt', promptHidden: 'System prompt hidden',
-    folders: 'Categories', teams: 'My teams', clickPreview: 'Click to preview and manage', currentView: 'Current view', selectedCollections: (count) => `${count} categories selected`,
+    folders: 'Categories', teams: 'My teams', clickPreview: 'Click to preview and manage', currentView: 'Current view', browsePath: 'Asset browsing path', allAssets: 'All', backToAll: 'Back to all assets', selectedCollections: (count) => `${count} categories selected`,
     signInTitle: 'Sign in to use your asset library', signInText: 'Assets are isolated by account and available across devices.', signIn: 'Sign in', refresh: 'Refresh'
   }
 };
@@ -125,6 +126,28 @@ function AudioWaveform({ url }) {
   return <div className="mediaAssetWaveform" aria-hidden="true">{points.map((value, index) => <i style={{ height: `${Math.max(8, Number(value || 0) * 100)}%` }} key={`${index}-${value}`} />)}</div>;
 }
 
+function AssetImage({ asset, detail }) {
+  const source = detail ? asset.previewUrl : asset.thumbnailUrl;
+  const [attempt, setAttempt] = useState(0);
+  const retryTimer = useRef(null);
+  useEffect(() => {
+    setAttempt(0);
+    return () => {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    };
+  }, [source]);
+  const retry = () => {
+    if (attempt >= 4 || retryTimer.current) return;
+    retryTimer.current = setTimeout(() => {
+      retryTimer.current = null;
+      setAttempt((value) => value + 1);
+    }, Math.min(8000, 2000 * 2 ** attempt));
+  };
+  const src = attempt ? `${source}${source.includes('?') ? '&' : '?'}retry=${attempt}` : source;
+  return <img src={src} alt={asset.name} loading={detail ? 'eager' : 'lazy'} decoding="async" onError={retry} />;
+}
+
 function AssetMedia({ asset, detail = false }) {
   if (asset.mediaType === 'video') {
     return detail
@@ -136,7 +159,7 @@ function AssetMedia({ asset, detail = false }) {
       ? <div className="mediaAssetAudioPlayer"><FileAudio size={38} /><AudioWaveform url={asset.waveformUrl} /><audio src={asset.previewUrl} controls preload="metadata" /></div>
       : <div className="mediaAssetAudioThumb"><FileAudio size={34} /><span>{formatDuration(asset.durationMs)}</span></div>;
   }
-  return <img src={detail ? asset.previewUrl : asset.thumbnailUrl} alt={asset.name} loading={detail ? 'eager' : 'lazy'} decoding="async" />;
+  return <AssetImage asset={asset} detail={detail} />;
 }
 
 function AssetDetail({ asset, language, collections, teams, session, onClose, onUpdated, onPurged, onUseAsReference }) {
@@ -505,6 +528,12 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
     if (['upload', 'generated'].includes(filter)) setFilter('all');
   }
 
+  function returnToAllAssets() {
+    clearSearchFilters();
+    setComposing(false);
+    selectAssetScope({});
+  }
+
   const loadSupportData = useCallback(async () => {
     if (!signedIn) return;
     const [collectionResponse, teamResponse] = await Promise.all([
@@ -754,6 +783,7 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
   const activeFilter = FILTERS.find(([id]) => id === filter) || FILTERS[0];
   const ActiveBrowseIcon = activeTeam ? Users : activeCollection ? Folder : activeFilter[1];
   const activeBrowseTitle = activeTeam?.name || activeCollection?.name || t[activeFilter[0]];
+  const isAllAssetScope = filter === 'all' && !collectionId && !teamId;
   const effectiveSource = ['upload', 'generated'].includes(filter) ? filter : sourceFilter;
   const hasSearchFilters = Boolean(searchQuery || tag || effectiveSource || dateFilter.dateMode !== 'all');
   const dateLabel = dateFilter.dateMode === 'range' ? `${dateFilter.dateFrom} – ${dateFilter.dateTo}` : dateFilter.dateValue;
@@ -767,7 +797,23 @@ export default function MediaAssetCenter({ language = 'zh', session, profile, on
           <div className="mediaAssetTeams"><strong>{t.teams}</strong>{teams.map((team) => <div className={teamId === team.id ? 'active' : ''} key={team.id}><button className="mediaAssetTeamSelect" aria-current={teamId === team.id ? 'page' : undefined} title={team.name} type="button" onClick={() => selectAssetScope({ nextTeamId: team.id })}><Users size={16} /><span>{team.name}</span><em>{team.assetCount}</em></button>{team.role === 'owner' ? <button className="mediaAssetSidebarDelete" type="button" disabled={Boolean(pendingAction)} onClick={() => setDeleteTarget({ kind: 'team', id: team.id, name: team.name })} aria-label={language === 'zh' ? `删除团队：${team.name}` : `Delete team: ${team.name}`}><Trash2 size={13} /></button> : null}</div>)}</div>
         </aside>
         <div className="mediaAssetMain">
-          <div className="mediaAssetBrowseHeader"><span><ActiveBrowseIcon size={18} /></span><div><small>{t.currentView}</small><h2>{activeBrowseTitle}</h2></div></div>
+          <div className="mediaAssetBrowseHeader">
+            <span><ActiveBrowseIcon size={18} aria-hidden="true" /></span>
+            <div>
+              <small>{t.currentView}</small>
+              <nav className="mediaAssetBreadcrumb" aria-label={t.browsePath}>
+                <ol>
+                  <li className="mediaAssetBreadcrumbRoot">
+                    <button type="button" title={t.backToAll} onClick={returnToAllAssets} aria-current={isAllAssetScope ? 'page' : undefined}>{t.allAssets}</button>
+                  </li>
+                  {!isAllAssetScope ? <>
+                    <li className="mediaAssetBreadcrumbSeparator" aria-hidden="true"><ChevronRight size={16} /></li>
+                    <li className="mediaAssetBreadcrumbCurrent" aria-current="page"><h2 title={activeBrowseTitle}>{activeBrowseTitle}</h2></li>
+                  </> : null}
+                </ol>
+              </nav>
+            </div>
+          </div>
           <MediaAssetSearch language={language} query={query} onQuery={setQuery} onSearch={() => { if (!composing) setSearchQuery(query.trim()); }} onComposition={setComposing}
             tag={tag} tagOptions={tagOptions} onTag={setTag} source={effectiveSource} onSource={changeSourceFilter}
             sort={sort} onSort={setSort} dateFilter={dateFilter} onDate={setDateFilter} />

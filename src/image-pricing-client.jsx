@@ -58,7 +58,14 @@ function normalizePricingRequest(options = {}) {
     quality: String(options.quality || 'low').trim().toLowerCase(),
     count: Math.max(1, Math.min(50, Math.round(Number(options.count) || 1))),
     referenceCount: Math.max(0, Math.min(9, Math.round(Number(options.referenceCount) || 0))),
-    providerId: String(options.providerId || '').trim()
+    providerId: String(options.providerId || '').trim(),
+    prompt: String(options.prompt || '').slice(0, 48000),
+    projectId: String(options.projectId || ''),
+    slotId: String(options.slotId || ''),
+    adjustment: String(options.adjustment || ''),
+    baseGenerationId: String(options.baseGenerationId || ''),
+    targetArea: options.targetArea,
+    referenceInputs: options.referenceInputs
   };
 }
 
@@ -71,17 +78,14 @@ async function readPricingResponse(response) {
 
 export async function requestImagePricing(options = {}, { signal } = {}) {
   const request = normalizePricingRequest(options);
-  const params = new URLSearchParams({
-    size: request.size,
-    quality: request.quality,
-    count: String(request.count),
-    referenceCount: String(request.referenceCount),
-    providerId: request.providerId
+  const response = await fetch('/api/image-pricing', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request), cache: 'no-store', signal
   });
-  const response = await fetch(`/api/image-pricing?${params}`, { cache: 'no-store', signal });
   const payload = await readPricingResponse(response);
-  if (!payload.pricing || payload.pricing.source !== 'server') throw new Error('PRICING_LOAD_FAILED');
-  return payload.pricing;
+  const pricing = payload.pricing || payload.quotes?.[0]?.pricing;
+  if (!pricing || pricing.source !== 'server') throw new Error('PRICING_LOAD_FAILED');
+  return pricing;
 }
 
 export async function requestImagePricingBatch(items = [], { signal } = {}) {
@@ -107,7 +111,7 @@ export async function requestImagePricingBatch(items = [], { signal } = {}) {
 
 export function useServerImagePricing(options = {}, { enabled = true, debounceMs = 100 } = {}) {
   const normalized = normalizePricingRequest(options);
-  const requestKey = `${normalized.providerId}|${normalized.size}|${normalized.quality}|${normalized.count}|${normalized.referenceCount}`;
+  const requestKey = JSON.stringify(normalized);
   const [state, setState] = useState({ pricing: null, loading: Boolean(enabled), error: '' });
 
   useEffect(() => {
@@ -168,19 +172,25 @@ export function useServerImagePricingBatch(items = [], { enabled = true, debounc
   return state;
 }
 
-export function ImageCreditPrice({ pricing, quantity = 1, language = 'zh', compact = false, showPromotionName = true }) {
+export function ImageCreditPrice({ pricing, quantity = 1, language = 'zh', compact = false, showPromotionName = true, totalOnly = false }) {
   if (!pricing) {
     return <span className={`imageCreditPrice pending ${compact ? 'compact' : ''}`}>{language === 'zh' ? '报价中…' : 'Quoting…'}</span>;
   }
-  const saleCredits = Number(pricing?.credits || 0) * quantity;
-  const originalCredits = Number(pricing?.originalCredits || pricing?.credits || 0) * quantity;
+  if (pricing.externalWallet) {
+    const label = pricing.billingSource === 'azure40' ? 'UniKeyX' : '99Off';
+    return <span className={`imageCreditPrice ${compact ? 'compact' : ''}`}><strong>{language === 'zh' ? `${label} 账户计费` : `Billed to ${label}`}</strong></span>;
+  }
+  const saleCredits = Number((Number(pricing?.credits || 0) * quantity).toFixed(2));
+  const originalCredits = Number((Number(pricing?.originalCredits || pricing?.credits || 0) * quantity).toFixed(2));
   const unit = language === 'zh' ? '积分' : 'credits';
   const unitGap = compact ? '' : ' ';
   return (
     <span className={`imageCreditPrice ${compact ? 'compact' : ''} ${pricing?.discountApplied ? 'discounted' : ''}`}>
-      <strong>{saleCredits}{unitGap}{unit}</strong>
-      {pricing?.discountApplied ? <del>{originalCredits}{unitGap}{unit}</del> : null}
-      {showPromotionName && pricing?.discountApplied && pricing?.promotion?.name ? <em>{pricing.promotion.name}</em> : null}
+      <strong>{totalOnly ? (language === 'zh' ? '预留 ' : 'Reserve ') : null}{saleCredits}{unitGap}{unit}</strong>
+      {!totalOnly && pricing.imageTextEnabled && pricing.imageTextCredits > 0 ? <small title={language === 'zh' ? '文本费用超过 0.5 积分才计费；按实际用量结算，最多扣预留金额。' : 'Text fees over 0.5 credits are charged from reported usage, capped at the reserve.'}>{pricing.inputTokenBillingMode === 'actual' ? (language === 'zh' ? '文本' : 'Text') : (language === 'zh' ? '文本预留' : 'Text reserve')} {Number((pricing.imageTextCredits * quantity).toFixed(2))}{unitGap}{unit}</small> : null}
+      {!totalOnly && pricing.referenceTokenEnabled ? <small title={language === 'zh' ? '按上游返回图片Token总和结算' : 'Settles reported image token totals'}>{pricing.inputTokenBillingMode === 'actual' ? (language === 'zh' ? '参考图' : 'References') : (language === 'zh' ? '参考图预留' : 'Reference reserve')} {Number((pricing.referenceTokenCredits * quantity).toFixed(2))}{unitGap}{unit}</small> : null}
+      {!totalOnly && pricing?.discountApplied ? <del>{originalCredits}{unitGap}{unit}</del> : null}
+      {!totalOnly && showPromotionName && pricing?.discountApplied && pricing?.promotion?.name ? <em>{pricing.promotion.name}</em> : null}
     </span>
   );
 }

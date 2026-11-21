@@ -3,6 +3,13 @@ import { requirePermission } from './_lib/governance.js';
 import { ADMIN_PERMISSIONS } from '../shared/admin-permissions.js';
 import { readJsonBody } from './_lib/billing.js';
 import { getImagePromotionConfig, getImageProviderConfig, updateImagePromotionConfig } from './_lib/local-db.js';
+import { getEcommerceProject, listEcommerceProjectAssets } from './_lib/local-db.js';
+import { getEcommerceProjectOutput } from './_lib/ecommerce-p1-db.js';
+import { buildEcommerceSlotPrompt, selectEcommerceAssetsForSlot } from './_lib/ecommerce-prompt.js';
+import { getEcommerceGenerationSystemPromptSettings } from './_lib/ecommerce-generation-settings.js';
+import { getEcommercePlatform } from '../shared/ecommerce-catalog.js';
+import { validateImageInputPricing } from './_lib/image-input-billing.js';
+import { estimateTextTokens } from './_lib/text-token-estimate.js';
 import { normalizeImageQuality, validateImageReferenceInputsForModel, validateImageSizeForModel } from '../shared/image-generation.js';
 import {
   applyImagePromotion,
@@ -31,6 +38,7 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
     error.code = 'AI_PROVIDER_NOT_CONFIGURED';
     throw error;
   }
+  validateImageInputPricing(provider.pricingConfig, provider.model);
   const size = String(input.size || '1024x1024').trim().toLowerCase();
   const sizeCheck = validateImageSizeForModel(size, provider.model);
   if (!sizeCheck.valid) {
@@ -48,8 +56,35 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
     error.code = referenceCheck.error;
     throw error;
   }
+  let prompt = String(input.prompt || '').slice(0, 48000);
+  if (input.projectId && input.slotId && provider.pricingConfig?.chargeTextTokens) {
+    const project = getEcommerceProject(userId, String(input.projectId));
+    if (!project) throw Object.assign(new Error('PROJECT_NOT_FOUND'), { code: 'PROJECT_NOT_FOUND' });
+    const platform = getEcommercePlatform(project.platformId);
+    const slot = platform.slots.find((item) => item.id === input.slotId);
+    if (!slot || !project.selectedSlots.includes(slot.id)) throw Object.assign(new Error('INVALID_PROJECT_SLOT'), { code: 'INVALID_PROJECT_SLOT' });
+    const referenceInputs = (Array.isArray(input.referenceInputs) ? input.referenceInputs : []).slice(0, 4);
+    const allAssets = listEcommerceProjectAssets(userId, project.id);
+    const refinementAssets = referenceInputs.map((ref) => allAssets.find((asset) => asset.id === ref.assetId)).filter(Boolean);
+    const limit = Math.max(1, 8 - (input.baseGenerationId ? 1 : 0));
+    const standard = selectEcommerceAssetsForSlot({ project, platform, slot, assets: allAssets, limit: Math.max(1, limit - refinementAssets.length) });
+    const assets = [...standard, ...refinementAssets].filter((asset, index, all) => all.findIndex((item) => item.id === asset.id) === index).slice(0, limit);
+    const output = getEcommerceProjectOutput(userId, project.id, slot.id);
+    prompt = buildEcommerceSlotPrompt({
+      project, platform, slot, assets,
+      systemPrompt: getEcommerceGenerationSystemPromptSettings().prompt,
+      revisionRequest: String(input.adjustment || '').slice(0, 1200),
+      targetArea: input.targetArea || 'auto',
+      refinementInputs: referenceInputs,
+      hasBaseImage: Boolean(input.baseGenerationId),
+      consistencyIssues: input.baseGenerationId && output?.selectedGenerationId === input.baseGenerationId ? output.consistencyIssues || [] : []
+    });
+  }
   const pricing = applyImagePromotion(
-    getImageGenerationPricing({ size, quality, model: provider.model, referenceCount }, provider.pricingConfig),
+    getImageGenerationPricing({
+      size, quality, model: provider.model, referenceCount, prompt,
+      estimatedTextTokens: provider.pricingConfig?.chargeTextTokens && prompt ? estimateTextTokens(prompt) : undefined
+    }, provider.pricingConfig),
     promotionConfig
   );
   return {
@@ -57,8 +92,8 @@ function quoteImagePricing(input = {}, promotionConfig = getImagePromotionConfig
     size,
     quality,
     count,
-    totalCredits: pricing.credits * count,
-    totalOriginalCredits: pricing.originalCredits * count,
+    totalCredits: Number((pricing.credits * count).toFixed(2)),
+    totalOriginalCredits: Number((pricing.originalCredits * count).toFixed(2)),
     providerId: provider.id,
     providerName: provider.name,
     model: provider.model,
@@ -80,7 +115,7 @@ function publicPayload(extra = {}) {
       minimumCredits: samplePricing?.minimumCredits ?? IMAGE_MIN_CHARGE_CREDITS,
       maximumCredits: samplePricing?.maximumCredits ?? IMAGE_MAX_CHARGE_CREDITS,
       roundingStep: samplePricing?.priceStepCredits ?? IMAGE_CREDIT_ROUNDING_STEP,
-      promotionRoundingStep: IMAGE_PROMOTION_ROUNDING_STEP,
+      promotionRoundingStep: samplePricing?.promotionRoundingStep ?? IMAGE_PROMOTION_ROUNDING_STEP,
       minimumPayPercent: IMAGE_PROMOTION_MIN_PAY_PERCENT,
       maximumPayPercent: IMAGE_PROMOTION_MAX_PAY_PERCENT,
       providerSpecific: true

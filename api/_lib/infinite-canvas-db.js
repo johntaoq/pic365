@@ -242,9 +242,15 @@ function writeNodes(db, userId, projectId, nodes, timestamp) {
           AND permission.principal_type = 'team'
           AND member.user_id = ?
       )
-    )
+    ) AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = asset.id)
   `);
-  const ownsGeneration = db.prepare('SELECT 1 FROM generations WHERE id = ? AND user_id = ?');
+  const ownsGeneration = db.prepare(`SELECT 1 FROM generations generation WHERE generation.id = ? AND generation.user_id = ?
+    AND NOT EXISTS (
+      SELECT 1 FROM asset_retention_deletions deletion JOIN assets asset ON asset.id = deletion.asset_id
+      WHERE asset.owner_user_id = generation.user_id
+        AND ((asset.source_table = 'generations' AND asset.source_id = generation.id)
+          OR asset.original_storage_path = generation.storage_path)
+    )`);
   const ownsTask = db.prepare(`
     SELECT 1 FROM free_generation_tasks WHERE id = ? AND user_id = ?
     UNION ALL

@@ -13,6 +13,12 @@ import {
 import { readJsonBody } from './_lib/request.js';
 import { getInfiniteCanvasProject } from './_lib/infinite-canvas-db.js';
 import { startFreeGenerationWorker } from '../server/free-generation-worker.js';
+import { expandSharedTaskReferences, SHARED_REFERENCE_PROTOCOL_VERSION } from '../shared/generation-task-references.js';
+import { LAYOUT_WATERMARK_PROTOCOL_VERSION } from '../shared/ecommerce-layout-watermark.js';
+import { validateEcommerceLayoutReferences } from '../shared/ecommerce-layout-studio.js';
+import { prepareEcommerceLayoutWatermark } from './_lib/ecommerce-layout-watermark.js';
+import { clothingStudioPrompt, normalizeClothingStudioRequest, validateClothingStudioRequest } from '../shared/clothing-try-on.js';
+import { validatePrivateTryOnReference } from './_lib/clothing-try-on-models.js';
 import {
   IMAGE_GENERATION_REQUEST_MAX_BYTES,
   resolveSourceImageSizeForModel,
@@ -79,7 +85,18 @@ function serverValidatedBatchRepairTask(task = {}, userId = '') {
 function serverAuthorizedTask(userId, task = {}) {
   const provider = getImageProviderConfig(String(task.providerId || '').trim(), { includeSecret: false, userId });
   if (!provider) throw Object.assign(new Error('AI_PROVIDER_NOT_AVAILABLE'), { code: 'AI_PROVIDER_NOT_AVAILABLE' });
-  return serverValidatedBatchRepairTask({ ...task, providerId: provider.id }, userId);
+  task = normalizeClothingStudioRequest(task);
+  const studioWorkflow = validateClothingStudioRequest(task, { model: provider.model });
+  if (studioWorkflow) validatePrivateTryOnReference(userId, studioWorkflow, task.references);
+  return serverValidatedBatchRepairTask({ ...task, providerId: provider.id, ...(studioWorkflow ? { studioWorkflow, prompt: clothingStudioPrompt(studioWorkflow) } : {}) }, userId);
+}
+
+async function validateLayoutWatermarks(tasks) {
+  for (const task of tasks) {
+    if (task.layoutWatermark == null) continue;
+    validateEcommerceLayoutReferences(task);
+    await prepareEcommerceLayoutWatermark(task.layoutWatermark);
+  }
 }
 
 export default async function handler(req, res) {
@@ -93,7 +110,14 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const tasks = listFreeGenerationTasks(auth.user.id);
-    return json(res, 200, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
+    return json(res, 200, {
+      ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS,
+      activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS,
+      capabilities: {
+        sharedReferences: SHARED_REFERENCE_PROTOCOL_VERSION,
+        layoutWatermark: LAYOUT_WATERMARK_PROTOCOL_VERSION
+      }
+    });
   }
 
   let body;
@@ -132,14 +156,21 @@ export default async function handler(req, res) {
         canvasY: body.canvasY,
         replaceTaskId: Boolean(body.replaceTaskId)
       });
-      const task = createFreeGenerationTask(auth.user.id, serverAuthorizedTask(auth.user.id, request));
+      const authorized = serverAuthorizedTask(auth.user.id, request);
+      await validateLayoutWatermarks([authorized]);
+      const task = createFreeGenerationTask(auth.user.id, authorized);
       return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
     }
     if (Array.isArray(body.tasks)) {
-      const tasks = createFreeGenerationTasks(auth.user.id, body.tasks.map((task) => serverAuthorizedTask(auth.user.id, task)));
+      const requests = expandSharedTaskReferences(body.tasks, body.sharedReferences);
+      const authorized = requests.map((task) => serverAuthorizedTask(auth.user.id, task));
+      await validateLayoutWatermarks(authorized);
+      const tasks = createFreeGenerationTasks(auth.user.id, authorized);
       return json(res, 201, { ok: true, tasks, count: tasks.length, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
     }
-    const task = createFreeGenerationTask(auth.user.id, serverAuthorizedTask(auth.user.id, body));
+    const authorized = serverAuthorizedTask(auth.user.id, body);
+    await validateLayoutWatermarks([authorized]);
+    const task = createFreeGenerationTask(auth.user.id, authorized);
     return json(res, 201, { ok: true, task, limit: MAX_FREE_GENERATION_TASKS, activeLimit: MAX_ACTIVE_FREE_GENERATION_TASKS });
   } catch (error) {
     if (error?.code === 'TASK_ALREADY_EXISTS' && !Array.isArray(body.tasks)) {

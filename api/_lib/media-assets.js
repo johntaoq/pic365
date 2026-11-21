@@ -22,6 +22,7 @@ import {
   isSupportedEcommerceAssetMimeType
 } from '../../shared/ecommerce-assets.js';
 import { getAssetDateRange, normalizeAssetTags } from '../../shared/asset-search.js';
+import { generatedThumbnailStoragePath } from '../../shared/image-thumbnails.js';
 
 export const MEDIA_TYPES = new Set(['image', 'video', 'audio']);
 export const ASSET_SOURCE_TYPES = new Set(['upload', 'generated', 'imported']);
@@ -106,7 +107,7 @@ function normalizeAsset(row, { tags = [], variants = [], collections = [], isSup
   if (!row) return null;
   const metadata = parseJson(row.metadata_json, {});
   const systemPrompt = Boolean(metadata.projectId && row.source_type === 'generated');
-  const variantMap = Object.fromEntries(variants.map((variant) => [variant.type, variant]));
+  const variantMap = Object.fromEntries(variants.filter((variant) => variant.status === 'ready').map((variant) => [variant.type, variant]));
   const primaryCollection = collections[0] || null;
   return {
     id: row.id,
@@ -143,8 +144,8 @@ function normalizeAsset(row, { tags = [], variants = [], collections = [], isSup
     updatedAt: row.updated_at || '',
     originalUrl: assetFileUrl(row.id, 'original'),
     downloadUrl: assetFileUrl(row.id, 'original', true),
-    thumbnailUrl: assetFileUrl(row.id, variantMap.thumbnail ? 'thumbnail' : (variantMap.poster ? 'poster' : 'original')),
-    previewUrl: assetFileUrl(row.id, variantMap.preview ? 'preview' : 'original'),
+    thumbnailUrl: assetFileUrl(row.id, row.media_type === 'image' || variantMap.thumbnail ? 'thumbnail' : (variantMap.poster ? 'poster' : 'original')),
+    previewUrl: assetFileUrl(row.id, row.media_type === 'image' || variantMap.preview ? 'preview' : 'original'),
     posterUrl: variantMap.poster ? assetFileUrl(row.id, 'poster') : '',
     waveformUrl: variantMap.waveform ? assetFileUrl(row.id, 'waveform') : ''
   };
@@ -260,6 +261,7 @@ export function getAccessibleAsset(userId, assetId, { includeDeleted = true, isS
     LEFT JOIN asset_user_metadata user_metadata
       ON user_metadata.asset_id = a.id AND user_metadata.user_id = @user_id
     WHERE a.id = @asset_id AND ${accessibleAssetSql('a')}
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = a.id)
       ${includeDeleted ? '' : 'AND a.deleted_at IS NULL'}
   `).get({ user_id: userId, asset_id: assetId });
   if (!row) return null;
@@ -354,6 +356,7 @@ export function listAssets(userId, options = {}) {
     date_end: end
   };
   const where = [accessibleAssetSql('a')];
+  where.push('NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = a.id)');
   if (options.deleted) where.push('a.deleted_at IS NOT NULL');
   else where.push('a.deleted_at IS NULL');
   where.push('(@media_type = \'\' OR a.media_type = @media_type)');
@@ -564,6 +567,8 @@ async function processAndPersistAssetVariants({ db, asset, bytes, jobId, metadat
 }
 
 export async function createUploadedAsset(userId, { bytes, mimeType, fileName, sourceType = 'upload', collectionId = '', tags = [], metadata = {} }) {
+  const { requireNewAPIStorageWrite } = await import('./newapi-storage-billing.js');
+  requireNewAPIStorageWrite(userId);
   const normalizedMime = String(mimeType || '').split(';')[0].trim().toLowerCase();
   const mediaType = ALLOWED_MIME_TYPES.get(normalizedMime);
   if (!mediaType) throw Object.assign(new Error('UNSUPPORTED_MEDIA_TYPE'), { code: 'UNSUPPORTED_MEDIA_TYPE' });
@@ -673,6 +678,7 @@ export function claimAssetProcessingJobs(limit = 1) {
         asset.metadata_json, asset.created_at AS asset_created_at
       FROM asset_processing_jobs job JOIN assets asset ON asset.id = job.asset_id
       WHERE job.status = 'queued' AND asset.deleted_at IS NULL AND asset.original_storage_path != ''
+        AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = asset.id)
       ORDER BY job.created_at ASC LIMIT ?
     `).all(Math.max(1, Math.min(Number(limit) || 1, 4)));
     const claim = db.prepare(`
@@ -683,6 +689,7 @@ export function claimAssetProcessingJobs(limit = 1) {
       if (!claim.run(timestamp, row.id).changes) continue;
       claimed.push({
         id: row.id,
+        jobType: row.job_type,
         assetId: row.asset_id,
         userId: row.owner_user_id,
         storagePath: row.original_storage_path,
@@ -701,6 +708,7 @@ export function claimAssetProcessingJobs(limit = 1) {
 }
 
 export async function processAssetProcessingJob(job) {
+  if (job.jobType === 'image-variants') return repairImageVariantJob(job);
   const stored = await readStoredFile(job.storagePath);
   if (!stored?.bytes?.length) throw Object.assign(new Error('ASSET_FILE_NOT_FOUND'), { code: 'ASSET_FILE_NOT_FOUND' });
   return processAndPersistAssetVariants({
@@ -729,24 +737,102 @@ export function failAssetProcessingJob(jobId, errorCode = 'PROCESSING_FAILED') {
   return true;
 }
 
-export async function ensureImageVariants(userId, assetId) {
+function enqueueImageVariantJob(db, assetId) {
+  const active = db.prepare("SELECT id FROM asset_processing_jobs WHERE asset_id = ? AND status IN ('queued', 'running') LIMIT 1").get(assetId);
+  if (active) return active.id;
+  const id = randomUUID();
+  const timestamp = now();
+  const result = db.prepare(`INSERT INTO asset_processing_jobs (id, asset_id, job_type, status, created_at, updated_at)
+    SELECT ?, a.id, 'image-variants', 'queued', ?, ? FROM assets a
+    WHERE a.id = ? AND a.media_type = 'image' AND a.deleted_at IS NULL AND a.original_storage_path != ''
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = a.id)
+      AND NOT EXISTS (SELECT 1 FROM asset_processing_jobs WHERE asset_id = a.id AND status IN ('queued', 'running'))`)
+    .run(id, timestamp, timestamp, assetId);
+  return result.changes ? id
+    : db.prepare("SELECT id FROM asset_processing_jobs WHERE asset_id = ? AND status IN ('queued', 'running') LIMIT 1").get(assetId)?.id || '';
+}
+
+export function queueImageVariantRepair(userId, assetId) {
   const asset = getAccessibleAsset(userId, assetId, { includeDeleted: false });
-  if (!asset || asset.mediaType !== 'image') return asset;
-  const existing = new Set(asset.variants.map((variant) => variant.type));
-  if (existing.has('thumbnail') && existing.has('preview')) return asset;
-  const original = await readStoredFile(asset.metadata?.storagePath || getDb().prepare('SELECT original_storage_path FROM assets WHERE id = ?').get(assetId)?.original_storage_path);
-  if (!original?.bytes?.length) return asset;
-  const processed = await processMediaAsset({ bytes: original.bytes, mimeType: asset.mimeType, mediaType: 'image' });
+  if (!asset || asset.mediaType !== 'image') return '';
+  if (asset.fileSize > 0 && ['thumbnail', 'preview'].every((type) => asset.variants.some((v) => v.type === type && v.status === 'ready'))) return '';
+  return enqueueImageVariantJob(getDb(), assetId);
+}
+
+export function queueMissingImageVariants(limit = 4) {
   const db = getDb();
-  for (const variant of processed.variants || []) {
-    if (existing.has(variant.type)) continue;
-    const storagePath = `assets/${asset.ownerUserId}/${asset.id}/${variant.type}.${variantExtension(variant)}`;
-    const stored = await persistStoredImage({ storagePath, bytes: variant.bytes, contentType: variant.mimeType });
-    insertVariant(db, asset.id, { ...variant, storagePath: stored.storagePath, fileSize: stored.byteLength });
+  const pending = db.prepare("SELECT COUNT(*) n FROM asset_processing_jobs WHERE job_type = 'image-variants' AND status IN ('queued', 'running')").get().n;
+  const capacity = Math.max(0, Math.min(4, Number(limit) || 4, 8 - pending));
+  if (!capacity) return 0;
+  const retryBefore = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const rows = db.prepare(`SELECT a.id FROM assets a
+    WHERE a.media_type = 'image' AND a.status = 'ready' AND a.deleted_at IS NULL AND a.original_storage_path != ''
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = a.id)
+      AND (a.file_size = 0 OR NOT EXISTS (SELECT 1 FROM asset_variants v WHERE v.asset_id = a.id AND v.variant_type = 'thumbnail' AND v.status = 'ready')
+        OR NOT EXISTS (SELECT 1 FROM asset_variants v WHERE v.asset_id = a.id AND v.variant_type = 'preview' AND v.status = 'ready'))
+      AND NOT EXISTS (SELECT 1 FROM asset_processing_jobs j WHERE j.asset_id = a.id
+        AND (j.status IN ('queued', 'running') OR (j.job_type = 'image-variants' AND j.status = 'failed' AND j.updated_at >= ?)))
+    ORDER BY a.created_at DESC LIMIT ?`).all(retryBefore, capacity);
+  for (const row of rows) enqueueImageVariantJob(db, row.id);
+  return rows.length;
+}
+
+async function repairImageVariantJob(job) {
+  const db = getDb();
+  const asset = db.prepare(`SELECT a.* FROM assets a WHERE a.id = ? AND a.deleted_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = a.id)`).get(job.assetId);
+  if (!asset) throw Object.assign(new Error('ASSET_NOT_FOUND'), { code: 'ASSET_NOT_FOUND' });
+  await repairAssetStorageRow(db, asset);
+  const existing = new Set();
+  for (const type of ['thumbnail', 'preview']) {
+    const record = db.prepare('SELECT * FROM asset_variants WHERE asset_id = ? AND variant_type = ?').get(asset.id, type);
+    const canonical = `assets/${asset.owner_user_id}/${asset.id}/${type}.webp`;
+    const generated = type === 'thumbnail' && asset.source_table === 'generations'
+      ? generatedThumbnailStoragePath(asset.original_storage_path) : '';
+    for (const storagePath of [...new Set([record?.storage_path, canonical, generated].filter(Boolean))]) {
+      let info;
+      try { info = await getStoredFileInfo(storagePath); }
+      catch (error) {
+        if (error?.code === 'ENOENT' || error?.statusCode === 404 || error?.code === 'BlobNotFound') continue;
+        throw error;
+      }
+      if (!info?.byteLength) continue;
+      insertVariant(db, asset.id, { type, storagePath, fileSize: info.byteLength,
+        mimeType: info.contentType, width: record?.width || 0, height: record?.height || 0 });
+      existing.add(type);
+      break;
+    }
   }
-  db.prepare('UPDATE assets SET width = CASE WHEN width = 0 THEN ? ELSE width END, height = CASE WHEN height = 0 THEN ? ELSE height END, updated_at = ? WHERE id = ?')
-    .run(Number(processed.width || 0), Number(processed.height || 0), now(), asset.id);
-  return getAccessibleAsset(userId, asset.id, { includeDeleted: false });
+  if (existing.size < 2) {
+    const original = await readStoredFile(asset.original_storage_path);
+    if (!original?.bytes?.length) throw Object.assign(new Error('ASSET_FILE_NOT_FOUND'), { code: 'ASSET_FILE_NOT_FOUND' });
+    const processed = await processMediaAsset({ bytes: original.bytes, mimeType: asset.mime_type, mediaType: 'image' });
+    for (const variant of processed.variants || []) {
+      if (existing.has(variant.type)) continue;
+      const storagePath = `assets/${asset.owner_user_id}/${asset.id}/${variant.type}.${variantExtension(variant)}`;
+      const stored = await persistStoredImage({ storagePath, bytes: variant.bytes, contentType: variant.mimeType });
+      insertVariant(db, asset.id, { ...variant, storagePath, fileSize: stored.byteLength });
+    }
+    db.prepare('UPDATE assets SET width = CASE WHEN width = 0 THEN ? ELSE width END, height = CASE WHEN height = 0 THEN ? ELSE height END, updated_at = ? WHERE id = ?')
+      .run(processed.width || 0, processed.height || 0, now(), asset.id);
+  }
+  db.prepare("UPDATE asset_processing_jobs SET status = 'succeeded', progress = 100, updated_at = ?, completed_at = ? WHERE id = ?")
+    .run(now(), now(), job.id);
+  return getAccessibleAsset(job.userId, asset.id, { includeDeleted: false });
+}
+
+export async function ensureImageVariants(userId, assetId, { timeoutMs = 30000 } = {}) {
+  const jobId = queueImageVariantRepair(userId, assetId);
+  if (!jobId) return getAccessibleAsset(userId, assetId, { includeDeleted: false });
+  const db = getDb();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = db.prepare('SELECT status FROM asset_processing_jobs WHERE id = ?').get(jobId);
+    if (!job || job.status === 'failed') break;
+    if (job.status === 'succeeded') return getAccessibleAsset(userId, assetId, { includeDeleted: false });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw Object.assign(new Error('ASSET_VARIANT_PENDING'), { code: 'ASSET_VARIANT_PENDING' });
 }
 
 export function replaceAssetTags(userId, assetId, tags) {
@@ -773,6 +859,7 @@ export function updateAsset(userId, assetId, changes = {}) {
   const asset = db.prepare(`
     SELECT asset.* FROM assets asset
     WHERE asset.id = @asset_id AND ${accessibleAssetSql('asset')}
+      AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = asset.id)
   `).get({ user_id: userId, asset_id: assetId });
   if (!asset) return null;
   const owned = asset?.owner_user_id === userId;
@@ -1279,7 +1366,9 @@ export function getVariantRecord(userId, assetId, variantType = 'original') {
 
 export async function removeOrphanedAssetFile(userId, assetId) {
   const db = getDb();
-  const asset = db.prepare('SELECT * FROM assets WHERE id = ? AND owner_user_id = ?').get(assetId, userId);
+  const asset = db.prepare(`SELECT * FROM assets WHERE id = ? AND owner_user_id = ?
+    AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = assets.id)`
+  ).get(assetId, userId);
   if (!asset) return false;
   const sourceBacked = Boolean(asset.source_table && asset.source_id);
   if (sourceBacked) return false;
@@ -1291,7 +1380,9 @@ export async function removeOrphanedAssetFile(userId, assetId) {
 
 export async function permanentlyDeleteAsset(userId, assetId) {
   const db = getDb();
-  const asset = db.prepare('SELECT * FROM assets WHERE id = ? AND owner_user_id = ? AND deleted_at IS NOT NULL').get(assetId, userId);
+  const asset = db.prepare(`SELECT * FROM assets WHERE id = ? AND owner_user_id = ? AND deleted_at IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = assets.id)`
+  ).get(assetId, userId);
   if (!asset) return false;
   const projectLinks = Number(db.prepare('SELECT COUNT(*) AS count FROM asset_project_links WHERE asset_id = ?').get(assetId)?.count || 0);
   if (projectLinks && asset.source_table !== 'generations') {
@@ -1299,7 +1390,10 @@ export async function permanentlyDeleteAsset(userId, assetId) {
   }
   const variants = db.prepare('SELECT storage_path FROM asset_variants WHERE asset_id = ?').all(assetId);
   const sourceBacked = Boolean(asset.source_table && asset.source_id);
-  db.prepare('DELETE FROM assets WHERE id = ? AND owner_user_id = ?').run(assetId, userId);
+  const removed = db.prepare(`DELETE FROM assets WHERE id = ? AND owner_user_id = ?
+    AND NOT EXISTS (SELECT 1 FROM asset_retention_deletions WHERE asset_id = assets.id)`
+  ).run(assetId, userId);
+  if (!removed.changes) return false;
   if (!sourceBacked) await Promise.allSettled(variants.map((variant) => deleteStoredFile(variant.storage_path)));
   return true;
 }

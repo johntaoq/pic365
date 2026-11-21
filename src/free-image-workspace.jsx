@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MagicModelControl, useTextModels } from './text-model-client.jsx';
+import { createTaskPoller } from './task-poller.js';
+import NewAPIWallet, { newAPIErrorMessage } from './newapi-wallet.jsx';
 import { createPortal } from 'react-dom';
 import {
   AtSign,
@@ -11,12 +14,12 @@ import {
   Dices,
   Download,
   Edit3,
-  Eye,
   FileText,
   FolderOpen,
   GripVertical,
   ImagePlus,
   Images,
+  LayoutGrid,
   ListTodo,
   LockKeyhole,
   LoaderCircle,
@@ -27,6 +30,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Shirt,
   Trash2,
   Upload,
   WandSparkles,
@@ -63,15 +67,24 @@ import {
 } from '../shared/batch-image-prompts.js';
 import {
   imageSizeTemplateForModel,
+  loadImageStudioSizeSelections,
   loadImageSizePreferences,
+  preferredStudioImageSize,
+  saveImageStudioSizeSelections,
   saveImageSizePreferences
 } from '../shared/image-size-templates.js';
 import { GUEST_FREE_GENERATION_LIMIT } from '../shared/guest-generation.js';
-import { generatedImageUrl, GENERATED_THUMBNAIL_VARIANT } from '../shared/image-thumbnails.js';
+import { generatedImagePreviewSources } from '../shared/image-thumbnails.js';
+import GeneratedImagePreview from './generated-image-preview.jsx';
 import { orderImageProviders, resolveImageProviderId } from '../shared/image-provider-selection.js';
 import { referenceImageDisplayLabel } from '../shared/reference-image-naming.js';
+import { referenceWithEditAnnotations } from '../shared/local-image-edit.js';
 import FreeImageReferenceEditor from './free-image-reference-editor';
 import FreeImageSettings from './free-image-settings.jsx';
+import EcommerceLayoutStudio from './ecommerce-layout-studio.jsx';
+import ClothingTryOnStudio from './clothing-try-on-studio.jsx';
+import ImageStudioFeedback from './image-studio-feedback.jsx';
+import { imageStudioFeedbackState } from './image-studio-feedback.js';
 import './free-image-studio.css';
 import { fetchImageGeneration, isImageGenerationTimeout } from './image-generation-client.js';
 import { ImageCreditPrice, requestImagePricing, useServerImagePricing, useServerImagePricingBatch } from './image-pricing-client.jsx';
@@ -374,9 +387,13 @@ async function imageItemToFile(item) {
 
 const copy = {
   zh: {
+    language: 'zh',
     taskList: '任务列表',
     resizeTaskPanels: '拖动调整左侧工作区和图片预览宽度',
     queueNow: '加入队列',
+    queueSubmitting: '提交中',
+    queueAdded: '任务已加入队列。',
+    queueSubmitFailed: '任务提交失败，请重试。',
     queueing: '排队中',
     queueRunning: '生成中',
     queueCompleted: '已完成',
@@ -403,8 +420,8 @@ const copy = {
     copiedPrompt: '已复制',
     applyPrompt: '应用提示词',
     regionEdit: '框选局部编辑',
-    localEditPrompt: '请描述涂抹区域内需要替换、移除、修复或调整的具体内容。',
-    localEditLockedRule: '只修改涂抹区域。未涂抹区域全部锁定，保持原构图、主体、背景、光线、颜色、材质、文字、Logo、阴影和细节不变。',
+    localEditPlaceholder: '描述标记区域内要修改的内容，例如：移除杯子，补齐桌面。',
+    localEditLockedRule: '标记仅用于定位，成图不保留色块和轮廓；其余画面保持不变。',
     localEditReady: '已创建局部修图任务。请补充涂抹区域内需要修改的具体内容。',
     downloadOriginal: '下载原图',
     resetZoom: '还原',
@@ -492,6 +509,7 @@ const copy = {
     geminiSizePixels: '香蕉模型画布像素不能超过 4096×4096。',
     geminiAspect: '香蕉模型仅支持列表中的固定画面比例。',
     failed: '生成未完成，请重试。',
+    quoteFailed: '无法确认生图费用，尚未提交生成。请稍后重试。',
     providerUnavailable: (name, model) => `当前生图服务${name ? `“${name}”` : ''}没有可用的 ${model || '图像'} 渠道，请联系管理员检查服务配置。`,
     providerAuthFailed: '当前生图服务的 API Key 无效或无权限，请联系管理员。',
     providerBalanceError: '当前生图服务的上游余额或额度不足，请联系管理员。',
@@ -518,10 +536,6 @@ const copy = {
     groupBalanceRequired: '集团可用余额不足，请由集团管理员转入积分。',
     groupAccessSuspended: '你的集团账户已暂停或正在退出。',
     signIn: '登录使用完整功能',
-    caseTitle: '范例美图',
-    caseAll: '全部',
-    browseCases: '查看全部',
-    openCase: '查看',
     referenceMissing: '所选历史图已不存在，请重新选择。',
     singleCreate: '单图创作',
     batchRepair: '批量生图',
@@ -572,6 +586,7 @@ const copy = {
     providerReferenceUnsupported: '当前图片提供商不支持参考图修复。'
   },
   en: {
+    language: 'en',
     title: 'Image Studio',
     prompt: 'Prompt',
     styleTitle: 'Visual style',
@@ -654,6 +669,7 @@ const copy = {
     geminiSizePixels: 'Gemini image canvas may not exceed 4096×4096.',
     geminiAspect: 'Gemini image only supports the listed fixed aspect ratios.',
     failed: 'Generation did not complete. Please try again.',
+    quoteFailed: 'Unable to confirm the image price. Generation was not submitted. Please retry later.',
     providerUnavailable: (name, model) => `The image service${name ? ` "${name}"` : ''} has no available ${model || 'image'} channel. Please ask an administrator to check its configuration.`,
     providerAuthFailed: 'The image service API key is invalid or unauthorized. Please contact an administrator.',
     providerBalanceError: 'The upstream image service has insufficient balance or quota. Please contact an administrator.',
@@ -680,14 +696,13 @@ const copy = {
     groupBalanceRequired: 'The group balance is insufficient. Ask the administrator to add funds.',
     groupAccessSuspended: 'Your group access is paused or being removed.',
     signIn: 'Sign in for full tools',
-    caseTitle: 'Example images',
-    caseAll: 'All',
-    browseCases: 'View all',
-    openCase: 'View',
     referenceMissing: 'A selected history image is no longer available. Select it again.',
     taskList: 'Task list',
     resizeTaskPanels: 'Drag to resize the workspace and image preview',
     queueNow: 'Add to queue',
+    queueSubmitting: 'Submitting',
+    queueAdded: 'Task added to the queue.',
+    queueSubmitFailed: 'Could not submit the task. Please try again.',
     queueing: 'Queued',
     queueRunning: 'Generating',
     queueCompleted: 'Completed',
@@ -714,8 +729,8 @@ const copy = {
     copiedPrompt: 'Copied',
     applyPrompt: 'Use prompt',
     regionEdit: 'Mark region to edit',
-    localEditPrompt: 'Describe exactly what should be replaced, removed, repaired, or adjusted inside the painted region.',
-    localEditLockedRule: 'Modify only the painted region. Lock every unpainted area and preserve the original composition, subject, background, lighting, colors, materials, text, logos, shadows, and fine details.',
+    localEditPlaceholder: 'Describe the change inside the marked region, e.g. remove the cup and restore the tabletop.',
+    localEditLockedRule: 'Marks locate the edit only. Remove their paint and outlines from the result; keep the rest unchanged.',
     localEditReady: 'A new local-edit task is ready. Describe the exact change required inside the painted region.',
     downloadOriginal: 'Download original',
     resetZoom: 'Reset',
@@ -868,6 +883,8 @@ function sizeErrorText(result, t) {
 
 function generationFailureText(payload, t, maxReferenceImages = 1) {
   const code = typeof payload === 'string' ? payload : payload?.error;
+  const externalError = newAPIErrorMessage(code, t.language);
+  if (externalError) return externalError;
   if (code === 'REFERENCE_IMAGES_UNSUPPORTED') return t.referenceUnsupported;
   if (code === 'TOO_MANY_REFERENCE_IMAGES') return t.maxReferences(maxReferenceImages);
   if (code === 'REFERENCE_IMAGE_TOO_LARGE') return t.referenceTooLarge;
@@ -937,13 +954,7 @@ export default function FreeImageWorkspace({
   language,
   session,
   profile,
-  cases = [],
-  categoryOptions = [],
-  category = 'All',
   styleCases = [],
-  onCategoryChange,
-  onOpenCase,
-  onBrowseCases,
   onSignIn,
   onBilling,
   onProfileChange,
@@ -980,6 +991,8 @@ export default function FreeImageWorkspace({
   const [batchPromptDragIndex, setBatchPromptDragIndex] = useState(-1);
   const [batchImageSourceMenuOpen, setBatchImageSourceMenuOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
+  const magicModels = useTextModels({ enabled: isAuthenticatedSession(session), text: prompt });
+  const magicSubmittingRef = useRef(false);
   const [promptOptimized, setPromptOptimized] = useState(false);
   const [customPromptModifiers, setCustomPromptModifiers] = useState(loadCustomPromptModifiers);
   const [promptModifierDraft, setPromptModifierDraft] = useState('');
@@ -993,6 +1006,7 @@ export default function FreeImageWorkspace({
   const [height, setHeight] = useState(1024);
   const [dimensionDrafts, setDimensionDrafts] = useState({ width: '1024', height: '1024' });
   const [sizeTemplatesByProvider, setSizeTemplatesByProvider] = useState(loadImageSizePreferences);
+  const [sizeSelectionsByProvider, setSizeSelectionsByProvider] = useState(loadImageStudioSizeSelections);
   const [ratioLock, setRatioLock] = useState('1:1');
   const [quality, setQuality] = useState('low');
   const [providers, setProviders] = useState([]);
@@ -1000,7 +1014,8 @@ export default function FreeImageWorkspace({
   const [count, setCount] = useState(1);
   const [guestUsed, setGuestUsed] = useState(false);
   const [guestRemaining, setGuestRemaining] = useState(GUEST_FREE_GENERATION_LIMIT);
-  const [state, setState] = useState({ status: 'idle', results: [], message: '' });
+  const [state, setWorkspaceState] = useState({ status: 'idle', results: [], message: '', messageTone: 'status' });
+  const setState = useCallback((update) => setWorkspaceState((previous) => imageStudioFeedbackState(previous, update)), []);
   const [history, setHistory] = useState([]);
   const [resultsView, setResultsView] = useState('preview');
   const [selectedResultIdentity, setSelectedResultIdentity] = useState('');
@@ -1024,10 +1039,14 @@ export default function FreeImageWorkspace({
   const [mention, setMention] = useState(null);
   const [optimizing, setOptimizing] = useState(false);
   const [singleSubmitLocked, setSingleSubmitLocked] = useState(false);
+  const [queueSubmitting, setQueueSubmitting] = useState(false);
   const [editingReferenceId, setEditingReferenceId] = useState('');
   const [uploadingReferences, setUploadingReferences] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState('control');
   const [queueTasks, setQueueTasks] = useState([]);
+  const queueTasksRef = useRef(queueTasks);
+  queueTasksRef.current = queueTasks;
+  const queuePollerRef = useRef(null);
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [workspacePanelWidths, setWorkspacePanelWidths] = useState(loadWorkspacePanelWidths);
   const [workspacePanelResizing, setWorkspacePanelResizing] = useState(false);
@@ -1037,6 +1056,7 @@ export default function FreeImageWorkspace({
   const [previewCanPan, setPreviewCanPan] = useState(false);
   const [previewPanning, setPreviewPanning] = useState(false);
   const [previewPrompt, setPreviewPrompt] = useState('');
+  const [previewPromptEdited, setPreviewPromptEdited] = useState(false);
   const [previewPromptCopied, setPreviewPromptCopied] = useState(false);
   const [previewEditReference, setPreviewEditReference] = useState(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState('');
@@ -1049,7 +1069,7 @@ export default function FreeImageWorkspace({
   const previewImageRef = useRef(null);
   const previewPanRef = useRef(null);
   const isSignedIn = isAuthenticatedSession(session);
-  const hasFullWorkspace = isSignedIn && Boolean(profile?.isSuperAdmin || Number(profile?.creditBalance || 0) > 0);
+  const hasFullWorkspace = isSignedIn && Boolean(profile?.isSuperAdmin || profile?.externalWallet || Number(profile?.creditBalance || 0) > 0);
   const isGuest = !isSignedIn;
   const isGenerating = state.status === 'generating';
   const visibleHistory = history.filter((item) => item.status === 'succeeded' && item.imageUrl);
@@ -1067,8 +1087,8 @@ export default function FreeImageWorkspace({
   const selectedProvider = providers.find((item) => item.id === providerId) || null;
   const selectedStylePreset = getImageStylePreset(stylePresetId);
   const styleCaseById = useMemo(
-    () => new Map((styleCases.length ? styleCases : cases).map((item) => [Number(item.id), item])),
-    [cases, styleCases]
+    () => new Map(styleCases.map((item) => [Number(item.id), item])),
+    [styleCases]
   );
   const visibleStylePresets = useMemo(
     () => styleCategory === 'recommended'
@@ -1330,8 +1350,8 @@ export default function FreeImageWorkspace({
     () => validateImageSizeForModel(size, selectedProvider?.model),
     [selectedProvider?.model, size]
   );
-  const { pricing, loading: pricingLoading } = useServerImagePricing(
-    { size, quality, providerId, referenceCount: creationMode === 'single' ? references.length : 0 },
+  const { pricing, loading: pricingLoading, error: pricingError } = useServerImagePricing(
+    { size, quality, providerId, prompt, referenceCount: creationMode === 'single' ? references.length : 0 },
     { enabled: hasFullWorkspace && sizeCheck.valid && Boolean(providerId) }
   );
   const batchRepairItems = useMemo(() => batchRepairImages.map((item) => {
@@ -1365,7 +1385,7 @@ export default function FreeImageWorkspace({
     })), [batchPromptItems, batchPromptMode, batchRepairItems, size, sizeCheck]);
   const batchPricingRequests = useMemo(() => batchRepairJobs
     .filter((job) => job.sizing.valid)
-    .map((job) => ({ key: job.key, size: job.sizing.size, quality, count: 1, referenceCount: job.image ? 1 : 0, providerId })),
+    .map((job) => ({ key: job.key, size: job.sizing.size, quality, prompt: job.prompt, count: 1, referenceCount: job.image ? 1 : 0, providerId })),
   [batchRepairJobs, providerId, quality]);
   const {
     pricingByKey: batchPricingByKey,
@@ -1517,7 +1537,6 @@ export default function FreeImageWorkspace({
     [height, sizeMode, width]
   );
   const activeRatio = ratioOptions.find((preset) => preset.id === ratioLock);
-  const categoryLabels = new Map(categoryOptions.map((option) => [option.value, option.label]));
   const mentionMatches = mention
     ? visibleHistory.filter((item) => {
         const identity = imageReferenceIdentity(item);
@@ -1548,6 +1567,10 @@ export default function FreeImageWorkspace({
   useEffect(() => {
     saveImageSizePreferences(sizeTemplatesByProvider);
   }, [sizeTemplatesByProvider]);
+
+  useEffect(() => {
+    saveImageStudioSizeSelections(sizeSelectionsByProvider);
+  }, [sizeSelectionsByProvider]);
 
   useEffect(() => {
     if (!referenceAssetPickerOpen || !isSignedIn) return undefined;
@@ -1581,28 +1604,20 @@ export default function FreeImageWorkspace({
     const compatibleReferences = references
       .filter((reference) => referenceAllowedForModel(reference, modelConstraints))
       .slice(0, maxReferenceImages);
+    const preferred = preferredStudioImageSize(sizeSelectionsByProvider, sizeTemplatesByProvider,
+      selectedProvider.id, selectedProvider.model);
     if (compatibleReferences.length) {
       applyReferenceCanvasSize(compatibleReferences[0], selectedProvider);
-    } else if (sizeTemplate && validateImageSizeForModel(sizeTemplate, selectedProvider.model).valid && sizeTemplate !== size) {
-      const parsedTemplate = parseImageSize(sizeTemplate);
+    } else if (preferred === 'auto') {
+      setSizeMode('auto');
+    } else if (validateImageSizeForModel(preferred, selectedProvider.model).valid) {
+      const parsedTemplate = parseImageSize(preferred);
       if (parsedTemplate && !parsedTemplate.auto) {
         setSizeMode('custom');
-        applyDimensions({ width: parsedTemplate.width, height: parsedTemplate.height });
+        if (preferred !== size) applyDimensions({ width: parsedTemplate.width, height: parsedTemplate.height });
         const nextRatio = ratioForSize(parsedTemplate.width, parsedTemplate.height, ratioPresetOptions);
         setRatioLock(modelConstraints.isGeminiImage && nextRatio === 'free' ? '1:1' : nextRatio);
       }
-    } else if (!validateImageSizeForModel(size, selectedProvider.model).valid) {
-      setSizeMode('custom');
-      const parsedDefault = parseImageSize(modelSizeTemplate.defaultSize);
-      const nextWidth = parsedDefault && !parsedDefault.auto ? parsedDefault.width : 1024;
-      const nextHeight = parsedDefault && !parsedDefault.auto ? parsedDefault.height : 1024;
-      setWidth(nextWidth);
-      setHeight(nextHeight);
-      setDimensionDrafts({ width: String(nextWidth), height: String(nextHeight) });
-      setRatioLock(ratioForSize(nextWidth, nextHeight, ratioPresetOptions));
-    } else if (ratioLock !== 'free' && !ratioOptions.some((preset) => preset.id === ratioLock)) {
-      const nextRatio = ratioForSize(width, height, ratioPresetOptions);
-      setRatioLock(modelConstraints.isGeminiImage && nextRatio === 'free' ? '1:1' : nextRatio);
     }
 
     if (sizeTemplate && !validateImageSizeForModel(sizeTemplate, selectedProvider.model).valid) {
@@ -1722,22 +1737,30 @@ export default function FreeImageWorkspace({
       return undefined;
     }
     let active = true;
-    const refresh = async () => {
-      try {
-        const response = await fetch('/api/generation-tasks', { cache: 'no-store' });
+    const poller = createTaskPoller({
+      hasActiveTasks: () => queueTasksRef.current.some(isActiveImageTask),
+      load: async (signal) => {
+        const response = await fetch('/api/generation-tasks', { cache: 'no-store', signal });
         const payload = await response.json().catch(() => ({}));
-        if (active && response.ok && payload?.ok) setQueueTasks(payload.tasks || []);
-      } catch {
-        // A later poll retries without disrupting the active editor.
+        if (!response.ok || !payload?.ok) return false;
+        if (active && !signal.aborted) {
+          queueTasksRef.current = payload.tasks || [];
+          setQueueTasks(queueTasksRef.current);
+        }
+        return true;
       }
-    };
-    void refresh();
-    const timer = setInterval(refresh, 1500);
+    });
+    queuePollerRef.current = poller;
     return () => {
       active = false;
-      clearInterval(timer);
+      poller.stop();
+      queuePollerRef.current = null;
     };
   }, [hasFullWorkspace, isSignedIn]);
+
+  useEffect(() => {
+    if (activeQueueTaskCount > 0) void queuePollerRef.current?.refresh();
+  }, [activeQueueTaskCount]);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -1935,6 +1958,13 @@ export default function FreeImageWorkspace({
     );
     if (!next) return;
     applyDimensions(next);
+    rememberSelectedSize(`${next.width}x${next.height}`);
+  }
+
+  function rememberSelectedSize(nextSize) {
+    if (!providerId) return;
+    setSizeSelectionsByProvider((current) => current[providerId] === nextSize
+      ? current : { ...current, [providerId]: nextSize });
   }
 
   function applyDimensions(next) {
@@ -1968,6 +1998,7 @@ export default function FreeImageWorkspace({
         width: changed === 'width' ? nextValue : width,
         height: changed === 'height' ? nextValue : height
       });
+      rememberSelectedSize(`${changed === 'width' ? nextValue : width}x${changed === 'height' ? nextValue : height}`);
       return;
     }
     const next = dimensionsFromLockedValue({
@@ -1977,7 +2008,10 @@ export default function FreeImageWorkspace({
       ratioHeight: activeRatio.height,
       constraints: modelConstraints
     });
-    if (next) applyDimensions(next);
+    if (next) {
+      applyDimensions(next);
+      rememberSelectedSize(`${next.width}x${next.height}`);
+    }
   }
 
   function updateDimensionDraft(changed, value) {
@@ -2011,6 +2045,7 @@ export default function FreeImageWorkspace({
     if (!parsed || parsed.auto) return;
     setSizeMode('custom');
     applyDimensions({ width: parsed.width, height: parsed.height });
+    rememberSelectedSize(`${parsed.width}x${parsed.height}`);
     const nextRatio = ratioForSize(parsed.width, parsed.height, ratioPresetOptions);
     setRatioLock(modelConstraints.isGeminiImage && nextRatio === 'free' ? '1:1' : nextRatio);
   }
@@ -2023,10 +2058,12 @@ export default function FreeImageWorkspace({
         return;
       }
       setSizeMode('auto');
+      rememberSelectedSize('auto');
       return;
     }
     if (value === 'custom') {
       setSizeMode('custom');
+      rememberSelectedSize(`${width}x${height}`);
       return;
     }
     if (value === 'template' && sizeTemplate) {
@@ -2519,7 +2556,8 @@ export default function FreeImageWorkspace({
         ? t.batchPromptTrimmed
         : overflowCount
           ? t.batchPromptOverflowLocked(batchRepairImages.length, overflowCount)
-          : ''
+          : '',
+      feedbackTone: 'warning'
     }));
   }
 
@@ -2784,6 +2822,7 @@ export default function FreeImageWorkspace({
   }
 
   async function refreshQueueTasksNow() {
+    if (queuePollerRef.current) return queuePollerRef.current.refresh();
     try {
       const response = await fetch('/api/generation-tasks', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
@@ -2893,7 +2932,8 @@ export default function FreeImageWorkspace({
         ...current,
         message: batchRepairJobs.length > supportedJobs.length
           ? t.batchQueued(supportedJobs.length, batchRepairJobs.length - supportedJobs.length)
-          : ''
+          : '',
+        feedbackTone: 'warning'
       }));
       showBatchQueueNotice(t.batchProcessingNotice);
       if (!stayOnPage) setWorkspaceTab('tasks');
@@ -2914,9 +2954,8 @@ export default function FreeImageWorkspace({
       imageUrl: item.image,
       mimeType: normalizedImageMimeType(item.contentType || item.mimeType) || 'image/png',
       fileSize: Number(item.fileSize || 0),
-      thumbnailUrl: item.thumbnailUrl || (item.generationId
-        ? generatedImageUrl(item.generationId, GENERATED_THUMBNAIL_VARIANT)
-        : item.image),
+      thumbnailUrl: generatedImagePreviewSources(item).thumbnail,
+      previewUrl: generatedImagePreviewSources(item).preview,
       prompt: task.canvasDisplayPrompt || task.prompt,
       size: item.size || task.size,
       quality: item.quality || task.quality,
@@ -2929,7 +2968,7 @@ export default function FreeImageWorkspace({
   }
 
   function showGeneratedItems(items, message = '', { syncHistory = true } = {}) {
-    setState({ status: 'success', results: items, message });
+    setState({ status: 'success', results: items, message, feedbackTone: 'status' });
     if (!items.length || !syncHistory) return;
     setHistory((current) => [
       ...items.map((item) => ({ ...item })),
@@ -2938,6 +2977,7 @@ export default function FreeImageWorkspace({
   }
 
   async function queueCurrentGeneration() {
+    if (singleSubmitLockRef.current || isGenerating) return;
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt) {
       setState((current) => ({ ...current, message: t.emptyPrompt }));
@@ -2961,38 +3001,44 @@ export default function FreeImageWorkspace({
       setState((current) => ({ ...current, message: t.queueFull }));
       return;
     }
-    const taskId = `queue-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${queueTasks.length}`}`;
-    const taskRequest = {
-      prompt: trimmedPrompt,
-      size,
-      quality,
-      count,
-      references: references.map((reference) => reference.source === 'upload'
-        ? { clientId: reference.id, imageDataUrl: reference.imageDataUrl, annotations: reference.annotations }
-        : reference.source === 'asset'
-          ? { assetId: reference.assetId, annotations: reference.annotations }
-          : { generationId: reference.generationId || reference.id, annotations: reference.annotations }),
-      providerId,
-      stylePresetId,
-      clientTaskId: taskId
-    };
+    singleSubmitLockRef.current = true;
+    setQueueSubmitting(true);
+    setState((current) => ({ ...current, message: t.queueSubmitting, feedbackTone: 'status' }));
     try {
+      const taskId = `queue-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${queueTasks.length}`}`;
+      const taskRequest = {
+        prompt: trimmedPrompt,
+        size,
+        quality,
+        count,
+        references: references.map((reference) => reference.source === 'upload'
+          ? { clientId: reference.id, imageDataUrl: reference.imageDataUrl, annotations: reference.annotations }
+          : reference.source === 'asset'
+            ? { assetId: reference.assetId, annotations: reference.annotations }
+            : { generationId: reference.generationId || reference.id, annotations: reference.annotations }),
+        providerId,
+        stylePresetId,
+        clientTaskId: taskId
+      };
       const response = await fetch('/api/generation-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(taskRequest)
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.ok) {
-        setState((current) => ({ ...current, message: ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT'].includes(payload.error) ? t.queueFull : generationFailureText(payload, t, maxReferenceImages) }));
+      if (!response.ok || !payload?.ok || !payload.task?.id) {
+        setState((current) => ({ ...current, message: ['TASK_LIST_FULL', 'TASK_ACTIVE_LIMIT'].includes(payload.error) ? t.queueFull : generationFailureText(payload, { ...t, failed: t.queueSubmitFailed }, maxReferenceImages) }));
         return;
       }
       setQueueTasks((current) => [...current.filter((item) => item.id !== payload.task.id), payload.task]);
-      setState((current) => ({ ...current, message: '' }));
+      setState((current) => ({ ...current, message: t.queueAdded, feedbackTone: 'status' }));
       setWorkspaceTab('tasks');
       void refreshQueueTasksNow();
     } catch {
-      setState((current) => ({ ...current, message: t.failed }));
+      setState((current) => ({ ...current, message: t.queueSubmitFailed }));
+    } finally {
+      singleSubmitLockRef.current = false;
+      setQueueSubmitting(false);
     }
   }
 
@@ -3030,7 +3076,7 @@ export default function FreeImageWorkspace({
       setQueueTasks((current) => current.map((item) => item.id === task.id
         ? { ...item, ...(payload.task || {}), status: payload.status || payload.task?.status || 'cancelling' }
         : item));
-      setState((current) => ({ ...current, status: 'idle', message: t.cancelTaskDone }));
+      setState((current) => ({ ...current, status: 'idle', message: t.cancelTaskDone, feedbackTone: 'status' }));
     } catch {
       setQueueTasks((current) => current.map((item) => item.id === task.id
         ? { ...item, status: 'running' }
@@ -3064,7 +3110,7 @@ export default function FreeImageWorkspace({
       }
       setQueueTasks((current) => [...current.filter((item) => item.id !== payload.task.id), payload.task]);
       setSelectedTaskId(payload.task.id);
-      setState((current) => ({ ...current, status: 'idle', message: t.redoQueued }));
+      setState((current) => ({ ...current, status: 'idle', message: t.redoQueued, feedbackTone: 'status' }));
       setWorkspaceTab('tasks');
       void refreshQueueTasksNow();
     } catch {
@@ -3079,6 +3125,7 @@ export default function FreeImageWorkspace({
     setPreviewCanPan(false);
     setPreviewPanning(false);
     setPreviewPrompt(item.promptHidden ? '' : String(item.prompt || ''));
+    setPreviewPromptEdited(false);
     setPreviewPromptCopied(false);
     setPreviewImage(item);
   }
@@ -3190,8 +3237,8 @@ export default function FreeImageWorkspace({
       id: identity,
       generationId: previewImage.generationId || previewImage.id,
       source: 'history',
-      originalImageUrl: previewImage.originalImageUrl || existing?.imageUrl || previewImage.imageUrl,
-      imageUrl: previewImage.originalImageUrl || existing?.imageUrl || previewImage.imageUrl,
+      originalImageUrl: previewImage.originalImageUrl || existing?.originalImageUrl || existing?.imageUrl || previewImage.imageUrl,
+      imageUrl: previewImage.originalImageUrl || existing?.originalImageUrl || existing?.imageUrl || previewImage.imageUrl,
       markedImageUrl: previewImage.markedImageUrl || (previewImage.originalImageUrl ? previewImage.imageUrl : ''),
       annotations: existing?.annotations || previewImage.annotations || []
     };
@@ -3202,50 +3249,45 @@ export default function FreeImageWorkspace({
       }));
       return;
     }
-    const localEditPrompt = t.localEditPrompt;
-    setPreviewPrompt(localEditPrompt);
-    setPreviewEditReference({ ...candidate, localEditPrompt });
+    setPreviewEditReference({ ...candidate, localEditDraft: previewPromptEdited ? previewPrompt : previewImage.status === 'edit-guide' ? prompt : '' });
     setPreviewImage(null);
   }
 
   function createLocalEditTask(reference, annotations, markedImageUrl = '') {
     const identity = reference.id || reference.generationId;
     const token = `@图-${String(identity).slice(0, 6)}`;
-    const localEditPrompt = String(reference.localEditPrompt || t.localEditPrompt).trim();
+    const localEditDraft = String(reference.localEditDraft || '');
     const originalImageUrl = reference.originalImageUrl || reference.imageUrl;
-    const displayImageUrl = markedImageUrl || reference.markedImageUrl || originalImageUrl;
+    const annotatedReference = referenceWithEditAnnotations(reference, annotations, markedImageUrl);
+    const displayImageUrl = annotatedReference.thumbnailUrl;
     const localReference = {
-      ...reference,
+      ...annotatedReference,
       id: identity,
       generationId: reference.generationId || reference.id,
       source: 'history',
-      imageUrl: originalImageUrl,
-      originalImageUrl,
-      thumbnailUrl: displayImageUrl,
-      markedImageUrl: displayImageUrl,
       token,
-      annotations,
       mimeType: imageItemMimeType(reference)
     };
     applyReferenceCanvasSize(localReference);
     setReferences([localReference]);
-    setPrompt(`${localEditPrompt}\n${token} `);
+    setPrompt(localEditDraft);
     setPromptOptimized(false);
     setMention(null);
     setCount(1);
     setState({
       status: 'success',
       message: t.localEditReady,
+      feedbackTone: 'status',
       results: [{
         ...reference,
         id: identity,
         generationId: reference.generationId || reference.id,
         imageUrl: displayImageUrl,
         originalImageUrl,
-        markedImageUrl: displayImageUrl,
+        markedImageUrl: annotatedReference.markedImageUrl,
         thumbnailUrl: displayImageUrl,
         annotations,
-        prompt: localEditPrompt,
+        prompt: localEditDraft,
         promptHidden: false,
         downloadAllowed: false,
         status: 'edit-guide'
@@ -3254,7 +3296,7 @@ export default function FreeImageWorkspace({
     setWorkspaceTab('control');
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(0, localEditPrompt.length);
+      textareaRef.current?.setSelectionRange(localEditDraft.length, localEditDraft.length);
     });
   }
 
@@ -3289,6 +3331,7 @@ export default function FreeImageWorkspace({
   }
 
   async function optimizePrompt() {
+    if (magicSubmittingRef.current) return;
     const trimmed = prompt.trim();
     if (!trimmed) {
       setState((current) => ({ ...current, message: t.emptyPrompt }));
@@ -3301,6 +3344,7 @@ export default function FreeImageWorkspace({
       return;
     }
     setOptimizing(true);
+    magicSubmittingRef.current = true;
     setState((current) => ({ ...current, message: '' }));
     const hasAnnotations = creationMode === 'single' && references.some((reference) => reference.annotations.length);
     const optimizationReferenceCount = creationMode === 'batch-repair'
@@ -3312,6 +3356,7 @@ export default function FreeImageWorkspace({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: trimmed,
+          providerId: magicModels.providerId,
           language,
           referenceCount: optimizationReferenceCount,
           hasAnnotations
@@ -3335,6 +3380,7 @@ export default function FreeImageWorkspace({
       setState((current) => ({ ...current, message: t.optimizeFailed }));
       textareaRef.current?.focus();
     } finally {
+      magicSubmittingRef.current = false;
       setOptimizing(false);
     }
   }
@@ -3376,7 +3422,7 @@ export default function FreeImageWorkspace({
     if (hasFullWorkspace) {
       let confirmedPricing;
       try {
-        confirmedPricing = await requestImagePricing({ size, quality, providerId, referenceCount: references.length });
+        confirmedPricing = await requestImagePricing({ size, quality, providerId, prompt, referenceCount: references.length });
       } catch {
         setState((current) => ({ ...current, message: t.failed }));
         return;
@@ -3453,9 +3499,8 @@ export default function FreeImageWorkspace({
         imageUrl: item.image,
         mimeType: normalizedImageMimeType(item.contentType || item.mimeType) || 'image/png',
         fileSize: Number(item.fileSize || 0),
-        thumbnailUrl: item.thumbnailUrl || (item.generationId
-          ? generatedImageUrl(item.generationId, GENERATED_THUMBNAIL_VARIANT)
-          : item.image),
+        thumbnailUrl: generatedImagePreviewSources(item).thumbnail,
+        previewUrl: generatedImagePreviewSources(item).preview,
         prompt: trimmedPrompt,
         size: item.size || (hasFullWorkspace ? size : '1024x1024'),
         quality: item.quality || (hasFullWorkspace ? quality : 'low'),
@@ -3481,7 +3526,8 @@ export default function FreeImageWorkspace({
       setState({
         status: 'success',
         results: resultItems,
-        message: payload.partial ? t.partial(resultItems.length, requestedCount) : ''
+        message: payload.partial ? t.partial(resultItems.length, requestedCount) : '',
+        feedbackTone: payload.partial ? 'error' : 'status'
       });
       if (payload.user) onProfileChange?.(payload.user);
     } catch (error) {
@@ -3536,6 +3582,12 @@ export default function FreeImageWorkspace({
           <button className={workspaceTab === 'control' && creationMode === 'single' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'control' && creationMode === 'single'} onClick={() => switchCreationMode('single')}>
             <ImagePlus size={16} /> {t.singleCreate}
           </button>
+          <button className={workspaceTab === 'layout' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'layout'} onClick={() => setWorkspaceTab('layout')}>
+            <LayoutGrid size={16} /> {language === 'zh' ? '电商版式' : 'Commerce layouts'}
+          </button>
+          <button className={workspaceTab === 'try-on' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'try-on'} onClick={() => setWorkspaceTab('try-on')}>
+            <Shirt size={16} /> {language === 'zh' ? '衣服换装' : 'Clothing try-on'}
+          </button>
           <button className={workspaceTab === 'control' && creationMode === 'batch-repair' ? 'active' : ''} type="button" role="tab" aria-selected={workspaceTab === 'control' && creationMode === 'batch-repair'} onClick={() => switchCreationMode('batch-repair')}>
             <WandSparkles size={16} /> {language === 'zh' ? '批量生图' : 'Batch creation'}
           </button>
@@ -3545,7 +3597,7 @@ export default function FreeImageWorkspace({
         </div>
         <div className="freeImageHeaderActions">
           {hasFullWorkspace && profile ? (
-            <div className="freeImageHeaderStatus">
+            profile.externalWallet ? <NewAPIWallet language={language} showRecharge /> : <div className="freeImageHeaderStatus">
               <strong>{profile.creditBalance || 0}</strong>
               <span>{t.credits}</span>
             </div>
@@ -3559,7 +3611,72 @@ export default function FreeImageWorkspace({
         </div>
       </header>
 
-      <div ref={taskGridRef} className={`freeImageMainGrid freeImageMainGrid-${workspaceView}`}>
+      <div className="freeImageLayoutMount" hidden={workspaceTab !== 'layout'}>
+        <EcommerceLayoutStudio
+          language={language}
+          visible={workspaceTab === 'layout'}
+          session={session}
+          profile={profile}
+          providers={providers}
+          imageSettings={{
+            t, providerId, setProviderId, model: selectedProvider?.model,
+            modelConstraints, hasFullWorkspace, isGenerating, ratioLock, ratioOptions, setRatio,
+            size, sizeMode, sizeTemplate, commonSizeOptions, selectSizeOption, width, height,
+            quality, setQuality, dimensionDrafts, setDimensionDrafts, updateDimension,
+            updateDimensionDraft, commitDimensionDraft, canvasRatio, sizeCheck
+          }}
+          activeQueueTaskCount={activeQueueTaskCount}
+          onSignIn={onSignIn}
+          onBilling={onBilling}
+          tasks={queueTasks}
+          onOpenPreview={openImagePreview}
+          onOpenTasks={() => setWorkspaceTab('tasks')}
+          onTasksQueued={(tasks) => {
+            setQueueTasks((current) => [
+              ...current.filter((item) => !tasks.some((created) => created.id === item.id)),
+              ...tasks
+            ]);
+            void refreshQueueTasksNow();
+          }}
+        />
+      </div>
+      <div className="freeImageTryOnMount" hidden={workspaceTab !== 'try-on'}>
+        <ClothingTryOnStudio
+          language={language}
+          visible={workspaceTab === 'try-on'}
+          session={session}
+          profile={profile}
+          providers={providers}
+          imageSettings={{
+            t, providerId, setProviderId, model: selectedProvider?.model,
+            modelConstraints, hasFullWorkspace, isGenerating, ratioLock, ratioOptions, setRatio,
+            size, sizeMode, sizeTemplate, commonSizeOptions, selectSizeOption, width, height,
+            quality, setQuality, count, setCount, dimensionDrafts, setDimensionDrafts,
+            updateDimension, updateDimensionDraft, commitDimensionDraft, canvasRatio, sizeCheck
+          }}
+          tasks={queueTasks}
+          activeQueueTaskCount={activeQueueTaskCount}
+          onSignIn={onSignIn}
+          onBilling={onBilling}
+          onOpenPreview={openImagePreview}
+          onOpenTasks={() => setWorkspaceTab('tasks')}
+          onProfileChange={onProfileChange}
+          onGenerated={(items) => {
+            setHistory((current) => [
+              ...items,
+              ...current.filter((entry) => !items.some((item) => item.id === entry.id))
+            ]);
+          }}
+          onTasksQueued={(tasks) => {
+            setQueueTasks((current) => [
+              ...current.filter((item) => !tasks.some((created) => created.id === item.id)),
+              ...tasks
+            ]);
+            void refreshQueueTasksNow();
+          }}
+        />
+      </div>
+      <div ref={taskGridRef} className={`freeImageMainGrid freeImageMainGrid-${workspaceView}`} style={['layout', 'try-on'].includes(workspaceTab) ? { display: 'none' } : undefined}>
         {workspaceTab === 'control' ? (
           <form className="freeImageComposer" onPaste={handleComposerPaste} onSubmit={creationMode === 'batch-repair' ? queueBatchRepair : handleSubmit}>
           <div className="studioComposerBody">
@@ -3586,10 +3703,12 @@ export default function FreeImageWorkspace({
                 <em>{supportingReferences.length ? t.promptHelpReferenceExample : primaryReference ? t.promptHelpPrimaryExample : t.promptHelpExample}</em>
               </div> : null}
             </div>
-            <button className="freeImageMagicButton" type="button" onClick={optimizePrompt} disabled={optimizing || isGenerating}>
+            <MagicModelControl models={magicModels} language={language} disabled={optimizing || isGenerating}>
+            <button className="freeImageMagicButton" type="button" onClick={optimizePrompt} disabled={optimizing || isGenerating || (isSignedIn && (!magicModels.quote || magicModels.loading))}>
               {optimizing ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={18} />}
-              <span>{optimizing ? t.optimizing : t.optimize}</span>
+              <span>{optimizing ? t.optimizing : language === 'zh' ? 'AI 魔笔' : 'AI Magic'}</span>
             </button>
+            </MagicModelControl>
           </div>
           <div className="freeImagePromptWrap">
             {localEditLockedRule ? (
@@ -3618,7 +3737,7 @@ export default function FreeImageWorkspace({
                   if (event.key === 'Escape') setMention(null);
                   else updatePromptMention(event.currentTarget.value, event.currentTarget.selectionStart);
                 }}
-                placeholder={maxReferenceImages ? t.placeholder : t.placeholderNoReferences}
+                placeholder={localEditLockedRule ? t.localEditPlaceholder : maxReferenceImages ? t.placeholder : t.placeholderNoReferences}
                 maxLength={6000}
                 disabled={isGenerating}
               />
@@ -3977,24 +4096,27 @@ export default function FreeImageWorkspace({
           {!hasFullWorkspace ? <p className="freeImageAccessNote">{isGuest ? t.fullLocked : billingMessage(profile, t)}</p> : null}
           </div>
           <div className="studioComposerFooter">
+          {creationMode === 'single' && pricingError ? <ImageStudioFeedback>{t.quoteFailed}</ImageStudioFeedback> : null}
           {creationMode === 'single' ? (
           <div className="freeImageGenerateActions">
-          <button className="freeImageGenerateButton" type="submit" disabled={singleSubmitLocked || isGenerating || uploadingReferences || (hasFullWorkspace && (!sizeCheck.valid || !referencesValid || pricingLoading || !pricing))} aria-busy={singleSubmitLocked || isGenerating}>
+          <button className="freeImageGenerateButton" type="submit" disabled={queueSubmitting || singleSubmitLocked || isGenerating || uploadingReferences || (hasFullWorkspace && (!sizeCheck.valid || !referencesValid || pricingLoading || !pricing))} aria-busy={singleSubmitLocked || isGenerating}>
             {singleSubmitLocked || isGenerating ? <LoaderCircle size={19} className="spin" /> : <ImagePlus size={19} />}
             {singleSubmitLocked || isGenerating ? (
-              <><span className="freeImageGenerateLabel">{t.generating}</span>{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact showPromotionName={false} /> : null}</>
+              <><span className="freeImageGenerateLabel">{t.generating}</span>{hasFullWorkspace ? <ImageCreditPrice pricing={pricing} quantity={count} language={language} compact totalOnly /> : null}</>
             ) : hasFullWorkspace ? (
-              <><span className="freeImageGenerateLabel">{t.generate}</span><ImageCreditPrice pricing={pricing} quantity={count} language={language} compact showPromotionName={false} /></>
+              <><span className="freeImageGenerateLabel">{t.generate}</span><ImageCreditPrice pricing={pricing} quantity={count} language={language} compact totalOnly /></>
             ) : guestUsed ? t.signIn : t.generateFree(guestRemaining)}
           </button>
           <button
             className="freeImageQueueButton"
             type="button"
             onClick={queueCurrentGeneration}
-            disabled={isGenerating || uploadingReferences || !hasFullWorkspace || !sizeCheck.valid || !referencesValid || activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS}
-            title={activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS ? t.queueFull : t.queueNow}
+            disabled={queueSubmitting || singleSubmitLocked || isGenerating || uploadingReferences || !hasFullWorkspace || !sizeCheck.valid || !referencesValid || activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS}
+            aria-busy={queueSubmitting}
+            title={queueSubmitting ? t.queueSubmitting : activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS ? t.queueFull : t.queueNow}
           >
-            <ListTodo size={18} /> {activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS ? t.queueFullButton : t.queueNow}
+            {queueSubmitting ? <LoaderCircle size={18} className="spin" /> : <ListTodo size={18} />}
+            <span>{queueSubmitting ? t.queueSubmitting : activeQueueTaskCount >= MAX_ACTIVE_IMAGE_TASKS ? t.queueFullButton : t.queueNow}</span>
           </button>
           </div>
           ) : (
@@ -4009,7 +4131,7 @@ export default function FreeImageWorkspace({
             >
               {batchRepairSubmitting || batchRepairUploading || batchPricingLoading ? <LoaderCircle size={19} className="spin" /> : <WandSparkles size={19} />}
               <span>{batchQueueAtLimit ? t.queueFullButton : batchRepairSubmitting ? t.batchSubmitting : t.submitBatchNow}</span>
-              {batchRepairTotalCredits > 0 ? <strong>{batchRepairTotalCredits} {t.credits}</strong> : null}
+              {batchRepairTotalCredits > 0 ? <strong>{language === 'zh' ? '预留' : 'Reserve'} {batchRepairTotalCredits} {t.credits}</strong> : null}
             </button>
             <button
               className="freeImageQueueButton"
@@ -4022,7 +4144,7 @@ export default function FreeImageWorkspace({
             ><ListTodo size={18} />{batchQueueAtLimit ? t.queueFullButton : t.addBatchQueue}</button>
           </div>
           )}
-          {state.message ? <p className="freeImageMessage">{state.message}</p> : null}
+          <ImageStudioFeedback className="freeImageMessage" tone={state.messageTone}>{state.message}</ImageStudioFeedback>
           </div>
           </form>
         ) : (
@@ -4032,10 +4154,11 @@ export default function FreeImageWorkspace({
               <div className="freeImageTaskSummary" aria-label={language === 'zh' ? '任务概览' : 'Task overview'}>
                 <span><em>{language === 'zh' ? '进行中' : 'Active'}</em><strong>{queueTaskSummary.active}</strong></span>
                 <span><em>{language === 'zh' ? '已完成' : 'Completed'}</em><strong>{queueTaskSummary.completed}</strong></span>
-                <span><em>{language === 'zh' ? '失败/取消' : 'Failed'}</em><strong>{queueTaskSummary.failed}</strong></span>
+                <span className={queueTasks.some((task) => task.status === 'failed') ? 'error' : ''}><em>{language === 'zh' ? '失败/取消' : 'Failed'}</em><strong>{queueTaskSummary.failed}</strong></span>
                 <span><em>{language === 'zh' ? '全部' : 'Total'}</em><strong>{queueTaskSummary.total}</strong></span>
               </div>
             </header>
+            <ImageStudioFeedback className="freeImageMessage" tone={state.messageTone}>{state.message}</ImageStudioFeedback>
             {queueTasks.length ? (
               <div className="freeImageTaskList">
                 {displayedQueueTasks.map((task) => {
@@ -4090,9 +4213,9 @@ export default function FreeImageWorkspace({
                             ? `${task.sourceWidth}×${task.sourceHeight} → ${task.error === 'PROVIDER_SOURCE_SIZE_UNSUPPORTED' ? '—' : task.size.replace('x', '×')}`
                             : `${task.count} · ${task.size} · ${imageQualityLabel(task.quality, language)}`}</em>
                         </div>
-                        <p>{task.taskMode === 'batch-repair' ? imageTaskSourceLabel(task, language) : compactPrompt(task.canvasDisplayPrompt || task.prompt, 120)}</p>
+                        <p>{task.taskMode === 'batch-repair' || task.studioWorkflow ? imageTaskSourceLabel(task, language) : compactPrompt(task.canvasDisplayPrompt || task.prompt, 120)}</p>
                         {task.taskMode === 'batch-repair' ? <small>{compactPrompt(task.prompt, 90)}</small> : null}
-                        {task.status === 'failed' && task.error ? <small className="freeImageTaskError">{taskFailureText(task, t, maxReferenceImages)}</small> : null}
+                        {task.status === 'failed' && task.error ? <small className="freeImageTaskError" role="alert">{taskFailureText(task, t, maxReferenceImages)}</small> : null}
                       </div>
                       {!activeTask || task.results?.length ? (
                         <div className="freeImageTaskActions">
@@ -4204,8 +4327,8 @@ export default function FreeImageWorkspace({
             <div className="freeImageResultGrid count-1 studioMainPreview">
               {state.results.slice(activeResultIndex, activeResultIndex + 1).map((item, index) => (
                 <article key={item.id}>
-                  <img
-                    src={item.imageUrl}
+                  <GeneratedImagePreview
+                    item={item}
                     alt={`${item.prompt || prompt || t.result} ${index + 1}`}
                     decoding="async"
                     draggable={false}
@@ -4318,31 +4441,6 @@ export default function FreeImageWorkspace({
         </section>
       </div>
 
-      <section className="createCaseLibrary">
-        <div className="createCaseLibraryHeader">
-          <div><h3>{t.caseTitle}</h3></div>
-          <button type="button" onClick={onBrowseCases}>{t.browseCases}</button>
-        </div>
-        <div className="createQuickFilters" role="tablist" aria-label={t.caseTitle}>
-          <button className={category === 'All' ? 'active' : ''} type="button" onClick={() => onCategoryChange?.('All')}>{t.caseAll}</button>
-          {categoryOptions.map((option) => (
-            <button className={category === option.value ? 'active' : ''} type="button" onClick={() => onCategoryChange?.(option.value)} key={option.value}>{option.label}</button>
-          ))}
-        </div>
-        {cases.length ? (
-          <div className="createCaseGrid">
-            {cases.map((item) => (
-              <button className="createCaseCard" type="button" onClick={() => onOpenCase?.(item)} key={item.id}>
-                <img src={item.thumbnail || item.image} alt={item.imageAlt || item.title} loading="lazy" decoding="async" fetchPriority="low" />
-                <span>{categoryLabels.get(item.category) || item.category}</span>
-                <strong>{item.title}</strong>
-                <em><Eye size={14} />{t.openCase}</em>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </section>
-
       {referenceAssetPickerOpen ? <div className="freeImageAssetPickerBackdrop">
         <section className="freeImageAssetPicker" role="dialog" aria-modal="true" aria-label={t.assetLibrary}>
           <header><strong><Images size={17} />{t.assetLibrary}</strong><button type="button" onClick={() => { setReferenceAssetSelectedIds([]); setReferenceAssetPickerOpen(false); }} aria-label={t.closeLibrary}><X size={17} /></button></header>
@@ -4366,12 +4464,9 @@ export default function FreeImageWorkspace({
           language={language}
           onClose={() => setEditingReferenceId('')}
           onSave={(annotations, markedImageUrl) => {
-            setReferences((current) => current.map((item) => item.id === selectedEditorReference.id ? {
-              ...item,
-              annotations,
-              markedImageUrl: markedImageUrl || item.markedImageUrl || '',
-              thumbnailUrl: markedImageUrl || item.thumbnailUrl
-            } : item));
+            setReferences((current) => current.map((item) => item.id === selectedEditorReference.id
+              ? referenceWithEditAnnotations(item, annotations, markedImageUrl)
+              : item));
             setEditingReferenceId('');
           }}
         />
@@ -4435,6 +4530,7 @@ export default function FreeImageWorkspace({
                   value={previewPrompt}
                   onChange={(event) => {
                     setPreviewPrompt(event.target.value);
+                    setPreviewPromptEdited(true);
                     setPreviewPromptCopied(false);
                   }}
                   maxLength={6000}

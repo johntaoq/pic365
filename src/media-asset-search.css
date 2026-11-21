@@ -25,6 +25,98 @@
   --asset-search-accent: #76f3a2;
   --asset-search-error: #ffb6bf;
 }
+.mediaAssetCenter .mediaAssetToolbar button,
+.mediaAssetCenter .mediaAssetLoadMore,
+.mediaAssetCenter .mediaAssetConfirmDialog button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0;
+  border-radius: 8px;
+}
+.mediaAssetCenter .mediaAssetToolbar button:not(.mediaAssetUploadButton):not(.danger),
+.mediaAssetCenter .mediaAssetLoadMore,
+.mediaAssetCenter .mediaAssetConfirmDialog button:not(.danger) {
+  border-color: var(--asset-search-line);
+  background: var(--asset-search-surface);
+  color: var(--asset-search-ink);
+}
+.mediaAssetCenter .mediaAssetToolbar button:not(.mediaAssetUploadButton):not(.danger):hover:not(:disabled),
+.mediaAssetCenter .mediaAssetToolbar button.active:not(.mediaAssetUploadButton):not(.danger),
+.mediaAssetCenter .mediaAssetLoadMore:hover:not(:disabled),
+.mediaAssetCenter .mediaAssetConfirmDialog button:not(.danger):hover:not(:disabled) {
+  border-color: var(--asset-search-accent);
+  background: var(--asset-search-active);
+  color: var(--asset-search-accent);
+}
+.mediaAssetCenter .mediaAssetToolbar button.active { box-shadow: inset 0 -2px var(--asset-search-accent); }
+.mediaAssetCenter .mediaAssetMain .mediaAssetToolbar button.mediaAssetUploadButton,
+.siteThemeBlack .mediaAssetCenter .mediaAssetMain .mediaAssetToolbar button.mediaAssetUploadButton {
+  font-size: 12px;
+  font-weight: 650;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.siteThemeLight .mediaAssetCenter .mediaAssetToolbar button.mediaAssetUploadButton {
+  border-color: var(--asset-search-accent);
+  background: var(--asset-search-accent);
+  color: #fff;
+}
+.siteThemeLight .mediaAssetCenter .mediaAssetToolbar button.mediaAssetUploadButton:hover:not(:disabled) {
+  border-color: #0d5448;
+  background: #0d5448;
+  color: #fff;
+}
+.mediaAssetCenter .mediaAssetBulkBar :is(button,select) { border-radius: 8px; }
+.mediaAssetCenter .mediaAssetBulkBar button.mediaAssetPrimary,
+.siteThemeBlack .mediaAssetCenter .mediaAssetMain .mediaAssetBulkBar button.mediaAssetPrimary { border-radius: 8px; }
+.mediaAssetCenter .mediaAssetLoadMore { padding: 0 14px; cursor: pointer; }
+.mediaAssetCenter .mediaAssetLoadMore:disabled { cursor: wait; opacity: .58; }
+.mediaAssetCenter .mediaAssetToolbar button:focus-visible,
+.mediaAssetCenter .mediaAssetLoadMore:focus-visible,
+.mediaAssetCenter .mediaAssetConfirmDialog button:focus-visible {
+  outline: 2px solid var(--asset-search-accent);
+  outline-offset: 2px;
+}
+.mediaAssetCenter .mediaAssetMetaBar,
+.mediaAssetCenter .mediaAssetBrowseHeader small,
+.mediaAssetCenter .mediaAssetCardBody :is(span,small),
+.mediaAssetCenter .mediaAssetCard > button,
+.mediaAssetCenter .mediaAssetEmpty,
+.mediaAssetCenter .mediaAssetLoading,
+.mediaAssetCenter .mediaAssetConfirmDialog p { color: var(--asset-search-muted); }
+.mediaAssetCenter .mediaAssetEmpty h2,
+.mediaAssetCenter .mediaAssetConfirmDialog h2 { color: var(--asset-search-ink); }
+.mediaAssetCenter .mediaAssetConfirmDialog > strong { color: var(--asset-search-error); }
+.siteThemeLight .mediaAssetCenter .mediaAssetCard.selectionMode.selected {
+  border-color: var(--asset-search-accent);
+  box-shadow: inset 0 0 0 1px var(--asset-search-accent), 0 8px 20px #30445a14;
+}
+.siteThemeLight .mediaAssetCenter .mediaAssetToolbar button.danger,
+.siteThemeLight .mediaAssetCenter .mediaAssetConfirmDialog button.danger {
+  border-color: #efc0c7;
+  background: #fff0f2;
+  color: var(--asset-search-error);
+}
+.siteThemeLight .mediaAssetCenter .mediaAssetToolbar button.danger:hover:not(:disabled),
+.siteThemeLight .mediaAssetCenter .mediaAssetConfirmDialog button.danger:hover:not(:disabled) {
+  border-color: #d98a97;
+  background: #ffe4e9;
+  color: #982b3e;
+}
+.mediaAssetBreadcrumb { min-width: 0; }
+.mediaAssetBreadcrumb ol { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.mediaAssetBreadcrumbRoot, .mediaAssetBreadcrumbSeparator { flex: 0 0 auto; }
+.mediaAssetBreadcrumbRoot button { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; min-width: 44px; margin: 0; padding: 3px 5px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--asset-search-accent); font: inherit; font-size: 17px; font-weight: 700; line-height: 1.3; cursor: pointer; }
+.mediaAssetBreadcrumbRoot button:hover { background: var(--asset-search-active); border-color: var(--asset-search-line); }
+.mediaAssetBreadcrumbRoot button:focus-visible { outline: 2px solid var(--asset-search-accent); outline-offset: 1px; }
+.mediaAssetBreadcrumbSeparator { display: flex; color: var(--asset-search-muted); }
+.mediaAssetBreadcrumbCurrent { flex: 1 1 auto; min-width: 0; }
+.mediaAssetBrowseHeader .mediaAssetBreadcrumbCurrent h2 { color: var(--asset-search-ink); white-space: normal; overflow-wrap: anywhere; }
+@media (pointer: coarse) {
+  .mediaAssetBreadcrumbRoot button { min-height: 44px; }
+}
 .assetExplorerSearch { display: grid; gap: 12px; margin: 14px 0; color: var(--asset-search-ink); }
 .assetExplorerSearch input, .assetExplorerSearch select, .assetExplorerSearch button,
 .assetTagEditor input, .assetTagEditor button, .assetExplorerConditions button, .assetCardTags button {

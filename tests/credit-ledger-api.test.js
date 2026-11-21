@@ -116,3 +116,46 @@ test('ordinary users can only retrieve their own detailed ledger', async () => {
   assert.equal(result.payload.ledger.items[0].userAdminNote, '');
   assert.equal(result.payload.ledger.items[0].requesterEmail, '');
 });
+
+test('filtered balances include newer rows outside the filter and equal timestamps remain stable across pages', () => {
+  const user = db.createUser({ email: 'ledger-order@example.com', password: 'testing-1234', fullName: 'Ordering' });
+  const insert = db.getDb().prepare(`INSERT INTO credit_ledger (id,user_id,amount,type,source,metadata,created_at)
+    VALUES (?, ?, ?, ?, 'ordering', '{}', '2026-09-08T01:00:00.000Z')`);
+  insert.run('order-a', user.id, -5, 'generation');
+  insert.run('order-b', user.id, -3, 'generation');
+  insert.run('order-c', user.id, 2, 'grant');
+  db.getDb().prepare('UPDATE users SET credit_balance = 94 WHERE id = ?').run(user.id);
+  const result = db.listCreditLedgerPage({ userId: user.id, category: 'ai_image' });
+  assert.deepEqual(result.items.map((item) => item.id), ['order-b', 'order-a']);
+  assert.equal(result.items[0].balanceAfter, 92);
+  assert.equal(result.items[1].balanceAfter, 95);
+  assert.equal(result.items[1].balanceBefore, 100);
+});
+
+test('multiple matching tasks or audit rows cannot duplicate a ledger page, and exact references win', () => {
+  const connection = db.getDb();
+  const reference = 'ledger-exact-reference';
+  const timestamp = '2026-09-09T01:00:00.000Z';
+  const reservation = connection.prepare(`INSERT INTO credit_reservations (id,user_id,prompt,metadata_json,created_at)
+    VALUES (?, ?, '', ?, ?)`);
+  reservation.run(reference, member.id, '{}', timestamp);
+  reservation.run('ledger-other-reservation', member.id, JSON.stringify({ externalReferenceId: reference }), timestamp);
+  const generation = connection.prepare(`INSERT INTO generations
+    (id,user_id,reservation_id,prompt,model,size,quality,provider,status,created_at)
+    VALUES (?, ?, ?, '', ?, '1024x1024', 'low', 'test', 'succeeded', ?)`);
+  generation.run(reference, member.id, reference, 'exact-model', timestamp);
+  generation.run('ledger-other-generation', member.id, reference, 'other-model', timestamp);
+  connection.prepare(`INSERT INTO credit_ledger (id,user_id,amount,type,source,reference_id,metadata,created_at)
+    VALUES ('ledger-unique-row', ?, -1, 'generation', 'test_image', ?, '{}', ?)`)
+    .run(member.id, reference, timestamp);
+  const audit = connection.prepare(`INSERT INTO audit_events
+    (id,category,action,credit_ledger_id,balance_before,balance_after,created_at)
+    VALUES (?, 'credits', 'balance_test', 'ledger-unique-row', 20, 19, ?)`);
+  audit.run('ledger-audit-a', timestamp);
+  audit.run('ledger-audit-b', timestamp);
+  const result = db.listCreditLedgerPage({ includeAllUsers: true, search: reference, pageSize: 10 });
+  assert.equal(result.pagination.total, 1);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].detail.model, 'exact-model');
+  assert.equal(result.items[0].balanceAfter, 19);
+});

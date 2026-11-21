@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   dimensionsForImageSizeTemplateRatio,
   imageSizeTemplateFamily,
   imageSizeTemplateForModel,
+  loadImageStudioSizeSelections,
   loadImageSizePreferences,
   preferredImageSize,
+  preferredStudioImageSize,
+  saveImageStudioSizeSelections,
   saveImageSizePreferences,
   validateImageSizeTemplateCatalog
 } from '../shared/image-size-templates.js';
@@ -51,4 +55,45 @@ test('both workspaces can persist and reload the same provider size preference',
   assert.deepEqual(loaded, { gpt: '1536x1024', banana: '1024x1536' });
   assert.equal(preferredImageSize(loaded, 'gpt', 'gpt-image-1'), '1536x1024');
   assert.equal(preferredImageSize({ mai: '512x512' }, 'mai', 'MAI-Image-2.5'), '1024x1024');
+});
+
+test('image studio defaults to a square and remembers explicit selections without replacing templates', () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) || null; },
+    setItem(key, value) { values.set(key, value); }
+  };
+  const templates = { gpt: '1536x1024' };
+  for (const [providerId, model] of [
+    ['gpt', 'gpt-image-2'],
+    ['gemini', 'gemini-3.1-flash-image'],
+    ['mai', 'MAI-Image-2.6']
+  ]) {
+    assert.equal(preferredStudioImageSize({}, {}, providerId, model), '1024x1024');
+  }
+  assert.equal(preferredStudioImageSize({}, templates, 'gpt', 'gpt-image-2'), '1536x1024');
+  assert.equal(saveImageStudioSizeSelections({ gpt: '1024x1536', gemini: 'auto' }, storage), true);
+  const selections = loadImageStudioSizeSelections(storage);
+  assert.deepEqual(selections, { gpt: '1024x1536', gemini: 'auto' });
+  assert.equal(preferredStudioImageSize(selections, templates, 'gpt', 'gpt-image-2'), '1024x1536');
+  assert.equal(preferredStudioImageSize(selections, templates, 'gemini', 'gemini-3.1-flash-image'), 'auto');
+  assert.equal(preferredStudioImageSize(selections, templates, 'mai', 'MAI-Image-2.6'), '1024x1024');
+  assert.equal(preferredStudioImageSize({ mai: 'auto' }, {}, 'mai', 'MAI-Image-2.5'), '1024x1024');
+  assert.equal(preferredStudioImageSize({ gpt: '512x512' }, templates, 'gpt', 'gpt-image-2'), '1536x1024');
+  assert.deepEqual(templates, { gpt: '1536x1024' });
+  values.set('pic365.image-studio.size-selection.v1', '{"gpt":123,"gemini":"not-a-size"}');
+  assert.deepEqual(loadImageStudioSizeSelections(storage), {});
+});
+
+test('single, batch and layout creation use the same square-default size settings', () => {
+  const source = fs.readFileSync(new URL('../src/free-image-workspace.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const \[sizeMode, setSizeMode\] = useState\('custom'\)/);
+  assert.match(source, /const \[width, setWidth\] = useState\(1024\)/);
+  assert.match(source, /const \[height, setHeight\] = useState\(1024\)/);
+  assert.match(source, /const \[ratioLock, setRatioLock\] = useState\('1:1'\)/);
+  assert.match(source, /preferredStudioImageSize\(sizeSelectionsByProvider, sizeTemplatesByProvider/);
+  assert.match(source, /imageSettings=\{\{[\s\S]*?\bsize, sizeMode, sizeTemplate,[\s\S]*?\}\}/);
+  const standardSettings = source.slice(source.indexOf('<FreeImageSettings\n'));
+  assert.match(standardSettings, /\bsize, sizeMode, sizeTemplate, commonSizeOptions/);
+  assert.match(standardSettings, /batch=\{creationMode !== 'single'\}/);
 });

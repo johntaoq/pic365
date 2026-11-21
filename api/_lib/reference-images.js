@@ -214,8 +214,20 @@ export async function loadReferenceImageInputs(userId, references, { model = '' 
 export function buildReferencePrompt(prompt, references, { includeNumberedMap = true } = {}) {
   if (!references.length) return prompt;
   const markedIndexes = references
-    .map((reference, index) => reference.annotations.length ? index + 1 : null)
+    .map((reference, index) => reference.annotations?.length ? index + 1 : null)
     .filter(Boolean);
+  if (markedIndexes.length) {
+    const inputMap = includeNumberedMap && references.length > 1
+      ? references.map((_, index) => `Reference ${index + 1} / 图${index + 1}${index === 0 ? ' / 母版' : ''} = input image ${index + 1}.`).join('\n')
+      : '';
+    return [
+      inputMap,
+      `Local edit of image${markedIndexes.length === 1 ? '' : 's'} ${markedIndexes.join(', ')}. Colored brush strokes and outlines are temporary editing guides, not image content.`,
+      'Apply the user request only within the marked regions. Remove all guide paint, tint and outlines, including boundary strokes; restore the image beneath them. Keep all other content and the original framing unchanged.',
+      'User request:',
+      prompt
+    ].filter(Boolean).join('\n');
+  }
   const numberedMap = includeNumberedMap
     ? references.map((reference, index) => {
       const number = index + 1;
@@ -228,15 +240,7 @@ export function buildReferencePrompt(prompt, references, { includeNumberedMap = 
   return [
     `Use the ${references.length} supplied reference image${references.length === 1 ? '' : 's'} in their given order.`,
     numberedMap ? `Fixed image naming and input order:\n${numberedMap}\n${referenceImageInterpretationRule('en')} ${referenceImageInterpretationRule('zh')}` : '',
-    markedIndexes.length
-      ? 'This is a localized image-editing task, not a new image composition.'
-      : 'Preserve the visual facts the user is referring to, but follow the written request for composition and changes.',
-    markedIndexes.length
-      ? `Reference image${markedIndexes.length === 1 ? '' : 's'} ${markedIndexes.join(', ')} ${markedIndexes.length === 1 ? 'contains' : 'contain'} colored painted or outlined annotations. Modify only the content inside those marked regions. Treat the marks only as editing guides and never reproduce the colored marks in the final image.`
-      : '',
-    markedIndexes.length
-      ? 'Lock every unmarked region. Preserve the original crop, composition, geometry, subject identity, pose, background, lighting, colors, materials, text, logos, edges, shadows, and fine details outside the marked regions exactly. Do not redraw, restyle, reframe, or regenerate the whole image.'
-      : '',
+    'Preserve the visual facts the user is referring to, but follow the written request for composition and changes.',
     'User request:',
     prompt
   ].filter(Boolean).join('\n');

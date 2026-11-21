@@ -10,6 +10,7 @@ import {
 } from './image-generation.js';
 
 export const IMAGE_SIZE_TEMPLATE_STORAGE_KEY = 'pic365.image-size-preferences.v1';
+export const IMAGE_STUDIO_SIZE_SELECTION_STORAGE_KEY = 'pic365.image-studio.size-selection.v1';
 const LEGACY_STORAGE_KEY = 'pic365.free-image.size-templates.v1';
 
 const MAI_RATIOS = IMAGE_RATIO_PRESETS.filter((preset) => (
@@ -114,6 +115,33 @@ export function preferredImageSize(preferences, providerId, model) {
   const preferred = String(preferences?.[providerId] || '').toLowerCase();
   if (preferred && validateImageSizeForModel(preferred, model).valid) return preferred;
   return imageSizeTemplateForModel(model).defaultSize;
+}
+
+export function loadImageStudioSizeSelections(storage = globalThis.localStorage) {
+  try {
+    const parsed = JSON.parse(storage?.getItem(IMAGE_STUDIO_SIZE_SELECTION_STORAGE_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed)
+      .filter(([providerId, size]) => providerId && typeof size === 'string' && parseImageSize(size))
+      .map(([providerId, size]) => [providerId, size.toLowerCase()]));
+  } catch {
+    return {};
+  }
+}
+
+export function saveImageStudioSizeSelections(selections, storage = globalThis.localStorage) {
+  try {
+    storage?.setItem(IMAGE_STUDIO_SIZE_SELECTION_STORAGE_KEY, JSON.stringify(selections || {}));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function preferredStudioImageSize(selections, templates, providerId, model) {
+  const selected = selections?.[providerId];
+  if (selected && validateImageSizeForModel(selected, model).valid) return selected;
+  return preferredImageSize(templates, providerId, model);
 }
 
 export function validateImageSizeTemplateCatalog(catalog = IMAGE_SIZE_TEMPLATE_CATALOG) {

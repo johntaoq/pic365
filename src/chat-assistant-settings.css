@@ -1,0 +1,66 @@
+.assistantAdminSettings,.assistantUserSettings {
+  --as-line: #34475b; --as-muted: #a5b6ca; --as-surface: #111c2d; --as-input: #091323; --as-accent: #a8f8dc;
+  min-width: 0; color: #e7f1fa;
+}
+.siteThemeLight :is(.assistantAdminSettings,.assistantUserSettings) {
+  --as-line: #cbdedb; --as-muted: #58716e; --as-surface: #f4f9f8; --as-input: #fff; --as-accent: #286e5d; color: #273f3b;
+}
+.siteThemeBlack :is(.assistantAdminSettings,.assistantUserSettings) {
+  --as-line: #294833; --as-muted: #9aae9f; --as-surface: #090e0a; --as-input: #030604; --as-accent: #91f7ab; color: #e8f5eb;
+}
+.assistantSettingsHeading,.assistantSettingsPromptFooter,.assistantSettingsSave,.assistantUserSettingsHeading {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.assistantSettingsHeading { margin-bottom: 22px; }
+.assistantSettingsHeading h3 { display: flex; align-items: center; gap: 9px; margin: 0; }
+.assistantSettingsHeading > div { flex: 1; min-width: 220px; }
+.assistantAdminSettings p,.assistantUserSettings p { margin: 8px 0 14px; font-size: 13px; line-height: 1.7; color: var(--as-muted); }
+.assistantAdminSettings fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+.assistantSettingsColumns { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 20px; }
+.assistantSettingsCard { border: 1px solid var(--as-line); background: var(--as-surface); border-radius: 16px; padding: 20px; min-width: 0; }
+.assistantSettingsCard h4 { font-size: 16px; margin: 0; }
+.assistantSettingsCard > label,.assistantUserSettings > label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
+.assistantAdminSettings textarea,.assistantAdminSettings select,.assistantUserSettings select {
+  display: block; box-sizing: border-box; min-width: 0; width: 100%; max-width: 100%;
+  border: 1px solid var(--as-line); background: var(--as-input); color: inherit;
+  border-radius: 10px; padding: 11px 12px; font: inherit; font-size: 13px; line-height: 1.6;
+}
+.assistantAdminSettings textarea { resize: vertical; min-height: 240px; }
+.assistantSettingsPromptFooter { margin-top: 10px; color: var(--as-muted); font-size: 12px; }
+.assistantAdminSettings button,.assistantUserSettings button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  color: inherit; background: var(--as-surface); border: 1px solid var(--as-line); border-radius: 10px;
+  padding: 9px 12px; cursor: pointer; font-size: 13px;
+}
+.assistantAdminSettings button:hover,.assistantUserSettings button:hover { border-color: var(--as-accent); }
+.assistantAdminSettings :is(button,input,select,textarea):focus-visible,.assistantUserSettings :is(button,select):focus-visible {
+  outline: 2px solid var(--as-accent); outline-offset: 2px;
+}
+.assistantAdminSettings :disabled,.assistantUserSettings :disabled { opacity: .55; cursor: not-allowed; }
+.assistantModelRange { max-height: 320px; overflow-y: auto; padding: 3px; display: grid; gap: 8px; }
+.assistantModelOption { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--as-line); border-radius: 10px; padding: 12px; cursor: pointer; }
+.assistantModelOption:has(input:checked) { border-color: var(--as-accent); background: color-mix(in srgb,var(--as-accent) 7%,var(--as-surface)); }
+.assistantModelOption input { accent-color: var(--as-accent); width: 17px; height: 17px; flex-shrink: 0; margin: 1px 0 0; }
+.assistantModelOption span { min-width: 0; display: grid; gap: 5px; overflow-wrap: anywhere; }
+.assistantModelOption strong { font-size: 13px; }
+.assistantModelOption small { font-size: 12px; color: var(--as-muted); }
+.assistantSettingsSave { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--as-line); font-size: 13px; color: var(--as-muted); }
+.assistantSettingsSave .assistantSettingsPrimary { color: var(--as-input); background: var(--as-accent); font-weight: 700; border-color: transparent; min-height: 42px; }
+.assistantAdminSettings .assistantSettingsNotice { border: 1px solid var(--as-line); border-radius: 10px; padding: 10px 14px; color: inherit; }
+.chatCompanionHeader.withSettings { grid-template-columns: auto minmax(0,1fr) repeat(4,auto); gap: 6px; }
+.chatCompanionHeader.withSettings strong { white-space: nowrap; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.chatCompanionHeader.withSettings button[aria-expanded=true] { border-color: currentColor; }
+.chatCompanionPanel.settingsOpen { grid-template-rows: auto minmax(0,1fr) auto; }
+.chatCompanionTranscript:has(.assistantUserSettings) { display: block; }
+.assistantUserSettings { background: var(--as-surface); border: 1px solid var(--as-line); border-radius: 14px; padding: 14px; }
+.assistantUserSettingsHeading strong { font-size: 14px; }
+.assistantUserSettingsHeading button { padding: 6px; width: 30px; height: 30px; }
+.assistantUserSettings p:last-child { margin-bottom: 0; }
+.assistantUserSettings p button { margin: 6px 0 0 8px; }
+@media (max-width: 850px) { .assistantSettingsColumns { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 480px) {
+  .assistantSettingsCard { padding: 14px; }
+  .assistantSettingsSave button { width: 100%; }
+  .chatCompanionHeader.withSettings { padding: 10px; gap: 4px; }
+  .chatCompanionHeader.withSettings button { width: 30px; height: 32px; }
+}

@@ -88,7 +88,7 @@ test('failed AI magic calls refund once using the request reference', () => {
   localDb.chargeAiToolCredit(user.id, {
     source: 'ai_magic_prompt',
     referenceId,
-    metadata: { model: 'gpt-5.6-luna' }
+    metadata: { model: 'gpt-6-luna' }
   });
   assert.equal(localDb.getUserProfile(user.id).creditBalance, 1);
 

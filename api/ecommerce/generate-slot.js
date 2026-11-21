@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  completeCreditReservation,
   createGeneration,
   getEcommerceProject,
   getEcommerceProjectAsset,
@@ -17,6 +16,9 @@ import {
 import { authenticateRequest } from '../_lib/local-auth.js';
 import { buildEcommerceSlotPrompt, selectEcommerceAssetsForSlot } from '../_lib/ecommerce-prompt.js';
 import { getEcommerceGenerationSystemPromptSettings } from '../_lib/ecommerce-generation-settings.js';
+import { settleImageGenerationBilling, validateImageInputPricing } from '../_lib/image-input-billing.js';
+import { newAPIImageErrorCode, requireNewAPIImageBalance } from '../_lib/newapi-account.js';
+import { estimateTextTokens } from '../_lib/text-token-estimate.js';
 import {
   claimEcommerceGenerationTask,
   completeEcommerceGenerationTask,
@@ -174,7 +176,16 @@ export default async function handler(req, res) {
       failTask('MASTER_ASSET_REQUIRED');
       return json(res, 400, { ok: false, error: 'MASTER_ASSET_REQUIRED', taskId });
     }
-    const providerConfig = getImageProviderConfig(project.imageProviderId, { userId: auth.user.id });
+    let providerConfig;
+    try {
+      await requireNewAPIImageBalance(auth.user.id);
+      providerConfig = getImageProviderConfig(project.imageProviderId, { userId: auth.user.id });
+    } catch (error) {
+      const code = error?.code || 'NEWAPI_BALANCE_UNAVAILABLE';
+      failTask(code);
+      const status = ['NEWAPI_BALANCE_REQUIRED','PIC365_STORAGE_PAYMENT_REQUIRED'].includes(code) ? 402 : code === 'NEWAPI_REAUTH_REQUIRED' ? 401 : code === 'NEWAPI_MODEL_NOT_ALLOWED' ? 403 : 503;
+      return json(res, status, { ok: false, error: code, taskId });
+    }
     if (!providerConfig) {
       failTask('AI_PROVIDER_NOT_CONFIGURED');
       return json(res, 400, { ok: false, error: 'AI_PROVIDER_NOT_CONFIGURED', taskId });
@@ -279,8 +290,12 @@ export default async function handler(req, res) {
     const size = baseGenerationId
       ? resolveEcommerceRefinementSize(baseGeneration, slot)
       : resolveEcommerceSlotGenerationSize(slot);
+    validateImageInputPricing(providerConfig.pricingConfig, providerConfig.model);
     const pricing = applyImagePromotion(
-      getImageGenerationPricing({ size, quality, model: providerConfig.model, referenceCount: images.length }, providerConfig.pricingConfig),
+      getImageGenerationPricing({
+        size, quality, model: providerConfig.model, referenceCount: images.length, prompt,
+        estimatedTextTokens: providerConfig.pricingConfig?.chargeTextTokens ? estimateTextTokens(prompt) : undefined
+      }, providerConfig.pricingConfig),
       getImagePromotionConfig()
     );
 
@@ -312,6 +327,13 @@ export default async function handler(req, res) {
           referenceCredits: pricing.referenceCredits,
           originalCredits: pricing.originalCredits,
           chargedCredits: pricing.credits,
+          imageTextCredits: pricing.imageTextCredits,
+          imageTextTokens: pricing.imageTextTokens,
+          imageTextInputRmb: pricing.imageTextInputRmb,
+          referenceTokens: pricing.referenceTokens,
+          referenceTokenCredits: pricing.referenceTokenCredits,
+          referenceTokenInputRmb: pricing.referenceTokenInputRmb,
+          inputTokenBillingMode: pricing.inputTokenBillingMode,
           promotionName: pricing.promotion?.active ? pricing.promotion.name : '',
           promotionPayPercent: pricing.promotion?.active ? pricing.promotion.payPercent : 100,
           promotionUpdatedAt: pricing.promotion?.active ? pricing.promotion.updatedAt : null
@@ -320,7 +342,7 @@ export default async function handler(req, res) {
     } catch (error) {
       const cancelled = isGenerationCancellation(error, taskController.signal);
       const billingErrors = new Set(['CREDITS_REQUIRED', 'GROUP_BUDGET_REQUIRED', 'GROUP_BALANCE_REQUIRED']);
-      const errorCode = cancelled ? 'GENERATION_CANCELLED' : billingErrors.has(error?.code) ? error.code : error?.code === 'GROUP_ACCESS_SUSPENDED' ? error.code : 'GENERATION_FAILED';
+      const errorCode = cancelled ? 'GENERATION_CANCELLED' : billingErrors.has(error?.code) || ['GROUP_ACCESS_SUSPENDED', 'BILLING_REQUEST_DUPLICATE'].includes(error?.code) ? error.code : 'GENERATION_FAILED';
       failTask(errorCode, cancelled ? 'cancelled' : 'failed');
       if (cancelled) return json(res, 409, { ok: false, error: errorCode, taskId, user: getUserProfile(auth.user.id) });
       if (billingErrors.has(errorCode)) return json(res, 402, { ok: false, error: errorCode, taskId, user: getUserProfile(auth.user.id) });
@@ -380,7 +402,7 @@ export default async function handler(req, res) {
         mime_type: storedImage.contentType,
         completed_at: new Date().toISOString()
       });
-      completeCreditReservation(reservation.reservationId);
+      const settledPricing = settleImageGenerationBilling(reservation.reservationId, pricing, providerResult.inputUsage);
       const output = selectEcommerceOutputGeneration(auth.user.id, projectId, slotId, generationId);
       const completedTask = completeEcommerceGenerationTask(auth.user.id, taskId, {
         status: 'succeeded',
@@ -392,7 +414,7 @@ export default async function handler(req, res) {
         task: completedTask,
         output,
         generation: generationPayload(getGeneration(auth.user.id, generationId), { includePrompt: Boolean(auth.user.isSuperAdmin) }),
-        creditsCharged: reservation.creditAmount,
+        creditsCharged: settledPricing.chargedCredits,
         pricing: {
           bandId: pricing.bandId,
           pricingStrategy: pricing.pricingStrategy,
@@ -408,18 +430,24 @@ export default async function handler(req, res) {
           referenceImagePriceRmb: pricing.referenceImagePriceRmb,
           referenceUnitCredits: pricing.referenceUnitCredits,
           referenceCredits: pricing.referenceCredits,
+          imageCredits: pricing.imageCredits,
+          imageTextEnabled: pricing.imageTextEnabled,
+          imageTextCredits: pricing.imageTextCredits,
+          imageTextTokens: pricing.imageTextTokens,
+          imageTextInputRmb: pricing.imageTextInputRmb,
           estimatedActualCostRmb: pricing.estimatedActualCostRmb,
           estimatedListCostRmb: pricing.estimatedListCostRmb,
           originalCredits: pricing.originalCredits,
           credits: pricing.credits,
           discountApplied: pricing.discountApplied,
-          promotion: pricing.promotion
+          promotion: pricing.promotion,
+          ...settledPricing
         },
         user: getUserProfile(auth.user.id)
       });
     } catch (error) {
       const cancelled = isGenerationCancellation(error, taskController.signal);
-      const errorCode = cancelled ? 'GENERATION_CANCELLED' : classifyImageProviderError(error);
+      const errorCode = cancelled ? 'GENERATION_CANCELLED' : newAPIImageErrorCode(error, providerConfig) || classifyImageProviderError(error);
       const moderationBlocked = errorCode === 'CONTENT_MODERATION_BLOCKED';
       updateGeneration(generationId, {
         status: cancelled ? 'cancelled' : 'failed',
@@ -440,7 +468,7 @@ export default async function handler(req, res) {
         generationId,
         errorCode
       });
-      return json(res, cancelled ? 409 : moderationBlocked ? 422 : ['UPSTREAM_BUSY', 'IMAGE_PROVIDER_UNAVAILABLE', 'IMAGE_PROVIDER_TIMEOUT'].includes(errorCode) ? 503 : errorCode === 'IMAGE_PROVIDER_BALANCE_ERROR' ? 402 : 502, {
+      return json(res, cancelled ? 409 : moderationBlocked ? 422 : ['UPSTREAM_BUSY', 'IMAGE_PROVIDER_UNAVAILABLE', 'IMAGE_PROVIDER_TIMEOUT'].includes(errorCode) ? 503 : ['IMAGE_PROVIDER_BALANCE_ERROR', 'NEWAPI_BALANCE_REQUIRED'].includes(errorCode) ? 402 : errorCode === 'NEWAPI_REAUTH_REQUIRED' ? 401 : 502, {
         ok: false,
         error: errorCode,
         providerName: providerConfig.name,

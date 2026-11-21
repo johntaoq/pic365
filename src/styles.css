@@ -13177,6 +13177,7 @@ body[data-theme="light"] {
 
 .deliveryHeaderActions > button,
 .deliverySequenceWorkspace > header button,
+.deliverySequenceExportActions > button,
 .deliveryPreviewActions button,
 .deliveryInspectorActions button,
 .deliveryReuseGrid > article > button,
@@ -13198,6 +13199,7 @@ body[data-theme="light"] {
 
 .deliveryHeaderActions > button:disabled,
 .deliverySequenceWorkspace > header button:disabled,
+.deliverySequenceExportActions > button:disabled,
 .deliveryPreviewActions button:disabled,
 .deliveryInspectorActions button:disabled,
 .deliveryReuseGrid > article > button:disabled {
@@ -14191,6 +14193,14 @@ body.deliveryObjectDragging * {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.deliveryExportControls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(149, 167, 220, 0.14);
+}
+
 .deliveryPreviewHint {
   align-items: center;
   color: #7f91ad;
@@ -14944,7 +14954,8 @@ body.deliveryObjectDragging * {
 }
 
 .deliveryInspectorActions button.primary,
-.deliverySequenceWorkspace > header button.primary {
+.deliverySequenceWorkspace > header button.primary,
+.deliverySequenceExportActions > button.primary {
   background: linear-gradient(135deg, #9df6d2, #a8d2ff);
   border: 0;
   color: #07111c;
@@ -15061,6 +15072,16 @@ body.deliveryObjectDragging * {
   display: flex;
   gap: 7px;
 }
+
+.deliverySequenceWorkspace > header > div:only-child { display: grid; gap: 3px; }
+
+.deliverySequenceExportActions {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
+.deliverySequenceExportActions > .deliveryWatermarkSettings { width: 100%; }
 
 .deliverySequenceStats {
   align-items: center;
@@ -17517,19 +17538,19 @@ body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
 }
 
 .chatCompanionResizeHandle {
-  align-items: flex-end;
+  align-items: flex-start;
   background: transparent;
   border: 0;
   bottom: 3px;
-  cursor: nwse-resize;
+  cursor: nesw-resize;
   display: flex;
   flex-direction: column;
   gap: 2px;
   height: 28px;
   justify-content: flex-end;
+  left: 3px;
   padding: 5px;
   position: absolute;
-  right: 3px;
   touch-action: none;
   width: 28px;
   z-index: 3;
@@ -17538,8 +17559,8 @@ body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
 .chatCompanionResizeHandle span {
   border-bottom: 1px solid rgba(168, 248, 220, 0.72);
   display: block;
-  transform: rotate(-45deg);
-  transform-origin: right center;
+  transform: rotate(45deg);
+  transform-origin: left center;
 }
 
 .chatCompanionResizeHandle span:nth-child(1) { width: 7px; }
@@ -17548,7 +17569,7 @@ body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
 
 .chatCompanion.resizing,
 .chatCompanion.resizing * {
-  cursor: nwse-resize !important;
+  cursor: nesw-resize !important;
   user-select: none;
 }
 
@@ -18490,7 +18511,7 @@ body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
 .siteThemeLight .deliveryAdvanced,
 .siteThemeLight .deliverySubPanel,
 .siteThemeLight .deliveryRefinementAssetPicker { border-color: #d8e1ea; background: #f4f7fa; }
-.siteThemeLight :is(.deliveryHeaderActions > button, .deliveryTabs button, .deliverySequenceWorkspace > header button, .deliveryPreviewActions button, .deliveryInspectorActions button, .deliveryInspector > header > button, .deliveryReuseGrid > article > button, .deliveryMyTemplates article > button, .deliveryObjectToolbar button, .deliveryUploadRefinementAsset) {
+.siteThemeLight :is(.deliveryHeaderActions > button, .deliveryTabs button, .deliverySequenceWorkspace > header button, .deliverySequenceExportActions > button, .deliveryPreviewActions button, .deliveryInspectorActions button, .deliveryInspector > header > button, .deliveryReuseGrid > article > button, .deliveryMyTemplates article > button, .deliveryObjectToolbar button, .deliveryUploadRefinementAsset) {
   border-color: #d4dee8;
   background: #eef3f7;
   color: #40566e;
@@ -18498,7 +18519,7 @@ body[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
 .siteThemeLight :is(.deliveryHeaderActions > button.active, .deliveryTabs button.active, .deliveryObjectToolbar button.active) { border-color: rgba(13, 148, 136, 0.44); background: #dff2ec; color: #116657; box-shadow: none; }
 .siteThemeLight .deliveryHeaderActions > button > i { border-color: #d4dee8; background: #ffffff; color: #60758d; }
 .siteThemeLight .deliveryHeaderActions > button.active > i { border-color: #0d9488; background: #0d9488; color: #ffffff; }
-.siteThemeLight :is(.deliveryInspectorActions button.primary, .deliverySequenceWorkspace > header button.primary, .deliveryPreviewActions button:last-child, .deliveryCreateRefinement, .deliveryLightboxObjectToolbar button.save) { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
+.siteThemeLight :is(.deliveryInspectorActions button.primary, .deliverySequenceWorkspace > header button.primary, .deliverySequenceExportActions > button.primary, .deliveryPreviewActions button:last-child, .deliveryCreateRefinement, .deliveryLightboxObjectToolbar button.save) { border-color: #0d9488; background: linear-gradient(135deg, #0f9f8e, #287bb6); color: #ffffff; }
 .siteThemeLight :is(.deliverySlotItems > article, .deliveryRemovedTray article, .deliveryComparisonEditor > div, .deliveryValidationList > div, .deliverySequenceList article, .deliveryReuseGrid > article, .deliveryMyTemplates article, .deliverySelectedRefinementAssets article, .deliveryRefinementAssetPicker > div > button) { border-color: #d8e1ea; background: #f8fafc; color: #30445a; }
 .siteThemeLight :is(.deliverySlotItems > article:hover, .deliverySlotItems > article:focus-within, .deliverySlotItems > article.active, .deliverySequenceList article.included, .deliveryRefinementAssetPicker > div > button.active) { border-color: rgba(13, 148, 136, 0.42); background: #eaf7f3; }
 .siteThemeLight :is(.deliverySlotRailHeader small, .deliverySlotRail small, .deliveryRemovedTray summary small, .deliveryRemovedTray article small, .deliveryPreviewStage > header > em, .deliveryPreviewHint, .deliveryInspector > header span, .deliveryRefinementPanel > header small, .deliveryRefinementAssetsHeader small, .deliverySequenceWorkspace > header span, .deliverySequenceList small, .deliveryReuseGrid p, .deliveryMyTemplates > header span, .deliveryMyTemplates > p, .deliveryMyTemplates article small, .deliveryNoCheck, .deliveryValidationList small) { color: #6d8095; }
@@ -20642,6 +20663,7 @@ body[data-theme="black"] {
   .ecommerceAssetLibraryPicker > footer button.primary,
   .deliveryInspectorActions button.primary,
   .deliverySequenceWorkspace > header button.primary,
+  .deliverySequenceExportActions > button.primary,
   .deliveryCreateRefinement,
   .deliveryLightboxObjectToolbar button.save,
   .mediaAssetToolbar .mediaAssetUploadButton,
@@ -20683,6 +20705,7 @@ body[data-theme="black"] {
   .ecommerceAssetLibraryPicker > footer button.primary,
   .deliveryInspectorActions button.primary,
   .deliverySequenceWorkspace > header button.primary,
+  .deliverySequenceExportActions > button.primary,
   .deliveryCreateRefinement,
   .deliveryLightboxObjectToolbar button.save,
   .mediaAssetToolbar .mediaAssetUploadButton,
@@ -20721,6 +20744,7 @@ body[data-theme="black"] {
   .ecommerceAssetLibraryPicker > footer button.primary,
   .deliveryInspectorActions button.primary,
   .deliverySequenceWorkspace > header button.primary,
+  .deliverySequenceExportActions > button.primary,
   .deliveryCreateRefinement,
   .deliveryLightboxObjectToolbar button.save,
   .mediaAssetToolbar .mediaAssetUploadButton,
@@ -20752,6 +20776,7 @@ body[data-theme="black"] {
   .ecommerceAssetLibraryPicker > footer button.primary,
   .deliveryInspectorActions button.primary,
   .deliverySequenceWorkspace > header button.primary,
+  .deliverySequenceExportActions > button.primary,
   .deliveryCreateRefinement,
   .deliveryLightboxObjectToolbar button.save,
   .mediaAssetToolbar .mediaAssetUploadButton,
@@ -20792,6 +20817,7 @@ body[data-theme="black"] {
   .ecommerceAssetLibraryPicker > footer button.primary,
   .deliveryInspectorActions button.primary,
   .deliverySequenceWorkspace > header button.primary,
+  .deliverySequenceExportActions > button.primary,
   .deliveryCreateRefinement,
   .deliveryLightboxObjectToolbar button.save,
   .mediaAssetToolbar .mediaAssetUploadButton,
@@ -21524,3 +21550,15 @@ body[data-theme="black"] *::-webkit-scrollbar-thumb {
   .creditLedgerDetail dl { grid-template-columns: 1fr; }
   .creditLedgerDetail dl > div { grid-template-columns: 100px minmax(0, 1fr); }
 }
+/* Source-wallet storage authorization and invoice list. */
+.newapiStorage { padding: 20px; min-width: 0; }
+.newapiStorage h3, .storageActions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.newapiStorage form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.newapiStorage label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.newapiStorage input[type="number"], .newapiStorage select { width: 100%; min-width: 0; padding: 8px; color: inherit; background: transparent; border: 1px solid #69717c; border-radius: 6px; }
+.newapiStorage .storageConsent { grid-column: 1 / -1; display: flex; flex-direction: row; align-items: flex-start; }
+.storageActions { grid-column: 1 / -1; }
+.storageActions button, .storageActions a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; }
+.storageInvoiceList { max-height: 240px; overflow: auto; margin-top: 16px; }
+.storageInvoiceList article { display: flex; flex-direction: column; padding: 10px 0; border-top: 1px solid #69717c; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .newapiStorage form { grid-template-columns: 1fr; } }

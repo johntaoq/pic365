@@ -224,11 +224,13 @@ export function updateRegistrationEmailPolicy(actorUserId, values = {}, auditMet
 
 export function getUserMenuPreferences(userId) {
   const row = userId ? getDb().prepare('SELECT * FROM user_ui_preferences WHERE user_id = ?').get(userId) : null;
+  const sourceAccount = Boolean(userId && getDb().prepare('SELECT 1 FROM newapi_accounts WHERE user_id = ?').get(userId));
   return {
     hideEcommerce: Boolean(row?.hide_ecommerce),
-    hideTemplates: Boolean(row?.hide_templates),
-    hideCases: Boolean(row?.hide_cases),
-    hideApi: Boolean(row?.hide_api),
+    hideTemplates: sourceAccount || Boolean(row?.hide_templates),
+    hideCases: sourceAccount || Boolean(row?.hide_cases),
+    hideApi: sourceAccount || Boolean(row?.hide_api),
+    locked: { hideEcommerce: false, hideTemplates: sourceAccount, hideCases: sourceAccount, hideApi: sourceAccount },
     updatedAt: row?.updated_at || null
   };
 }
@@ -238,9 +240,9 @@ export function updateUserMenuPreferences(userId, values = {}) {
   const previous = getUserMenuPreferences(userId);
   const next = {
     hideEcommerce: values.hideEcommerce == null ? previous.hideEcommerce : Boolean(values.hideEcommerce),
-    hideTemplates: values.hideTemplates == null ? previous.hideTemplates : Boolean(values.hideTemplates),
-    hideCases: values.hideCases == null ? previous.hideCases : Boolean(values.hideCases),
-    hideApi: values.hideApi == null ? previous.hideApi : Boolean(values.hideApi)
+    hideTemplates: previous.locked.hideTemplates || (values.hideTemplates == null ? previous.hideTemplates : Boolean(values.hideTemplates)),
+    hideCases: previous.locked.hideCases || (values.hideCases == null ? previous.hideCases : Boolean(values.hideCases)),
+    hideApi: previous.locked.hideApi || (values.hideApi == null ? previous.hideApi : Boolean(values.hideApi))
   };
   const updatedAt = now();
   getDb().prepare(`

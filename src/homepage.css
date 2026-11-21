@@ -28,7 +28,7 @@
 .homeNavActions :is(.dropdownTrigger, .userTrigger) svg { color: #4d8290; }
 .homeNavActions .userTriggerName { color: #30445a; }
 .homeNavActions .avatarBadge { border-color: #c9d9e5; background: #e5f4f7; color: #0d7780; }
-.homeNavActions .homeWorkspaceButton { min-height: 42px; padding-inline: 13px; white-space: nowrap; }
+.homeNavActions button.homeWorkspaceButton { min-height: 42px; padding-inline: 13px; font-family: inherit; font-size: 14px; font-weight: 750; line-height: 1.25; letter-spacing: 0; white-space: nowrap; }
 .homeNavActions .homeGuideButton { width: 42px; min-width: 42px; min-height: 42px; padding: 0; }
 .homeGhostButton, .homePrimaryButton, .homeSecondaryButton { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 13px; padding: 0 17px; font-weight: 820; cursor: pointer; }
 .homeGhostButton { border: 0; color: #3e526e; background: #f1f5f8; }
@@ -177,7 +177,7 @@
   .homeNavActions { gap: 4px; }
   .homeNavActions .dropdownTrigger { min-width: 72px; padding-inline: 8px; }
   .homeNavActions .userTrigger { min-width: 44px; max-width: 118px; }
-  .homeNavActions .homeWorkspaceButton { padding-inline: 10px; font-size: 12px; }
+  .homeNavActions button.homeWorkspaceButton { padding-inline: 10px; font-size: 12px; }
   .homeNavActions .homeGhostButton { display: none; }
   .homeHeroGrid { gap: 28px; }
   .homeHeroVisual { transform: scale(.9); transform-origin: center; }
@@ -226,6 +226,7 @@
   .homeNavActions .themePickerTrigger { width: 42px; min-width: 42px; height: 36px; min-height: 36px; }
   .homeNavActions .accountButton { min-width: 0; padding-inline: 8px; font-size: 11px; }
   .homeNavActions .homePrimaryButton { min-height: 36px; padding-inline: 9px; font-size: 11px; }
+  .homeNavActions button.homeWorkspaceButton { min-height: 36px; padding-inline: 9px; font-size: 11px; }
   .homeNavLinks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .homeHero h1 { font-size: 44px; letter-spacing: -3px; }
   .homeHeroCopy > p { font-size: 15px; }

@@ -79,7 +79,10 @@ export function normalizeChatUsage(rawUsage = {}) {
 
 export function calculateChatChargeCenti({ usage, pricing }) {
   const normalizedUsage = normalizeChatUsage(usage);
-  const normalizedPricing = normalizeChatPricing(pricing);
+  const contextTokens = normalizedUsage.inputTokens + normalizedUsage.cacheReadTokens + normalizedUsage.cacheWriteTokens;
+  const tier = [...(pricing?.tiers || [])].sort((a, b) => b.aboveTokens - a.aboveTokens)
+    .find((item) => contextTokens > item.aboveTokens);
+  const normalizedPricing = normalizeChatPricing(tier || pricing);
   const weightedMicroYuan = (
     normalizedUsage.inputTokens * priceRmbToMicros(normalizedPricing.input)
     + normalizedUsage.outputTokens * priceRmbToMicros(normalizedPricing.output)

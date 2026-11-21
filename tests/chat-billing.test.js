@@ -62,7 +62,7 @@ test('tiered pricing sync reads the short-context four-part price', () => {
   ), { input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25 });
 });
 
-test('chat provider defaults to gpt-5.6-luna and actual usage is charged once to 0.01 credits', () => {
+test('chat provider defaults to gpt-6-luna and actual usage is charged once to 0.01 credits', () => {
   const user = db.createUser({
     email: 'chat-billing@example.com',
     password: 'testing-1234',
@@ -70,8 +70,8 @@ test('chat provider defaults to gpt-5.6-luna and actual usage is charged once to
     initialCredits: 100
   });
   const provider = chat.ensureDefaultChatProviderConfig();
-  assert.equal(provider.name, '5.6-luna');
-  assert.equal(provider.model, 'gpt-5.6-luna');
+  assert.equal(provider.name, '6-luna');
+  assert.equal(provider.model, 'gpt-6-luna');
   const secretProvider = chat.getChatProviderConfig();
   assert.equal(secretProvider.apiKey, 'sk-chat-test');
 
@@ -130,13 +130,38 @@ test('chat provider defaults to gpt-5.6-luna and actual usage is charged once to
   assert.equal(bounded.messages[0].content, '消息 7');
 });
 
+test('retired Luna configuration upgrades in place without changing credentials, billing history or saved model choices', () => {
+  const database = db.getDb();
+  const provider = chat.getChatProviderConfig();
+  const model = 'gpt-5.6-luna';
+  const rule = database.prepare("SELECT config_json FROM upstream_model_rules WHERE kind = 'text' AND model = ?").get(provider.model);
+  database.prepare('UPDATE chat_provider_configs SET model = ?, name = ? WHERE id = ?').run(model, '5.6-luna', provider.id);
+  database.prepare("UPDATE upstream_model_rules SET model = ?, config_json = ? WHERE kind = 'text' AND model = ?")
+    .run(model, JSON.stringify({ ...JSON.parse(rule.config_json), model }), provider.model);
+  const before = database.prepare('SELECT id, base_url, api_key_encrypted, input_price_microyuan, output_price_microyuan FROM chat_provider_configs WHERE id = ?').get(provider.id);
+  const balances = database.prepare('SELECT id, credit_balance FROM users ORDER BY id').all();
+  const history = database.prepare('SELECT * FROM chat_usage_records ORDER BY id').all();
+  const preferences = database.prepare('SELECT * FROM user_ui_preferences ORDER BY user_id').all();
+  for (let round = 0; round < 2; round++) {
+    const upgraded = chat.ensureDefaultChatProviderConfig();
+    assert.equal(upgraded.model, 'gpt-6-luna');
+    assert.equal(upgraded.name, '6-luna');
+    assert.deepEqual(database.prepare('SELECT id, base_url, api_key_encrypted, input_price_microyuan, output_price_microyuan FROM chat_provider_configs WHERE id = ?').get(provider.id), before);
+    assert.equal(database.prepare('SELECT count(*) AS n FROM chat_provider_configs WHERE model = ?').get(model).n, 0);
+    assert.equal(database.prepare("SELECT count(*) AS n FROM upstream_model_rules WHERE kind = 'text' AND model = ?").get(model).n, 0);
+    assert.deepEqual(database.prepare('SELECT id, credit_balance FROM users ORDER BY id').all(), balances);
+    assert.deepEqual(database.prepare('SELECT * FROM chat_usage_records ORDER BY id').all(), history);
+    assert.deepEqual(database.prepare('SELECT * FROM user_ui_preferences ORDER BY user_id').all(), preferences);
+  }
+});
+
 test('multimodal chat request sends image content and requires actual usage', async () => {
   let requestBody;
   const result = await chat.requestChatCompletion({
     provider: {
       apiKey: 'sk-test',
       baseUrl: 'https://provider.example.invalid',
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-luna',
       maxOutputTokens: 1024
     },
     messages: [{
@@ -153,7 +178,7 @@ test('multimodal chat request sends image content and requires actual usage', as
         status: 200,
         headers: { get: () => 'req-test' },
         json: async () => ({
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-luna',
           choices: [{ message: { content: '这是一张测试图片。' } }],
           usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
         })
@@ -161,6 +186,8 @@ test('multimodal chat request sends image content and requires actual usage', as
     }
   });
   assert.equal(requestBody.messages[0].content[1].type, 'image_url');
+  assert.equal(requestBody.max_completion_tokens, 1024);
+  assert.equal(Object.hasOwn(requestBody, 'max_tokens'), false);
   assert.equal(result.content, '这是一张测试图片。');
   assert.equal(result.usage.inputTokens, 20);
 });

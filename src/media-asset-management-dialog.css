@@ -62,6 +62,8 @@
 .siteThemeLight .mediaAssetManagementDialog .mediaAssetManagementPrimary { background: #116657; border-color: #116657; color: #fff; }
 .siteThemeBlack .mediaAssetManagementDialog .mediaAssetManagementPrimary { background: #76f3a2; border-color: #76f3a2; color: #00180a; }
 .mediaAssetManagementDialog .mediaAssetManagementPrimary:hover:not(:disabled) { background: #b1f5e2; color: #103e32; }
+.siteThemeLight .mediaAssetManagementDialog .mediaAssetManagementPrimary:hover:not(:disabled) { background: #0d5448; border-color: #0d5448; color: #fff; }
+.siteThemeBlack .mediaAssetManagementDialog .mediaAssetManagementPrimary:hover:not(:disabled) { background: #95f8b9; border-color: #95f8b9; color: #00180a; }
 .mediaAssetManagementDialog .mediaAssetManagementClose { width: 36px; min-height: 36px; padding: 0; flex-shrink: 0; background: transparent; }
 .mediaAssetManagementForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 14px; }
 .mediaAssetManagementForm label { display: grid; min-width: 0; gap: 7px; color: var(--asset-search-muted); font-size: 12px; }

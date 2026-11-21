@@ -4,6 +4,7 @@ import {
   runStorageBillingBatch
 } from '../api/_lib/storage-billing.js';
 import { storageBillingDateParts } from '../shared/storage-billing.js';
+import { prepareAutomaticNewAPIStorage, retryNewAPIStorageInvoices } from '../api/_lib/newapi-storage-billing.js';
 
 const WORKER_KEY = Symbol.for('pic365.storage-billing-worker');
 const POLL_INTERVAL_MS = 30_000;
@@ -40,12 +41,14 @@ async function tick() {
     && retryReady
     && (['partial', 'failed'].includes(latest.status) || staleRunning);
   const shouldRun = shouldCatchUp || shouldRetryToday || (!latest && firstRunWindow);
-  if (!shouldRun) return;
+  if (!shouldRun && !retryReady) return;
 
   current.active = true;
   current.lastAttemptAt = new Date().toISOString();
   try {
-    current.lastResult = await runStorageBillingBatch({ runDate: parts.date });
+    await retryNewAPIStorageInvoices();
+    await prepareAutomaticNewAPIStorage();
+    if (shouldRun) current.lastResult = await runStorageBillingBatch({ runDate: parts.date });
   } catch (error) {
     current.lastResult = {
       runDate: parts.date,

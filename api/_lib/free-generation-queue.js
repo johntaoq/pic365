@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from './local-db.js';
 import { IMAGE_GENERATION_REQUEST_MAX_BYTES } from '../../shared/image-generation.js';
 import { normalizeImageStylePresetId } from '../../shared/image-style-presets.js';
+import { validateEcommerceLayoutReferences } from '../../shared/ecommerce-layout-studio.js';
+import { normalizeEcommerceLayoutWatermark } from '../../shared/ecommerce-layout-watermark.js';
+import { clothingStudioPrompt, normalizeClothingStudioRequest } from '../../shared/clothing-try-on.js';
+import { generatedImagePreviewSources } from '../../shared/image-thumbnails.js';
 
 export const MAX_FREE_GENERATION_TASKS = 30;
 export const MAX_ACTIVE_FREE_GENERATION_TASKS = 20;
@@ -40,7 +44,8 @@ function resultItems(row) {
     id: item.generationId || `${row.id}-${index}`,
     generationId: item.generationId || '',
     imageUrl: item.image || '',
-    thumbnailUrl: item.thumbnailUrl || (item.generationId ? `/api/generated?id=${encodeURIComponent(item.generationId)}&variant=thumbnail` : item.image || ''),
+    thumbnailUrl: generatedImagePreviewSources(item).thumbnail,
+    previewUrl: generatedImagePreviewSources(item).preview,
     mimeType: item.contentType || item.mimeType || 'image/png',
     fileSize: Number(item.fileSize || storedSizes.get(item.generationId) || 0),
     prompt: row.prompt || '',
@@ -55,25 +60,17 @@ function resultItems(row) {
   })).filter((item) => item.imageUrl);
 }
 
-export function normalizeFreeGenerationTask(row, { includeRequest = false } = {}) {
-  if (!row) return null;
-  const storedRequest = parseJson(row.request_json, {});
+function taskRequestSummary(storedRequest) {
+  let referencesComplete = true;
+  try {
+    storedRequest = normalizeClothingStudioRequest(storedRequest, { legacyStored: true });
+    const productCount = validateEcommerceLayoutReferences(storedRequest);
+    normalizeEcommerceLayoutWatermark(storedRequest.layoutWatermark, { isLayout: productCount !== undefined });
+  }
+  catch { referencesComplete = false; }
   return {
-    id: row.id,
-    userId: row.user_id,
-    status: row.status,
-    prompt: row.prompt || '',
-    size: row.size || '1024x1024',
-    quality: row.quality || 'medium',
-    count: Number(row.image_count || 1),
-    providerId: row.provider_id || '',
-    taskMode: row.task_mode || 'single',
-    batchId: row.batch_id || '',
-    batchIndex: Number(row.batch_index || 0),
-    sourceName: row.source_name || '',
-    sourceWidth: Number(row.source_width || 0),
-    sourceHeight: Number(row.source_height || 0),
-    sourceThumbnail: row.source_thumbnail || '',
+    studioWorkflow: storedRequest.studioWorkflow || null,
+    layoutId: cleanText(storedRequest.layoutId, 80),
     canvasProjectId: cleanText(storedRequest.canvasProjectId, 160),
     canvasParentNodeId: cleanText(storedRequest.canvasParentNodeId, 160),
     canvasTaskNodeId: cleanText(storedRequest.canvasTaskNodeId, 160),
@@ -84,11 +81,46 @@ export function normalizeFreeGenerationTask(row, { includeRequest = false } = {}
       : [],
     canvasX: storedRequest.canvasX != null && Number.isFinite(Number(storedRequest.canvasX)) ? Number(storedRequest.canvasX) : null,
     canvasY: storedRequest.canvasY != null && Number.isFinite(Number(storedRequest.canvasY)) ? Number(storedRequest.canvasY) : null,
+    redoAvailable: Boolean(storedRequest.prompt) && referencesComplete
+  };
+}
+
+export function normalizeFreeGenerationTask(row, { includeRequest = false } = {}) {
+  if (!row) return null;
+  const storedRequest = includeRequest ? normalizeClothingStudioRequest(parseJson(row.request_json, {}), { legacyStored: true }) : null;
+  const summary = row.summary_json && !includeRequest
+    ? parseJson(row.summary_json, {}) : taskRequestSummary(storedRequest || parseJson(row.request_json, {}));
+  return {
+    id: row.id,
+    userId: row.user_id,
+    status: row.status,
+    prompt: row.prompt || '',
+    size: row.size || '1024x1024',
+    quality: row.quality || 'medium',
+    count: Number(row.image_count || 1),
+    providerId: row.provider_id || '',
+    taskMode: row.task_mode || 'single',
+    studioWorkflow: summary.studioWorkflow,
+    batchId: row.batch_id || '',
+    batchIndex: Number(row.batch_index || 0),
+    layoutId: String(row.batch_id || '').startsWith('layout-') ? summary.layoutId : '',
+    sourceName: row.source_name || '',
+    sourceWidth: Number(row.source_width || 0),
+    sourceHeight: Number(row.source_height || 0),
+    sourceThumbnail: row.source_thumbnail || '',
+    canvasProjectId: summary.canvasProjectId,
+    canvasParentNodeId: summary.canvasParentNodeId,
+    canvasTaskNodeId: summary.canvasTaskNodeId,
+    canvasDisplayPrompt: summary.canvasDisplayPrompt,
+    stylePresetId: summary.stylePresetId,
+    canvasReferenceNodeIds: summary.canvasReferenceNodeIds,
+    canvasX: summary.canvasX,
+    canvasY: summary.canvasY,
     results: resultItems(row),
     error: row.error_code || '',
     cancelRequested: Boolean(row.cancel_requested),
     attempts: Number(row.attempts || 0),
-    redoAvailable: Boolean(storedRequest.prompt),
+    redoAvailable: summary.redoAvailable,
     createdAt: row.created_at || '',
     startedAt: row.started_at || '',
     completedAt: row.completed_at || '',
@@ -97,12 +129,27 @@ export function normalizeFreeGenerationTask(row, { includeRequest = false } = {}
 }
 
 export function listFreeGenerationTasks(userId, limit = MAX_FREE_GENERATION_TASKS) {
-  const rows = getDb().prepare(`
-    SELECT * FROM free_generation_tasks
+  const db = getDb();
+  const pageLimit = Math.max(1, Math.min(Number(limit) || MAX_FREE_GENERATION_TASKS, MAX_FREE_GENERATION_TASKS));
+  // Legacy requests are summarized once, only for the visible page. Polls never
+  // load their reference image payloads after this small lazy backfill.
+  const legacyRows = db.prepare(`
+    SELECT id, request_json FROM free_generation_tasks WHERE summary_json = '' AND id IN (
+      SELECT id FROM free_generation_tasks WHERE user_id = ? AND deleted_at IS NULL
+      ORDER BY created_at ASC, id ASC LIMIT ?
+    )
+  `).all(userId, pageLimit);
+  const saveSummary = db.prepare('UPDATE free_generation_tasks SET summary_json = ? WHERE id = ?');
+  for (const row of legacyRows) saveSummary.run(JSON.stringify(taskRequestSummary(parseJson(row.request_json, {}))), row.id);
+  const rows = db.prepare(`
+    SELECT id, user_id, status, prompt, size, quality, image_count, provider_id, result_json,
+      error_code, cancel_requested, attempts, created_at, updated_at, started_at, completed_at,
+      task_mode, batch_id, batch_index, source_name, source_width, source_height, source_thumbnail, summary_json
+    FROM free_generation_tasks
     WHERE user_id = ? AND deleted_at IS NULL
     ORDER BY created_at ASC, id ASC
     LIMIT ?
-  `).all(userId, Math.max(1, Math.min(Number(limit) || MAX_FREE_GENERATION_TASKS, MAX_FREE_GENERATION_TASKS)));
+  `).all(userId, pageLimit);
   return rows.map((row) => normalizeFreeGenerationTask(row));
 }
 
@@ -115,8 +162,14 @@ export function getFreeGenerationTask(userId, taskId, options = {}) {
 }
 
 function normalizedTaskRequest(request = {}) {
+  request = normalizeClothingStudioRequest(request);
+  const studioWorkflow = request.studioWorkflow;
+  const layoutProductReferenceCount = validateEcommerceLayoutReferences(request);
+  const layoutWatermark = normalizeEcommerceLayoutWatermark(request.layoutWatermark, {
+    isLayout: layoutProductReferenceCount !== undefined
+  });
   const id = cleanText(request.clientTaskId, 160) || randomUUID();
-  const prompt = cleanText(request.prompt, 6000);
+  const prompt = cleanText(studioWorkflow ? clothingStudioPrompt(studioWorkflow) : request.prompt, 6000);
   if (!prompt) {
     const error = new Error('INVALID_PROMPT');
     error.code = 'INVALID_PROMPT';
@@ -167,6 +220,13 @@ function normalizedTaskRequest(request = {}) {
     count: imageCount,
     providerId: cleanText(request.providerId, 160),
     references,
+    ...(studioWorkflow ? { studioWorkflow } : {}),
+    ...(layoutProductReferenceCount === undefined ? {} : {
+      layoutProductReferenceCount,
+      ...(request.layoutId ? { layoutId: cleanText(request.layoutId, 80) } : {}),
+      ...(request.layoutReferenceMode === 'prompt-only' ? { layoutReferenceMode: 'prompt-only' } : {}),
+      ...(layoutWatermark ? { layoutWatermark } : {})
+    }),
     clientTaskId: id,
     taskMode,
     canvasProjectId,
@@ -295,8 +355,8 @@ export function createFreeGenerationTasks(userId, requests = []) {
       INSERT INTO free_generation_tasks
         (id, user_id, status, prompt, size, quality, image_count, provider_id, request_json,
          error_code, task_mode, batch_id, batch_index, source_name, source_width, source_height,
-         source_thumbnail, created_at, updated_at, completed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         source_thumbnail, created_at, updated_at, completed_at, summary_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const item of normalized) {
       if (exists.get(item.id)) {
@@ -325,7 +385,8 @@ export function createFreeGenerationTasks(userId, requests = []) {
         item.sourceThumbnail,
         createdAt,
         createdAt,
-        blocked ? createdAt : null
+        blocked ? createdAt : null,
+        JSON.stringify(taskRequestSummary(parseJson(item.serialized, {})))
       );
     }
     const releaseReplaced = db.prepare(`
@@ -359,6 +420,10 @@ export function buildFreeGenerationRedoRequest(userId, taskId, overrides = {}) {
   }
 
   const storedRequest = task.request && typeof task.request === 'object' ? task.request : {};
+  const layoutProductReferenceCount = validateEcommerceLayoutReferences(storedRequest);
+  const layoutWatermark = normalizeEcommerceLayoutWatermark(storedRequest.layoutWatermark, {
+    isLayout: layoutProductReferenceCount !== undefined
+  });
   if (!storedRequest.prompt) {
     const error = new Error('TASK_REDO_DATA_UNAVAILABLE');
     error.code = 'TASK_REDO_DATA_UNAVAILABLE';
@@ -372,12 +437,19 @@ export function buildFreeGenerationRedoRequest(userId, taskId, overrides = {}) {
   }
 
   return {
-    prompt: task.prompt,
+    prompt: storedRequest.studioWorkflow ? clothingStudioPrompt(storedRequest.studioWorkflow) : task.prompt,
     size: task.size,
     quality: task.quality,
     count: task.count,
     providerId: task.providerId,
     references,
+    ...(storedRequest.studioWorkflow ? { studioWorkflow: storedRequest.studioWorkflow } : {}),
+    ...(layoutProductReferenceCount === undefined ? {} : {
+      layoutProductReferenceCount, batchId: task.batchId, batchIndex: task.batchIndex,
+      ...(storedRequest.layoutId ? { layoutId: storedRequest.layoutId } : {}),
+      ...(storedRequest.layoutReferenceMode ? { layoutReferenceMode: storedRequest.layoutReferenceMode } : {}),
+      ...(layoutWatermark ? { layoutWatermark } : {})
+    }),
     taskMode: task.taskMode,
     canvasProjectId: task.canvasProjectId,
     canvasParentNodeId: task.canvasParentNodeId,

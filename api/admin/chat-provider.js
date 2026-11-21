@@ -7,7 +7,7 @@ import {
 import { readJsonBody } from '../_lib/request.js';
 import { recordAdminAuditEvent, requestAuditMetadata, requirePermission } from '../_lib/governance.js';
 import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
-import { normalizeChatPricing } from '../../shared/chat-billing.js';
+import { validateTextPrices } from '../../shared/upstream-pricing.js';
 
 function clean(value, length = 500) {
   return String(value || '').trim().slice(0, length);
@@ -47,15 +47,15 @@ export default async function handler(req, res) {
     }
 
     const before = listChatProviderConfigs({ admin: true }).find((item) => item.id === clean(body.id, 80));
-    const nextPricing = normalizeChatPricing(body.pricing);
-    const pricingChanged = !before || Object.keys(nextPricing).some((key) => Math.abs(nextPricing[key] - Number(before.pricing?.[key] || 0)) > 0.0000001);
+    const nextPricing = validateTextPrices(body.pricing || before?.pricing);
+    const pricingChanged = !before || JSON.stringify(nextPricing) !== JSON.stringify(before.pricing);
     const provider = saveChatProviderConfig({
       id: clean(body.id, 80),
       name: clean(body.name, 80),
       providerType: clean(body.providerType, 60) || 'openai-compatible',
       baseUrl: clean(body.baseUrl, 500),
       apiKey: clean(body.apiKey, 2000),
-      model: clean(body.model, 160) || 'gpt-5.6-luna',
+      model: clean(body.model, 160) || 'gpt-6-luna',
       systemPrompt: clean(body.systemPrompt, 8000),
       maxOutputTokens: body.maxOutputTokens,
       pricing: nextPricing,
@@ -64,7 +64,9 @@ export default async function handler(req, res) {
       pricingVersion: before?.pricingVersion || '',
       priceSyncedAt: before?.priceSyncedAt || null,
       enabled: body.enabled !== false,
-      isDefault: true
+      magicEnabled: body.magicEnabled ?? before?.magicEnabled,
+      assistantEnabled: body.assistantEnabled ?? before?.assistantEnabled,
+      isDefault: body.isDefault ?? before?.isDefault ?? false
     });
     recordAdminAuditEvent({
       actorUserId: auth.user.id,

@@ -4,6 +4,7 @@ import { getFreeGenerationWorkerStatus, startFreeGenerationWorker } from '../ser
 import { getEcommerceGenerationWorkerStatus, startEcommerceGenerationWorker } from '../server/ecommerce-generation-worker.js';
 import { getMediaProcessingWorkerStatus, startMediaProcessingWorker } from '../server/media-processing-worker.js';
 import { getStorageBillingWorkerStatus, startStorageBillingWorker } from '../server/storage-billing-worker.js';
+import { getAssetRetentionWorkerStatus, startAssetRetentionWorker } from '../server/asset-retention-worker.js';
 import { getVideoGenerationWorkerStatus, startVideoGenerationWorker } from '../server/video-generation-worker.js';
 import { getVideoProviderConfig, listVideoProviderConfigs } from './_lib/video-provider-config.js';
 import { checkVideoProvider } from './_lib/video-provider.js';
@@ -100,12 +101,14 @@ export default async function handler(req, res) {
     startEcommerceGenerationWorker();
     startMediaProcessingWorker();
     startStorageBillingWorker();
+    startAssetRetentionWorker();
     startVideoGenerationWorker();
     checks.workers = {
       free: getFreeGenerationWorkerStatus(),
       ecommerce: getEcommerceGenerationWorkerStatus(),
       media: getMediaProcessingWorkerStatus(),
       storageBilling: getStorageBillingWorkerStatus(),
+      assetRetention: getAssetRetentionWorkerStatus(),
       video: getVideoGenerationWorkerStatus()
     };
     const providerOk = checks.providers.length > 0
@@ -114,7 +117,7 @@ export default async function handler(req, res) {
       || checks.videoProviders.every((provider) => provider.configured && (!deep || provider.reachable));
     const ok = checks.database.ok && checks.storage.ok && providerOk && videoProviderOk
       && checks.workers.free.running && checks.workers.ecommerce.running && checks.workers.media.running && checks.workers.video.running;
-    const workerOk = ok && checks.workers.storageBilling.running;
+    const workerOk = ok && checks.workers.storageBilling.running && checks.workers.assetRetention.running;
     return res.status(workerOk ? 200 : 503).json({
       ok: workerOk,
       deep,

@@ -1,10 +1,10 @@
 import { authenticateRequest } from './_lib/local-auth.js';
 import { readJsonBody } from './_lib/request.js';
-import { generateText, isProviderConfigured } from './_lib/provider.js';
+import { getChatProviderConfig, requestChatCompletion } from './_lib/chat-engine.js';
 import { buildSafePromptFallback } from '../shared/prompt-safety.js';
+import { newAPITextErrorResponse, getNewAPIAccountProfile, ensureNewAPIAuthorization } from './_lib/newapi-account.js';
 
 const MAX_PROMPT_LENGTH = 6000;
-const SANITIZE_MODEL = process.env.AI_SANITIZE_MODEL || 'gpt-5.6-luna';
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
 const MAX_REWRITE_ATTEMPTS = 2;
@@ -66,13 +66,13 @@ function changedPrompt(originalPrompt, candidatePrompt) {
   return buildSafePromptFallback(originalPrompt);
 }
 
-async function rewriteWithProvider(prompt) {
+async function rewriteWithProvider(prompt, provider) {
   let lastError;
-  for (let attempt = 0; attempt < MAX_REWRITE_ATTEMPTS; attempt += 1) {
+  const attempts = provider.billingSource ? 1 : MAX_REWRITE_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const result = await generateText({
-        model: SANITIZE_MODEL,
-        temperature: 0.1,
+      const result = await requestChatCompletion({
+        provider,
         messages: [
           { role: 'system', content: SANITIZE_SYSTEM_PROMPT },
           {
@@ -89,7 +89,7 @@ async function rewriteWithProvider(prompt) {
     } catch (error) {
       lastError = error;
     }
-    if (attempt + 1 < MAX_REWRITE_ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, 250));
+    if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw lastError || new Error('SANITIZE_FAILED');
 }
@@ -117,8 +117,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    await ensureNewAPIAuthorization(auth.user.id);
     const safeFallback = buildSafePromptFallback(prompt);
-    if (!isProviderConfigured()) {
+    const provider = getChatProviderConfig('', { userId: auth.user.id, purpose: 'magic' });
+    if (!provider?.apiKey) {
       return json(res, 200, {
         ok: true,
         prompt: safeFallback,
@@ -128,7 +130,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const rewritten = await rewriteWithProvider(prompt);
+    const rewritten = await rewriteWithProvider(prompt, provider);
     const sanitizedPrompt = rewritten.prompt.length > MAX_PROMPT_LENGTH
       ? safeFallback
       : rewritten.prompt;
@@ -145,6 +147,10 @@ export default async function handler(req, res) {
       code: error?.code || null,
       message: String(error?.message || 'unknown').slice(0, 240)
     });
+    if (getNewAPIAccountProfile(auth.user.id)) {
+      const external = newAPITextErrorResponse(error);
+      return json(res, external?.status || 502, { ok: false, error: external?.error || 'SANITIZE_FAILED' });
+    }
     const sanitizedPrompt = buildSafePromptFallback(prompt);
     return json(res, 200, {
       ok: true,

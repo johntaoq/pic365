@@ -17,6 +17,8 @@ import {
 } from '../_lib/ecommerce-renderer.js';
 import { applyRateLimitHeaders, checkRateLimit } from '../_lib/rate-limit.js';
 import { readJsonBody } from '../_lib/request.js';
+import { applyEcommerceLayoutWatermarkBytes } from '../_lib/ecommerce-layout-watermark.js';
+import { prepareUserEcommerceWatermark } from '../_lib/ecommerce-watermark-settings.js';
 import {
   buildDeliveryFilename,
   validateDeliveryDocument
@@ -33,6 +35,21 @@ function cleanText(value, maxLength = 120) {
 
 function safeArchiveName(value, fallback = 'ecommerce-delivery') {
   return String(value || fallback).trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').slice(0, 100) || fallback;
+}
+
+async function exportWatermark(userId, enabled, res) {
+  if (!enabled) return null;
+  try {
+    return await prepareUserEcommerceWatermark(userId);
+  } catch (error) {
+    if (['WATERMARK_SETTINGS_INCOMPLETE', 'LAYOUT_WATERMARK_INVALID'].includes(error?.code)) {
+      json(res, 400, { ok: false, error: error.code });
+    } else {
+      console.warn('Delivery watermark preparation failed', { message: String(error?.message || 'unknown').slice(0, 240) });
+      json(res, 500, { ok: false, error: 'DELIVERY_RENDER_FAILED' });
+    }
+    return false;
+  }
 }
 
 async function resolveRenderInputs(userId, project, document, platform) {
@@ -77,6 +94,10 @@ export default async function handler(req, res) {
     if (!document) return json(res, 404, { ok: false, error: 'DELIVERY_DOCUMENT_NOT_FOUND' });
     const project = getEcommerceProject(auth.user.id, document.projectId);
     if (!project) return json(res, 404, { ok: false, error: 'PROJECT_NOT_FOUND' });
+    const isDownload = String(req.query?.download || '') === '1';
+    const watermark = await exportWatermark(auth.user.id,
+      isDownload && String(req.query?.watermark || '') === '1', res);
+    if (watermark === false) return;
     try {
       const platform = getEcommercePlatform(project.platformId);
       const inputs = await resolveRenderInputs(auth.user.id, project, document, platform);
@@ -86,10 +107,11 @@ export default async function handler(req, res) {
         sourceStoragePath: inputs.generation.storage_path,
         logoStoragePath: inputs.logoStoragePath
       });
+      if (watermark) rendered.bytes = await applyEcommerceLayoutWatermarkBytes(rendered.bytes, watermark);
       res.statusCode = 200;
       res.setHeader('Content-Type', rendered.contentType);
       res.setHeader('Cache-Control', 'private, no-store');
-      if (String(req.query?.download || '') === '1') {
+      if (isDownload) {
         const language = req.query?.language === 'en' ? 'en' : 'zh';
         const filename = buildDeliveryFilename({
           productName: project.productName,
@@ -129,6 +151,8 @@ export default async function handler(req, res) {
   const documents = allDocuments.filter((document) => requestedIds.size ? requestedIds.has(document.id) : document.includeInExport);
   if (!documents.length || documents.length > 30) return json(res, 400, { ok: false, error: 'NO_DELIVERY_DOCUMENTS' });
 
+  const watermark = await exportWatermark(auth.user.id, body.watermark === true, res);
+  if (watermark === false) return;
   const language = body.language === 'en' ? 'en' : 'zh';
   const prepared = [];
   const unavailable = [];
@@ -145,6 +169,7 @@ export default async function handler(req, res) {
         sourceStoragePath: inputs.generation.storage_path,
         logoStoragePath: inputs.logoStoragePath
       });
+      if (watermark) rendered.bytes = await applyEcommerceLayoutWatermarkBytes(rendered.bytes, watermark);
       prepared.push({ document, ...inputs, rendered });
     }
     if (unavailable.length) return json(res, 409, { ok: false, error: 'DELIVERY_SOURCE_UNAVAILABLE', unavailable });
@@ -172,6 +197,7 @@ export default async function handler(req, res) {
         width: item.document.targetWidth,
         height: item.document.targetHeight,
         format: item.document.outputFormat,
+        watermarked: Boolean(watermark),
         validationReady: item.validation.ready,
         validationScore: item.validation.score,
         warnings: item.validation.rules
@@ -188,7 +214,7 @@ export default async function handler(req, res) {
     }
     if (body.includeDetailPage) {
       const longImage = await renderDetailPage(prepared.map((item) => item.rendered));
-      if (longImage) zip.file(`${safeArchiveName(project.productName)}-${language === 'zh' ? '详情长图' : 'detail-page'}-${language === 'zh' ? platform.nameZh : platform.nameEn}.png`, longImage);
+      if (longImage) zip.file(`${safeArchiveName(project.productName)}-${language === 'zh' ? '详情长图' : 'detail-page'}-${safeArchiveName(language === 'zh' ? platform.nameZh : platform.nameEn)}.png`, longImage);
     }
     const report = {
       projectId: project.id,

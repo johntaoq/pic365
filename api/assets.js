@@ -1,5 +1,5 @@
 import { authenticateRequest } from './_lib/local-auth.js';
-import { createUploadedAsset, emptyAssetTrash, getAssetStats, listAssets, repairMissingAssetFileMetadata } from './_lib/media-assets.js';
+import { createUploadedAsset, emptyAssetTrash, getAssetStats, listAssets, queueImageVariantRepair } from './_lib/media-assets.js';
 import { readBufferBody } from './_lib/request.js';
 import { startMediaProcessingWorker } from '../server/media-processing-worker.js';
 import { getAssetDateRange } from '../shared/asset-search.js';
@@ -30,7 +30,6 @@ export default async function handler(req, res) {
     } catch {
       return json(res, 400, { ok: false, error: 'INVALID_ASSET_DATE_FILTER' });
     }
-    await repairMissingAssetFileMetadata(auth.user.id);
     const result = listAssets(auth.user.id, {
       limit: req.query?.limit,
       offset: req.query?.offset,
@@ -50,6 +49,13 @@ export default async function handler(req, res) {
       project: req.query?.project === '1',
       isSuperAdmin: auth.user.isSuperAdmin
     });
+    for (const asset of result.assets) {
+      if (asset.mediaType === 'image' && (asset.fileSize === 0
+        || ['thumbnail', 'preview'].some((type) => !asset.variants.some((v) => v.type === type && v.status === 'ready')))) {
+        queueImageVariantRepair(auth.user.id, asset.id);
+      }
+    }
+    startMediaProcessingWorker();
     res.setHeader('Cache-Control', 'private, no-store');
     return json(res, 200, { ok: true, ...result, stats: getAssetStats(auth.user.id) });
   }
@@ -75,6 +81,7 @@ export default async function handler(req, res) {
   } catch (error) {
     const code = error?.code || error?.message || 'ASSET_UPLOAD_FAILED';
     const status = code === 'REQUEST_BODY_TOO_LARGE' || code === 'ASSET_TOO_LARGE' ? 413
+      : code === 'PIC365_STORAGE_PAYMENT_REQUIRED' ? 402
       : code === 'ASSET_QUOTA_EXCEEDED' ? 409
         : code === 'UNSUPPORTED_MEDIA_TYPE' ? 415
           : 400;

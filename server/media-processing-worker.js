@@ -1,7 +1,8 @@
 import {
   claimAssetProcessingJobs,
   failAssetProcessingJob,
-  processAssetProcessingJob
+  processAssetProcessingJob,
+  queueMissingImageVariants
 } from '../api/_lib/media-assets.js';
 
 const WORKER_KEY = Symbol.for('pic365.media-processing-worker');
@@ -9,7 +10,7 @@ const POLL_INTERVAL_MS = 1000;
 
 function state() {
   if (!globalThis[WORKER_KEY]) {
-    globalThis[WORKER_KEY] = { active: new Map(), timer: null, ticking: false, stopped: false };
+    globalThis[WORKER_KEY] = { active: new Map(), timer: null, ticking: false, stopped: false, lastDiscoveryAt: 0 };
   }
   return globalThis[WORKER_KEY];
 }
@@ -24,6 +25,10 @@ async function tick() {
     ) || 1));
     const available = Math.max(0, concurrency - current.active.size);
     if (!available) return;
+    if (process.env.ASSET_VARIANT_REPAIR_ENABLED !== 'false' && Date.now() - current.lastDiscoveryAt >= 10000) {
+      current.lastDiscoveryAt = Date.now();
+      queueMissingImageVariants();
+    }
     for (const job of claimAssetProcessingJobs(available)) {
       const promise = processAssetProcessingJob(job)
         .catch((error) => {

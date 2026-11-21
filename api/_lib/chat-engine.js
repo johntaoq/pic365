@@ -4,7 +4,6 @@ import {
   DEFAULT_CHAT_PRICING_RMB_PER_MILLION,
   normalizeChatPricing,
   normalizeChatUsage,
-  parseTieredPricingExpression,
   priceMicrosToRmb,
   priceRmbToMicros
 } from '../../shared/chat-billing.js';
@@ -18,14 +17,18 @@ import {
   userCanAccessProvider
 } from './local-db.js';
 import { decryptProviderSecret, encryptProviderSecret, maskProviderSecret } from './provider-secrets.js';
+import { ensureTextModelRule, saveModelRule } from './upstream-model-rules.js';
+import { parseUpstreamModelPrice } from '../../shared/upstream-pricing.js';
+import { estimateTextTokens } from './text-token-estimate.js';
+import { getNewAPITextProvider, requireNewAPIImageBalance, reserveNewAPIText, newAPIImageErrorCode } from './newapi-account.js';
 
-const DEFAULT_CHAT_MODEL = 'gpt-5.6-luna';
-const DEFAULT_CHAT_NAME = '5.6-luna';
+const DEFAULT_CHAT_MODEL = 'gpt-6-luna';
+const DEFAULT_CHAT_NAME = '6-luna';
 const DEFAULT_MAX_OUTPUT_TOKENS = 2048;
 const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_HISTORY_MESSAGES = 24;
 const MAX_HISTORY_CHARACTERS = 48_000;
-const DEFAULT_SYSTEM_PROMPT = [
+export const DEFAULT_SYSTEM_PROMPT = [
   '你是 Pic365 的聊天精灵。',
   '请直接、准确地回答用户问题，并结合用户上传的图片进行识别、分析或建议。',
   '不要声称执行了没有实际执行的操作；涉及站内功能时，明确告诉用户下一步。',
@@ -71,11 +74,21 @@ function normalizeProviderRow(row, includeSecret = false) {
     exchangeRate: priceMicrosToRmb(row.exchange_rate_micros || priceRmbToMicros(7)),
     priceSyncedAt: row.price_synced_at || '',
     enabled: Boolean(row.enabled),
+    magicEnabled: row.magic_enabled !== 0,
+    assistantEnabled: row.assistant_enabled !== 0,
     isDefault: Boolean(row.is_default),
     hasApiKey: Boolean(row.api_key_encrypted),
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || ''
   };
+  const rule = ensureTextModelRule(getDb(), result);
+  result.pricing = rule.pricing;
+  result.pricingSource = rule.pricingSource || 'manual';
+  result.priceSyncedAt = rule.priceSyncedAt || '';
+  result.pricingVersion = rule.pricingVersion || '';
+  result.exchangeRate = rule.exchangeRate || result.exchangeRate;
+  result.magicEnabled = rule.magicEnabled !== false;
+  result.assistantEnabled = rule.assistantEnabled !== false;
   if (includeSecret) result.apiKey = decryptProviderSecret(row.api_key_encrypted);
   else {
     let rawKey = '';
@@ -97,8 +110,38 @@ function sourceImageProvider(db) {
 
 export function ensureDefaultChatProviderConfig() {
   const db = getDb();
+  const retiredModel = 'gpt-5.6-luna';
+  const retired = db.prepare('SELECT id, name FROM chat_provider_configs WHERE model = ?').all(retiredModel);
+  if (retired.length) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const oldRule = db.prepare("SELECT config_json FROM upstream_model_rules WHERE kind = 'text' AND model = ?").get(retiredModel);
+      for (const provider of retired) {
+        db.prepare('UPDATE chat_provider_configs SET model = ?, name = ?, pricing_source = ?, pricing_version = ?, price_synced_at = ?, updated_at = ? WHERE id = ?')
+          .run(DEFAULT_CHAT_MODEL, ['5.6-luna', retiredModel].includes(provider.name) ? DEFAULT_CHAT_NAME : provider.name,
+            'manual', '', '', now(), provider.id);
+      }
+      if (oldRule && !db.prepare("SELECT model FROM upstream_model_rules WHERE kind = 'text' AND model = ?").get(DEFAULT_CHAT_MODEL)) {
+        const rule = JSON.parse(oldRule.config_json);
+        db.prepare("INSERT INTO upstream_model_rules (kind, model, config_json, updated_at) VALUES ('text', ?, ?, ?)")
+          .run(DEFAULT_CHAT_MODEL, JSON.stringify({ ...rule, model: DEFAULT_CHAT_MODEL, pricingSource: 'manual', pricingVersion: '', priceSyncedAt: '' }), now());
+      }
+      db.prepare("DELETE FROM upstream_model_rules WHERE kind = 'text' AND model = ?").run(retiredModel);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
   const existing = db.prepare('SELECT id FROM chat_provider_configs LIMIT 1').get();
-  if (existing) return normalizeProviderRow(db.prepare('SELECT * FROM chat_provider_configs WHERE id = ?').get(existing.id));
+  if (existing) {
+    // Older installations allowed several Magic models. Retain the former
+    // default (or the first enabled model) when collapsing that legacy state.
+    const selected = db.prepare(`SELECT * FROM chat_provider_configs WHERE magic_enabled != 0
+      ORDER BY enabled DESC, is_default DESC, created_at ASC`).all();
+    if (new Set(selected.map((row) => row.model)).size > 1) {
+      const keeper = normalizeProviderRow(selected[0]);
+      saveModelRule(db, { kind: 'text', model: keeper.model, magicEnabled: true });
+    }
+    return normalizeProviderRow(db.prepare('SELECT * FROM chat_provider_configs WHERE id = ?').get(existing.id));
+  }
   const source = sourceImageProvider(db);
   const environmentApiKey = process.env.CHAT_PROVIDER_API_KEY
     || process.env.COPILOT_PROVIDER_API_KEY
@@ -130,7 +173,7 @@ export function ensureDefaultChatProviderConfig() {
       || process.env.UNIKEYX_BASE_URL
       || 'https://www.unikeyx.com',
     apiKeyEncrypted,
-    process.env.CHAT_PROVIDER_MODEL || DEFAULT_CHAT_MODEL,
+    process.env.CHAT_PROVIDER_MODEL && process.env.CHAT_PROVIDER_MODEL !== retiredModel ? process.env.CHAT_PROVIDER_MODEL : DEFAULT_CHAT_MODEL,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_MAX_OUTPUT_TOKENS,
     priceRmbToMicros(pricing.input),
@@ -145,10 +188,10 @@ export function ensureDefaultChatProviderConfig() {
   return normalizeProviderRow(db.prepare('SELECT * FROM chat_provider_configs WHERE id = ?').get(id));
 }
 
-export function listChatProviderConfigs({ admin = false, userId = '' } = {}) {
+export function listChatProviderConfigs({ admin = false, userId = '', purpose = 'assistant' } = {}) {
   ensureDefaultChatProviderConfig();
   const rows = getDb().prepare(`SELECT * FROM chat_provider_configs ${admin ? '' : 'WHERE enabled = 1'} ORDER BY is_default DESC, created_at ASC`).all();
-  const providers = rows.map((row) => {
+  const providers = rows.filter((row) => admin || (purpose === 'magic' ? row.magic_enabled !== 0 : row.assistant_enabled !== 0)).map((row) => {
     const provider = normalizeProviderRow(row);
     if (admin) return provider;
     return {
@@ -158,17 +201,21 @@ export function listChatProviderConfigs({ admin = false, userId = '' } = {}) {
       enabled: provider.enabled
     };
   });
-  return admin ? providers : filterProvidersForUser(providers, userId, 'chat');
+  if (admin) return providers;
+  const accessible = filterProvidersForUser(providers, userId, 'chat');
+  return purpose === 'magic' ? accessible.slice(0, 1) : accessible;
 }
 
-export function getChatProviderConfig(providerId = '', { includeSecret = true, userId = '' } = {}) {
+export function getChatProviderConfig(providerId = '', { includeSecret = true, userId = '', purpose = 'assistant' } = {}) {
   ensureDefaultChatProviderConfig();
   const db = getDb();
   const rows = providerId
     ? [db.prepare('SELECT * FROM chat_provider_configs WHERE id = ? AND enabled = 1').get(providerId)].filter(Boolean)
     : db.prepare('SELECT * FROM chat_provider_configs WHERE enabled = 1 ORDER BY is_default DESC, created_at ASC').all();
-  const row = userId ? rows.find((item) => userCanAccessProvider(userId, 'chat', item.id)) : rows[0];
-  return normalizeProviderRow(row, includeSecret);
+  const available = rows.filter((item) => purpose === 'magic' ? item.magic_enabled !== 0 : item.assistant_enabled !== 0);
+  const row = userId ? available.find((item) => userCanAccessProvider(userId, 'chat', item.id)) : available[0];
+  const external = userId && db.prepare('SELECT user_id FROM newapi_accounts WHERE user_id = ?').get(userId);
+  return getNewAPITextProvider(userId, normalizeProviderRow(row, includeSecret && !external), includeSecret, db);
 }
 
 export function saveChatProviderConfig(values = {}) {
@@ -180,10 +227,13 @@ export function saveChatProviderConfig(values = {}) {
     ? encryptProviderSecret(clean(values.apiKey, 2000))
     : existing?.api_key_encrypted || '';
   if (!apiKeyEncrypted) throw Object.assign(new Error('API_KEY_REQUIRED'), { code: 'API_KEY_REQUIRED' });
-  const pricing = normalizeChatPricing(values.pricing || previous?.pricing || DEFAULT_CHAT_PRICING_RMB_PER_MILLION);
+  const priceInput = values.pricing || previous?.pricing || DEFAULT_CHAT_PRICING_RMB_PER_MILLION;
+  const pricing = { ...normalizeChatPricing(priceInput), ...(priceInput.tiers ? { tiers: priceInput.tiers } : {}) };
   const updatedAt = now();
   const enabled = values.enabled !== false;
   const isDefault = values.isDefault !== false;
+  const magicEnabled = values.magicEnabled ?? previous?.magicEnabled
+    ?? !db.prepare('SELECT id FROM chat_provider_configs WHERE magic_enabled != 0 LIMIT 1').get();
   db.exec('BEGIN IMMEDIATE');
   try {
     if (isDefault) db.prepare('UPDATE chat_provider_configs SET is_default = 0').run();
@@ -225,6 +275,19 @@ export function saveChatProviderConfig(values = {}) {
       existing?.created_at || updatedAt,
       updatedAt
     );
+    db.prepare('UPDATE chat_provider_configs SET magic_enabled = ?, assistant_enabled = ? WHERE id = ?')
+      .run(magicEnabled ? 1 : 0, (values.assistantEnabled ?? previous?.assistantEnabled ?? true) ? 1 : 0, id);
+    saveModelRule(db, {
+      kind: 'text',
+      model: clean(values.model, 160) || previous?.model || DEFAULT_CHAT_MODEL,
+      pricing,
+      magicEnabled,
+      assistantEnabled: values.assistantEnabled ?? previous?.assistantEnabled ?? true,
+      pricingSource: values.pricingSource || previous?.pricingSource || 'manual',
+      pricingVersion: values.pricingVersion || previous?.pricingVersion || '',
+      priceSyncedAt: values.priceSyncedAt || previous?.priceSyncedAt || '',
+      exchangeRate: values.exchangeRate || previous?.exchangeRate || 7
+    });
     if (!db.prepare('SELECT id FROM chat_provider_configs WHERE enabled = 1 AND is_default = 1 LIMIT 1').get()) {
       db.prepare('UPDATE chat_provider_configs SET is_default = 1 WHERE id = (SELECT id FROM chat_provider_configs WHERE enabled = 1 ORDER BY created_at ASC LIMIT 1)').run();
     }
@@ -233,6 +296,7 @@ export function saveChatProviderConfig(values = {}) {
     db.exec('ROLLBACK');
     throw error;
   }
+  if (!existing) bindDefaultSystemGroupChannel('chat', id);
   return normalizeProviderRow(db.prepare('SELECT * FROM chat_provider_configs WHERE id = ?').get(id));
 }
 
@@ -250,7 +314,7 @@ async function fetchJson(url, fetchImpl, signal) {
 }
 
 export async function synchronizeChatProviderPricing(providerId, { fetchImpl = fetch } = {}) {
-  const provider = getChatProviderConfig(providerId, { includeSecret: false });
+  const provider = listChatProviderConfigs({ admin: true }).find((item) => item.id === providerId);
   if (!provider) throw Object.assign(new Error('CHAT_PROVIDER_NOT_FOUND'), { code: 'CHAT_PROVIDER_NOT_FOUND' });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
@@ -263,10 +327,10 @@ export async function synchronizeChatProviderPricing(providerId, { fetchImpl = f
     const models = Array.isArray(pricingPayload?.data) ? pricingPayload.data : [];
     const row = models.find((item) => String(item?.model_name || item?.model || '') === provider.model);
     if (!row) throw Object.assign(new Error('MODEL_PRICE_NOT_FOUND'), { code: 'MODEL_PRICE_NOT_FOUND' });
-    const usdRates = parseTieredPricingExpression(row.billing_expr);
-    if (!usdRates) throw Object.assign(new Error('UNSUPPORTED_PRICE_FORMAT'), { code: 'UNSUPPORTED_PRICE_FORMAT' });
     const exchangeRate = Math.max(0.000001, Number(statusPayload?.data?.usd_exchange_rate) || provider.exchangeRate || 1);
-    const pricing = Object.fromEntries(Object.entries(usdRates).map(([key, amount]) => [key, amount * exchangeRate]));
+    const parsed = parseUpstreamModelPrice(row, exchangeRate);
+    if (parsed.unit !== 'tokens') throw Object.assign(new Error('UNSUPPORTED_PRICE_FORMAT'), { code: 'UNSUPPORTED_PRICE_FORMAT' });
+    const pricing = parsed.pricing;
     return saveChatProviderConfig({
       ...provider,
       pricing,
@@ -293,6 +357,10 @@ function contentText(content) {
 
 export async function requestChatCompletion({ provider, messages, fetchImpl = fetch, signal }) {
   if (!provider?.apiKey) throw Object.assign(new Error('CHAT_PROVIDER_NOT_CONFIGURED'), { code: 'CHAT_PROVIDER_NOT_CONFIGURED' });
+  if (provider.billingSource) {
+    await requireNewAPIImageBalance(provider.billingUserId);
+    provider = getNewAPITextProvider(provider.billingUserId, provider);
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const cancel = () => controller.abort();
@@ -302,17 +370,19 @@ export async function requestChatCompletion({ provider, messages, fetchImpl = fe
   try {
     const response = await fetchImpl(buildProviderUrl(provider.baseUrl, 'chat/completions'), {
       method: 'POST',
+      ...(provider.billingSource ? { redirect: 'error' } : {}),
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${provider.apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        'X-Client-Request-Id': clientRequestId
+        'X-Client-Request-Id': clientRequestId,
+        ...provider.headers
       },
       body: JSON.stringify({
         model: provider.model,
         messages,
-        max_tokens: provider.maxOutputTokens,
+        max_completion_tokens: provider.maxOutputTokens,
         stream: false
       })
     });
@@ -322,6 +392,7 @@ export async function requestChatCompletion({ provider, messages, fetchImpl = fe
       const error = new Error(payload?.error?.message || payload?.message || `Chat request failed with status ${response.status}`);
       error.code = payload?.error?.code || payload?.code || 'CHAT_PROVIDER_FAILED';
       error.status = response.status;
+      error.code = newAPIImageErrorCode(error, provider) || error.code;
       throw error;
     }
     const usage = normalizeChatUsage(payload?.usage || {});
@@ -462,9 +533,17 @@ export function buildChatMessages(userId, { text, images = [] }) {
 }
 
 export function reserveChatCreditCapacity(userId, { text, imageCount = 0, provider, clientRequestId }) {
-  const estimatedInputTokens = Math.max(1, String(text || '').length * 2 + imageCount * 50_000);
+  if (provider.billingSource) {
+    const reservation = reserveNewAPIText(userId, provider, { source: 'chat_actual_usage',
+      requestKey: `chat:${String(clientRequestId || '').slice(0, 120)}` });
+    if (reservation.duplicate) throw Object.assign(new Error('CHAT_REQUEST_IN_PROGRESS'), { code: 'CHAT_REQUEST_IN_PROGRESS' });
+    return reservation;
+  }
+  const estimatedInputTokens = Math.max(1, estimateTextTokens(text) + estimateTextTokens(provider.systemPrompt));
+  // Only the reservation capacity includes framing and image allowances.
+  const reservedInputTokens = estimatedInputTokens + 600 + imageCount * 50_000;
   const requiredCenti = calculateChatChargeCenti({
-    usage: { input_tokens: estimatedInputTokens, output_tokens: provider.maxOutputTokens },
+    usage: { input_tokens: reservedInputTokens, output_tokens: provider.maxOutputTokens },
     pricing: provider.pricing
   });
   const reservation = reserveCreditCenti(userId, {
@@ -475,6 +554,7 @@ export function reserveChatCreditCapacity(userId, { text, imageCount = 0, provid
       providerId: provider.id,
       model: provider.model,
       estimatedInputTokens,
+      reservedInputTokens,
       maxOutputTokens: provider.maxOutputTokens
     }
   });
@@ -499,13 +579,15 @@ export function commitChatExchange({
   const duplicate = getChatResultByRequestId(userId, clientRequestId);
   if (duplicate) return duplicate;
   const db = getDb();
-  const calculatedCenti = calculateChatChargeCenti({ usage, pricing: provider.pricing });
-  const effectiveReservationId = reservationId || reserveCreditCenti(userId, {
+  const calculatedCenti = provider.billingSource ? 0 : calculateChatChargeCenti({ usage, pricing: provider.pricing });
+  const effectiveReservationId = reservationId || (provider.billingSource
+    ? reserveNewAPIText(userId, provider, { requestKey: `chat-commit:${String(clientRequestId || '').slice(0, 120)}` })
+    : reserveCreditCenti(userId, {
     amountCenti: Math.max(1, calculatedCenti),
     source: 'chat_actual_usage',
     requestKey: `chat-commit:${String(clientRequestId || '').slice(0, 120)}`,
     metadata: { providerId: provider.id, model: provider.model }
-  }).reservationId;
+  })).reservationId;
   const createdAt = now();
   const userMessageId = randomUUID();
   const assistantMessageId = randomUUID();
@@ -547,7 +629,7 @@ export function commitChatExchange({
       usage.cacheWriteTokens,
       calculatedCenti,
       chargedCenti,
-      JSON.stringify(provider.pricing),
+      JSON.stringify(provider.billingSource ? { billingSource: provider.billingSource, externalWallet: true } : provider.pricing),
       clean(upstreamRequestId, 240),
       createdAt
     );

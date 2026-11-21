@@ -122,7 +122,7 @@ test('group chat reserves a maximum and settles only actual token usage', () => 
   db.adjustGroupMemberBudget(admin.id, member.id, 20, 'chat-member-budget');
   const provider = {
     id: 'chat-test-provider',
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-luna',
     maxOutputTokens: 100,
     pricing: { input: 7, output: 42, cacheRead: 0.7, cacheWrite: 8.75 }
   };

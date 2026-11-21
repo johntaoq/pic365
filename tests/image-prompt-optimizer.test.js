@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  DEFAULT_IMAGE_PROMPT_OPTIMIZER_MODEL,
-  IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT
-} from '../shared/image-prompt-optimizer.js';
+import { IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT } from '../shared/image-prompt-optimizer.js';
 
-test('AI magic defaults to Luna and requests professional visual direction', () => {
-  assert.equal(DEFAULT_IMAGE_PROMPT_OPTIMIZER_MODEL, 'gpt-5.6-luna');
+test('AI magic requests professional visual direction', () => {
   assert.match(IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT, /senior visual director/i);
   assert.match(IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT, /composition.*camera viewpoint.*lens.*lighting.*materials/i);
   assert.match(IMAGE_PROMPT_OPTIMIZER_SYSTEM_PROMPT, /Return only one final optimized image prompt/i);

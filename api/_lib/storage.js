@@ -226,6 +226,42 @@ export async function deleteStoredFile(storagePath) {
   await fs.rm(filePath, { force: true });
 }
 
+export async function checkPermanentStorageDeletion() {
+  if (!hasAzureStorage()) return { backend: 'local-disk' };
+  const service = BlobServiceClient.fromConnectionString(getAzureConfig().connectionString);
+  const properties = await service.getProperties();
+  if (properties.deleteRetentionPolicy?.enabled) {
+    throw Object.assign(new Error('STORAGE_SOFT_DELETE_ENABLED'), { code: 'STORAGE_SOFT_DELETE_ENABLED' });
+  }
+  return { backend: 'azure-blob' };
+}
+
+export async function deleteStoredFilePermanently(storagePath) {
+  const normalized = String(storagePath || '');
+  if (!normalized || normalized.startsWith('/') || normalized.includes('\\')
+    || normalized.split('/').some((part) => !part || part === '.' || part === '..')) {
+    throw Object.assign(new Error('INVALID_STORAGE_PATH'), { code: 'INVALID_STORAGE_PATH' });
+  }
+  if (!hasAzureStorage()) return deleteStoredFile(normalized);
+
+  const container = getAzureContainer();
+  const versions = [];
+  for await (const item of container.listBlobsFlat({
+    prefix: normalized, includeDeleted: true, includeSnapshots: true, includeVersions: true
+  })) {
+    if (item.name !== normalized) continue;
+    if (item.deleted) throw Object.assign(new Error('STORAGE_SOFT_DELETED_FILE'), { code: 'STORAGE_SOFT_DELETED_FILE' });
+    if (item.versionId) versions.push(item.versionId);
+  }
+  const response = await container.getBlobClient(normalized).deleteIfExists({ deleteSnapshots: 'include' });
+  if (response._response?.headers.get('x-ms-delete-type-permanent') === 'false') {
+    throw Object.assign(new Error('STORAGE_SOFT_DELETE_ENABLED'), { code: 'STORAGE_SOFT_DELETE_ENABLED' });
+  }
+  for (const version of versions) {
+    await container.getBlobClient(normalized).withVersion(version).deleteIfExists();
+  }
+}
+
 export async function readStoredFile(storagePath) {
   if (!storagePath) return null;
   if (hasAzureStorage()) {

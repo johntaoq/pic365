@@ -9,7 +9,7 @@ export default function FreeImageSettings({
   setBatchPreserveSourceSize, ratioLock, ratioOptions, setRatio,
   size, sizeMode, sizeTemplate, commonSizeOptions, selectSizeOption, width, height,
   quality, setQuality, count, setCount, dimensionDrafts, setDimensionDrafts,
-  updateDimension, updateDimensionDraft, commitDimensionDraft, canvasRatio, children,
+  updateDimension, updateDimensionDraft, commitDimensionDraft, canvasRatio, hideCount = false, qualityLocked = false, children,
 }) {
   const zh = language === 'zh';
   const sizeDisabled = batch ? batchRepairUploading || batchKeepsReferenceSize : !hasFullWorkspace || isGenerating;
@@ -76,13 +76,13 @@ export default function FreeImageSettings({
     <div className="freeImageControlRail studioQualityRail">
       <label>
         <span>{modelConstraints.isGeminiImage ? t.geminiResolution : t.quality}</span>
-        <select aria-label={modelConstraints.isGeminiImage ? t.geminiResolution : t.quality} value={!batch && !hasFullWorkspace ? 'low' : quality} onChange={event => setQuality(event.target.value)} disabled={detailDisabled}>
-          {IMAGE_QUALITY_VALUES.map(item => <option key={item} value={item}>{modelConstraints.isGeminiImage ? ({ low: '1K', medium: '2K', high: '4K', auto: zh ? '自动' : 'Auto' })[item] : imageQualityLabel(item, language)}</option>)}
+        <select aria-label={modelConstraints.isGeminiImage ? t.geminiResolution : t.quality} value={qualityLocked || (!batch && !hasFullWorkspace) ? 'low' : quality} onChange={event => setQuality(event.target.value)} disabled={detailDisabled || qualityLocked}>
+          {(qualityLocked ? ['low'] : IMAGE_QUALITY_VALUES).map(item => <option key={item} value={item}>{modelConstraints.isGeminiImage ? ({ low: '1K', medium: '2K', high: '4K', auto: zh ? '自动' : 'Auto' })[item] : imageQualityLabel(item, language)}</option>)}
         </select>
       </label>
-      {batch ? <div className="freeImageBatchSizeChoice"><label className={!batchHasImages ? 'disabled' : ''}><input type="checkbox" checked={batchKeepsReferenceSize} onChange={event => setBatchPreserveSourceSize(event.target.checked)} disabled={!batchHasImages} /><span>{t.preserveOriginalSize}</span></label></div> : <div className="freeImageCountPreview">
+      {batch ? <div className="freeImageBatchSizeChoice"><label className={!batchHasImages ? 'disabled' : ''}><input type="checkbox" checked={batchKeepsReferenceSize} onChange={event => setBatchPreserveSourceSize(event.target.checked)} disabled={!batchHasImages} /><span>{t.preserveOriginalSize}</span></label></div> : !hideCount ? <div className="freeImageCountPreview">
         <label><span>{t.drawCount}</span><select aria-label={t.drawCount} value={hasFullWorkspace ? count : 1} onChange={event => setCount(Number(event.target.value))} disabled={!hasFullWorkspace || isGenerating}>{[1, 2, 3, 4].map(item => <option value={item} key={item}>{item}</option>)}</select></label>
-      </div>}
+      </div> : null}
     </div>
     {children}
   </section>;
