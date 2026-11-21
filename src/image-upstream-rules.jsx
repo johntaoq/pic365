@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, RefreshCw, Save, Settings, X } from 'lucide-react';
+import { Plus, RefreshCw, Save, Settings, Trash2, X } from 'lucide-react';
 
 const numberText = (value) => Number(value || 0).toFixed(6).replace(/\.?0+$/, '') || '0';
 
-export default function ImageUpstreamRules({ rules, busy, onSave, language = 'zh' }) {
+export default function ImageUpstreamRules({ rules, busy, onSave, onDelete, language = 'zh' }) {
   const zh = language === 'zh';
   const [draft, setDraft] = useState(null);
   const models = rules.filter((rule) => rule.kind === 'image');
@@ -29,7 +29,8 @@ export default function ImageUpstreamRules({ rules, busy, onSave, language = 'zh
       <button type="button" disabled={busy} onClick={() => edit()}><Plus size={16} />{zh ? '新增模型上游' : 'Add model upstream'}</button>
     </header>
     {!draft ? <div className="upstreamTableWrap"><table>
-      <caption>{zh ? 'Token 单价：元 / 百万 Token；每个下游生图服务单独决定是否另计。' : 'Rates: RMB / million tokens. Each retail image service controls its own surcharges.'}</caption>
+      <caption>{zh ? 'Token 单价：元 / 百万 Token；每个下游生图服务单独决定是否另计。至少保留一个图片模型。'
+        : 'Rates: RMB / million tokens. Each retail image service controls its own surcharges. Keep at least one image model.'}</caption>
       <thead><tr><th>Model / {zh ? '上游地址' : 'Upstream'}</th><th>{zh ? '文本输入' : 'Text input'}</th>
         <th>{zh ? '参考图输入' : 'Image input'}</th><th>{zh ? '生图输出' : 'Image output'}</th><th>{zh ? '来源' : 'Source'}</th><th>{zh ? '操作' : 'Actions'}</th></tr></thead>
       <tbody>{models.map((rule) => <tr key={rule.model}>
@@ -45,6 +46,9 @@ export default function ImageUpstreamRules({ rules, busy, onSave, language = 'zh
         <td data-label={zh ? '操作' : 'Actions'}><div className="upstreamRowActions">
           <button type="button" disabled={busy || !rule.upstreamBaseUrl} title={zh ? '同步上游价格' : 'Sync upstream prices'} onClick={() => onSave({ action: 'sync', kind: 'image', model: rule.model })}><RefreshCw size={16} /></button>
           <button type="button" disabled={busy} title={zh ? '编辑规则' : 'Edit rule'} onClick={() => edit(rule)}><Settings size={16} /></button>
+          <button type="button" disabled={busy || models.length <= 1} onClick={() => onDelete(rule.model)}
+            title={models.length <= 1 ? (zh ? '至少保留一个图片模型' : 'Keep at least one image model') : (zh ? '删除规则' : 'Delete rule')}
+            aria-label={zh ? `删除图片模型 ${rule.model}` : `Delete image model ${rule.model}`}><Trash2 size={16} /></button>
         </div></td>
       </tr>)}</tbody>
     </table>{!models.length && <p>{zh ? '暂无上游图片模型，点击新增即可配置。' : 'No image models yet. Add one to get started.'}</p>}</div> : <form className="upstreamEditor" onSubmit={save}>

@@ -1,18 +1,32 @@
 import { authenticateRequest } from '../_lib/local-auth.js';
 import { getDb, listImageProviderConfigs } from '../_lib/local-db.js';
 import { listChatProviderConfigs, saveChatProviderConfig } from '../_lib/chat-engine.js';
-import { getModelRule, listModelRules, saveModelRule } from '../_lib/upstream-model-rules.js';
+import {
+  clearImageModelRuleDeletion, deleteModelRule, getModelRule, isImageModelRuleDeleted, listModelRules, saveModelRule
+} from '../_lib/upstream-model-rules.js';
 import { recordAdminAuditEvent, requestAuditMetadata, requirePermission } from '../_lib/governance.js';
 import { readJsonBody } from '../_lib/request.js';
 import { ADMIN_PERMISSIONS } from '../../shared/admin-permissions.js';
 import { parseUpstreamModelPrice, validateTextPrices } from '../../shared/upstream-pricing.js';
 
-function inventory() {
-  const textProviders = listChatProviderConfigs({ admin: true });
-  const imageProviders = listImageProviderConfigs({ admin: true });
-  const db = getDb();
+const ruleError = (code) => Object.assign(new Error(code), { code });
+
+function inRuleTransaction(db, operation) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = operation();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function ensureImageRules(db, imageProviders) {
   for (const provider of imageProviders) {
     const rule = getModelRule(db, 'image', provider.model);
+    if (!rule && isImageModelRuleDeleted(db, provider.model)) continue;
     if (!rule) saveModelRule(db, {
       kind: 'image', model: provider.model, upstreamBaseUrl: provider.baseUrl,
       pricingSchemaVersion: 2, exchangeRate: 7, pricingSource: 'unconfigured',
@@ -27,6 +41,13 @@ function inventory() {
       pricingSource: rule.pricing || rule.unit === 'image' ? rule.pricingSource : 'unconfigured'
     });
   }
+}
+
+function inventory() {
+  const textProviders = listChatProviderConfigs({ admin: true });
+  const imageProviders = listImageProviderConfigs({ admin: true });
+  const db = getDb();
+  inRuleTransaction(db, () => ensureImageRules(db, imageProviders));
   return { textProviders, imageProviders, rules: listModelRules(db) };
 }
 
@@ -43,18 +64,34 @@ async function fetchPriceTable(url, signal) {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!['GET', 'PATCH', 'POST'].includes(req.method)) return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
+  if (!['GET', 'PATCH', 'POST', 'DELETE'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, PATCH, POST, DELETE');
+    return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
+  }
   const auth = authenticateRequest(req);
   if (auth.error) return res.status(auth.status || 401).json({ ok: false, error: auth.error });
   try {
     requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_PRICING);
-    const current = inventory();
-    if (req.method === 'GET') return res.status(200).json({ ok: true, ...current });
+    if (req.method === 'GET') return res.status(200).json({ ok: true, ...inventory() });
     const body = await readJsonBody(req);
-    if (!['image', 'text'].includes(body.kind)) throw Object.assign(new Error('INVALID_MODEL_RULE'), { code: 'INVALID_MODEL_RULE' });
-    const kind = body.kind;
-    const model = String(body.model || '').trim();
+    const kind = body?.kind;
+    const model = typeof body?.model === 'string' ? body.model.trim() : '';
+    if (!['image', 'text'].includes(kind) || !model || model.length > 160) throw ruleError('INVALID_MODEL_RULE');
     const db = getDb();
+    if (req.method === 'DELETE') {
+      if (kind === 'text') requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_CHANNELS);
+      inRuleTransaction(db, () => {
+        const before = deleteModelRule(db, kind, model, auth.user.id);
+        recordAdminAuditEvent({
+          actorUserId: auth.user.id, permission: ADMIN_PERMISSIONS.MANAGE_PRICING,
+          category: 'pricing', action: 'upstream_rule_deleted',
+          entityType: 'upstream_model', entityId: `${kind}:${model}`, before,
+          auditMeta: requestAuditMetadata(req)
+        });
+      });
+      return res.status(200).json({ ok: true, ...inventory() });
+    }
+    const current = inventory();
     const before = getModelRule(db, kind, model);
     let rule;
     let providerAudit;
@@ -73,23 +110,30 @@ export default async function handler(req, res) {
       const exchangeRate = Number(status.data?.usd_exchange_rate) || Number(before?.exchangeRate) || provider?.exchangeRate || 7;
       const parsed = parseUpstreamModelPrice(row, exchangeRate);
       if (kind === 'text' && parsed.unit !== 'tokens') throw Object.assign(new Error('UNSUPPORTED_PRICE_FORMAT'), { code: 'UNSUPPORTED_PRICE_FORMAT' });
-      rule = saveModelRule(db, {
-        ...before, kind, model, ...parsed,
-        ...(kind === 'image' ? {
-          upstreamBaseUrl: source, pricingSchemaVersion: 2,
-          imageTextInputRmb: parsed.pricing?.input ?? before?.imageTextInputRmb ?? 0,
-          imageInput: parsed.imageInput ?? parsed.pricing?.input ?? before?.imageInput ?? 0,
-          // A flat image price does not supply token prices; keep separately entered rates.
-          pricing: parsed.pricing || before?.pricing || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-        } : { providerId: provider.id }),
-        exchangeRate, pricingSource: 'synced',
-        pricingVersion: String(data.pricing_version || ''),
-        priceSyncedAt: new Date().toISOString(),
-        estimateSource: parsed.unit === 'tokens' ? 'upstream-token-rates' : parsed.unit
+      // A slow sync started before deletion must not recreate an old rule.
+      rule = inRuleTransaction(db, () => {
+        const latest = getModelRule(db, kind, model);
+        if (!latest) throw ruleError('MODEL_RULE_NOT_FOUND');
+        if (latest.updatedAt !== before?.updatedAt) throw ruleError('MODEL_RULE_CHANGED');
+        return saveModelRule(db, {
+          ...latest, kind, model, ...parsed,
+          ...(kind === 'image' ? {
+            upstreamBaseUrl: source, pricingSchemaVersion: 2,
+            imageTextInputRmb: parsed.pricing?.input ?? latest.imageTextInputRmb ?? 0,
+            imageInput: parsed.imageInput ?? parsed.pricing?.input ?? latest.imageInput ?? 0,
+            // A flat image price does not supply token prices; keep separately entered rates.
+            pricing: parsed.pricing || latest.pricing || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+          } : { providerId: provider.id }),
+          exchangeRate, pricingSource: 'synced',
+          pricingVersion: String(data.pricing_version || ''),
+          priceSyncedAt: new Date().toISOString(),
+          estimateSource: parsed.unit === 'tokens' ? 'upstream-token-rates' : parsed.unit
+        });
       });
     } else if (kind === 'text') {
       requirePermission(auth.user, ADMIN_PERMISSIONS.MANAGE_CHANNELS);
       const previous = current.textProviders.find((item) => item.id === body.provider?.id);
+      if (body.provider?.id && !previous) throw ruleError('MODEL_PROVIDER_NOT_FOUND');
       if (!previous && current.textProviders.some((item) => item.model === model)) {
         throw Object.assign(new Error('MODEL_ALREADY_EXISTS'), { code: 'MODEL_ALREADY_EXISTS' });
       }
@@ -109,21 +153,26 @@ export default async function handler(req, res) {
       } : {};
       providerAudit = { before: safe(previous), after: safe(provider), keyChanged: Boolean(body.provider?.apiKey) };
     } else {
-      if (body.action === 'create' && before) throw Object.assign(new Error('MODEL_ALREADY_EXISTS'), { code: 'MODEL_ALREADY_EXISTS' });
-      if (body.action !== 'create' && !before) throw Object.assign(new Error('MODEL_PRICE_NOT_FOUND'), { code: 'MODEL_PRICE_NOT_FOUND' });
       if (!String(body.upstreamBaseUrl || '').trim()) throw Object.assign(new Error('INVALID_UPSTREAM_URL'), { code: 'INVALID_UPSTREAM_URL' });
       const pricing = validateTextPrices(body.pricing);
       if (!['image', 'tokens'].includes(body.unit)) throw Object.assign(new Error('INVALID_MODEL_RULE'), { code: 'INVALID_MODEL_RULE' });
       if (body.imageInput == null || body.imageInput === '' || (body.unit === 'image' && (body.fixedPriceRmb == null || body.fixedPriceRmb === ''))) {
         throw Object.assign(new Error('INVALID_MODEL_PRICE'), { code: 'INVALID_MODEL_PRICE' });
       }
-      rule = saveModelRule(db, {
-        ...before, kind, model, upstreamBaseUrl: String(body.upstreamBaseUrl).trim(),
-        pricingSchemaVersion: 2, pricing, imageTextInputRmb: pricing.input,
-        imageInput: body.imageInput, referenceTokenBudget: body.referenceTokenBudget,
-        unit: body.unit, fixedPriceRmb: body.fixedPriceRmb,
-        exchangeRate: Math.max(0.000001, Number(body.exchangeRate) || 7),
-        pricingSource: 'manual'
+      rule = inRuleTransaction(db, () => {
+        const latest = getModelRule(db, kind, model);
+        if (body.action === 'create' && latest) throw ruleError('MODEL_ALREADY_EXISTS');
+        if (body.action !== 'create' && !latest) throw ruleError('MODEL_RULE_NOT_FOUND');
+        const saved = saveModelRule(db, {
+          ...latest, kind, model, upstreamBaseUrl: String(body.upstreamBaseUrl).trim(),
+          pricingSchemaVersion: 2, pricing, imageTextInputRmb: pricing.input,
+          imageInput: body.imageInput, referenceTokenBudget: body.referenceTokenBudget,
+          unit: body.unit, fixedPriceRmb: body.fixedPriceRmb,
+          exchangeRate: Math.max(0.000001, Number(body.exchangeRate) || 7),
+          pricingSource: 'manual'
+        });
+        if (body.action === 'create') clearImageModelRuleDeletion(db, model);
+        return saved;
       });
     }
     recordAdminAuditEvent({
@@ -136,6 +185,9 @@ export default async function handler(req, res) {
     });
     return res.status(200).json({ ok: true, ...inventory() });
   } catch (error) {
-    return res.status(error?.code === 'FORBIDDEN' ? 403 : error?.code === 'MODEL_ALREADY_EXISTS' ? 409 : 400).json({ ok: false, error: error?.code || 'UPSTREAM_RULE_FAILED' });
+    const code = error?.code || 'UPSTREAM_RULE_FAILED';
+    const status = code === 'FORBIDDEN' ? 403 : code === 'MODEL_RULE_NOT_FOUND' ? 404
+      : ['MODEL_ALREADY_EXISTS', 'LAST_MODEL_RULE_REQUIRED', 'MODEL_RULE_CHANGED'].includes(code) ? 409 : 400;
+    return res.status(status).json({ ok: false, error: code });
   }
 }

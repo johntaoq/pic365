@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Type, Plus, RefreshCw, Settings, Save, X, LoaderCircle } from 'lucide-react';
+import { Image, Type, Plus, RefreshCw, Settings, Save, X, LoaderCircle, Trash2 } from 'lucide-react';
 import { normalizeChatPricing } from '../shared/chat-billing.js';
 import './upstream-rules.css';
 import ImageUpstreamRules from './image-upstream-rules.jsx';
@@ -16,6 +16,9 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
   const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
   const labels = zh ? ['输入', '输出', '缓存读', '缓存写'] : ['Input', 'Output', 'Cache read', 'Cache write'];
   const errors = {
+    LAST_MODEL_RULE_REQUIRED: zh ? '每类模型至少保留一个，不能删除最后一个。' : 'Keep at least one model of each type.',
+    MODEL_RULE_NOT_FOUND: zh ? '此模型规则已不存在，请刷新列表。' : 'This model rule no longer exists. Refresh the list.',
+    MODEL_RULE_CHANGED: zh ? '同步期间规则已变更，请刷新后重试。' : 'The rule changed during sync. Refresh and try again.',
     MODEL_PRICE_NOT_FOUND: zh ? '未找到这个精确模型名称，原价格已保留。' : 'Exact model not found; existing prices retained.',
     UNSUPPORTED_PRICE_FORMAT: zh ? '上游价格格式暂不支持，原规则已保留。' : 'Unsupported upstream format; rules retained.',
     INVALID_MODEL_PRICE: zh ? '请填写完整的非负价格。' : 'Enter valid non-negative prices.',
@@ -29,7 +32,7 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
     const previousData = data;
     setBusy(true);
     setMessage('');
-    if (body?.kind === 'text' && body.action !== 'sync') {
+    if (body?.kind === 'text' && body.provider) {
       setData((current) => ({
         ...current, textProviders: current.textProviders.map((provider) => provider.model === body.model
           ? { ...provider, magicEnabled: body.provider.magicEnabled, assistantEnabled: body.provider.assistantEnabled }
@@ -38,7 +41,7 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
     }
     try {
       const response = await fetch('/api/admin/upstream-rules', body ? {
-        method: body.action === 'sync' ? 'POST' : 'PATCH',
+        method: body.action === 'delete' ? 'DELETE' : body.action === 'sync' ? 'POST' : 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       } : { headers, cache: 'no-store' });
       const payload = await response.json();
@@ -46,7 +49,8 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
       setData(payload);
       if (body) {
         setDraft(null);
-        setMessage(body.action === 'sync' ? (zh ? '上游价格已同步。' : 'Upstream prices synchronized.') : (zh ? '规则已保存。' : 'Rules saved.'));
+        setMessage(body.action === 'delete' ? (zh ? '模型已删除。' : 'Model deleted.')
+          : body.action === 'sync' ? (zh ? '上游价格已同步。' : 'Upstream prices synchronized.') : (zh ? '规则已保存。' : 'Rules saved.'));
       }
       return true;
     } catch (error) {
@@ -56,6 +60,14 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
     } finally { setBusy(false); }
   }
   useEffect(() => { request(); }, []);
+  function removeModel(modelKind, model) {
+    const prompt = modelKind === 'image'
+      ? (zh ? `删除“${model}”的上游规则？不会删除下游生图渠道；依赖此规则的 Token 计费请求会报缺少上游价格。`
+        : `Delete the upstream rule for “${model}”? Image channels stay in place, but requests that depend on these token rates will report missing pricing.`)
+      : (zh ? `删除文本模型“${model}”？对应的服务配置将被移除，历史对话和用量保留。若它是魔笔模型，需重新指定。`
+        : `Delete text model “${model}”? Its service configuration will be removed, but conversations and usage are retained. If it serves Magic, select another model for Magic.`);
+    if (globalThis.confirm?.(prompt)) request({ action: 'delete', kind: modelKind, model });
+  }
   function editText(provider = {}) {
     setDraft({ kind: 'text', provider: {
       ...provider, id: provider.id || '', name: provider.name || '', model: provider.model || '',
@@ -86,9 +98,10 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
     </nav>
     {message && <p role="status" className="upstreamMessage">{message}</p>}
     {busy && <div role="status"><LoaderCircle size={18} className="spin" /></div>}
-    {kind === 'image' && <ImageUpstreamRules rules={data.rules} busy={busy} onSave={request} language={language} />}
+    {kind === 'image' && <ImageUpstreamRules rules={data.rules} busy={busy} onSave={request} onDelete={(model) => removeModel('image', model)} language={language} />}
     {kind === 'text' && !draft && <div className="upstreamTableWrap"><table>
-      <caption>{zh ? '元 / 百万 Token · 100 积分 = 1 元 · 魔笔只选一个模型，精灵可选多个' : 'RMB / 1M tokens · 100 credits = RMB 1 · Select one Magic model; Assistant allows several'}</caption>
+      <caption>{zh ? '元 / 百万 Token · 100 积分 = 1 元 · 魔笔只选一个模型，精灵可选多个 · 至少保留一个文本模型'
+        : 'RMB / 1M tokens · 100 credits = RMB 1 · Select one Magic model; Assistant allows several · Keep at least one text model'}</caption>
       <thead><tr><th>Model</th>
         {labels.map((label) => <th key={label}>{label}</th>)}<th>{zh ? '魔笔' : 'Magic'}</th><th>{zh ? '精灵' : 'Assistant'}</th>
         <th>{zh ? '来源' : 'Source'}</th><th>{zh ? '操作' : 'Actions'}</th></tr></thead>
@@ -109,6 +122,9 @@ export default function AdminUpstreamRules({ language = 'zh', session }) {
           <td data-label={zh ? '操作' : 'Actions'}><div className="upstreamRowActions">
             <button type="button" title={zh ? '同步上游价格' : 'Sync upstream prices'} disabled={busy} onClick={() => request({ action: 'sync', kind, model: provider.model, providerId: provider.id })}><RefreshCw size={16} /></button>
             <button type="button" title={zh ? '编辑规则' : 'Edit rule'} disabled={busy} onClick={() => editText(provider)}><Settings size={16} /></button>
+            <button type="button" disabled={busy || textModels.length <= 1} onClick={() => removeModel('text', provider.model)}
+              title={textModels.length <= 1 ? (zh ? '至少保留一个文本模型' : 'Keep at least one text model') : (zh ? '删除模型' : 'Delete model')}
+              aria-label={zh ? `删除文本模型 ${provider.model}` : `Delete text model ${provider.model}`}><Trash2 size={16} /></button>
           </div></td>
         </tr>;
       })}</tbody>

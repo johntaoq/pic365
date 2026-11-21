@@ -12,6 +12,49 @@ export function listModelRules(db) {
     .map((row) => getModelRule(db, row.kind, row.model));
 }
 
+const deletedImageRuleKey = (model) => `upstream_rule_deleted:image:${model.trim()}`;
+
+export function isImageModelRuleDeleted(db, model) {
+  return Boolean(db.prepare('SELECT 1 FROM app_settings WHERE setting_key = ?').get(deletedImageRuleKey(model)));
+}
+
+export function clearImageModelRuleDeletion(db, model) {
+  db.prepare('DELETE FROM app_settings WHERE setting_key = ?').run(deletedImageRuleKey(model));
+}
+
+// The caller holds a write transaction through the last-model check and audit.
+export function deleteModelRule(db, kind, model, actorUserId) {
+  const before = getModelRule(db, kind, model);
+  const textProviders = kind === 'text' ? db.prepare(`
+    SELECT id, model, name, enabled FROM chat_provider_configs WHERE model = ? ORDER BY id
+  `).all(model) : [];
+  if (!before && !textProviders.length) {
+    throw Object.assign(new Error('MODEL_RULE_NOT_FOUND'), { code: 'MODEL_RULE_NOT_FOUND' });
+  }
+  // Text rows in the UI represent unique model names, not provider records or
+  // orphaned price rules left behind by renaming a provider.
+  const remaining = kind === 'text'
+    ? db.prepare('SELECT 1 FROM chat_provider_configs WHERE model != ? LIMIT 1').get(model)
+    : db.prepare('SELECT 1 FROM upstream_model_rules WHERE kind = ? AND model != ? LIMIT 1').get(kind, model);
+  if (!remaining) throw Object.assign(new Error('LAST_MODEL_RULE_REQUIRED'), { code: 'LAST_MODEL_RULE_REQUIRED' });
+
+  if (kind === 'text') {
+    db.prepare(`DELETE FROM system_user_group_channels WHERE channel_type = 'chat'
+      AND channel_id IN (SELECT id FROM chat_provider_configs WHERE model = ?)`
+    ).run(model);
+    db.prepare('DELETE FROM chat_provider_configs WHERE model = ?').run(model);
+  } else {
+    // An existing downstream channel must not recreate a deliberately removed
+    // upstream price rule the next time the admin list is opened.
+    db.prepare(`INSERT INTO app_settings (setting_key, value_json, updated_by, updated_at)
+      VALUES (?, '{}', ?, ?) ON CONFLICT(setting_key) DO UPDATE SET
+      updated_by = excluded.updated_by, updated_at = excluded.updated_at`
+    ).run(deletedImageRuleKey(model), actorUserId, new Date().toISOString());
+  }
+  db.prepare('DELETE FROM upstream_model_rules WHERE kind = ? AND model = ?').run(kind, model);
+  return { ...before, ...(textProviders.length ? { providers: textProviders } : {}) };
+}
+
 export function saveModelRule(db, values) {
   const model = String(values.model || '').trim();
   if (!['text', 'image'].includes(values.kind) || !model || model.length > 160) {
